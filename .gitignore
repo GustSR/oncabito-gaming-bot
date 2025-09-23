@@ -1,0 +1,145 @@
+# =====================================
+# OnCabito Gaming Bot - .gitignore
+# =====================================
+
+# === CREDENCIAIS E SEGURANÇA ===
+.env
+.env.local
+.env.production
+*.env.local
+*.key
+*.pem
+
+# === PYTHON ===
+# Ambientes virtuais
+venv/
+.venv/
+env/
+ENV/
+
+# Cache e bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Distribuição
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# === BANCO DE DADOS ===
+# SQLite databases
+*.db
+*.sqlite3
+*.db-journal
+
+# Database backups
+*.sql
+backup/
+*.backup
+
+# === LOGS ===
+# Log files
+*.log
+logs/*.log
+*.log.*
+
+# === DOCKER ===
+# Docker volumes
+docker-compose.override.yml
+
+# === IDEs ===
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# === SISTEMA ===
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# === PROJETO ESPECÍFICO ===
+# Dados sensíveis locais
+data/database/*.db
+data/database/*.sqlite3
+
+# Logs específicos do projeto
+logs/checkup.log
+logs/*.log
+
+# Arquivos temporários do projeto
+*.txt.bak
+*.old
+temp/
+tmp/
+
+# Configurações locais de desenvolvimento
+.claude/
+local_config.py
+
+# === DOCUMENTAÇÃO TEMPORÁRIA ===
+# Rascunhos de documentação
+docs/draft/
+*.draft.md
+
+# === GITHUB ===
+# GitHub Actions secrets (se houver)
+.github/secrets/
+
+# =====================================
+# IMPORTANTE:
+# - Nunca commite credenciais (.env)
+# - Mantenha backups do banco seguros
+# - Logs podem conter informações sensíveis
+# =====================================

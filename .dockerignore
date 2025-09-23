@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Ambiente virtual
+.venv
+venv/
+
+# Cache do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de segredo (NUNCA devem ser incluídos na imagem)
+.env
+*.env.local
+
+# Arquivos de banco de dados (devem ser montados como um volume, não incluídos na imagem)
+*.db
+*.sqlite3
+*.db-journal
+
+# Logs
+*.log
