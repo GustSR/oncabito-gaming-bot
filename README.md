@@ -35,8 +35,8 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 ### 📦 **Instalação Automática (Recomendado)**
 ```bash
 # 1. Clone o projeto
-git clone https://github.com/oncabo/oncabito-bot.git
-cd oncabito-bot
+git clone https://github.com/GustSR/oncabito-gaming-bot.git
+cd oncabito-gaming-bot
 
 # 2. Execute o instalador
 ./deployment/install.sh
