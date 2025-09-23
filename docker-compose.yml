@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  oncabito-bot:
+    image: ghcr.io/gustsr/oncabito-gaming-bot:latest
+    container_name: oncabito-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - TZ=America/Sao_Paulo
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys; sys.path.append('/app/src'); from sentinela.core.config import TELEGRAM_TOKEN; print('OK' if TELEGRAM_TOKEN else 'FAIL')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Opcional: Backup automático
+  backup:
+    image: alpine:latest
+    container_name: oncabito-backup
+    restart: "no"
+    volumes:
+      - ./data:/data:ro
+      - ./backups:/backups
+    command: |
+      sh -c "
+        mkdir -p /backups
+        tar -czf /backups/oncabito-backup-$(date +%Y%m%d_%H%M%S).tar.gz -C / data
+        find /backups -name '*.tar.gz' -mtime +7 -delete
+        echo 'Backup completed'
+      "
+    profiles:
+      - backup
