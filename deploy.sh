@@ -5,8 +5,8 @@
 
 set -e
 
-echo "🚀 OnCabito Bot - Deploy Automático"
-echo "=================================="
+echo "🚀 OnCabito Bot - Deploy Manual"
+echo "==============================="
 
 # Cores para output
 GREEN='\033[0;32m'
@@ -40,15 +40,7 @@ else
     print_warning "Falha ao atualizar código (continuando com versão local)"
 fi
 
-# 2. Login no Container Registry (repositório público - opcional)
-echo "🔐 Container Registry (repositório público)..."
-if ! docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest --quiet 2>/dev/null; then
-    print_warning "Primeira execução ou login necessário"
-    echo "Se necessário, execute: gh auth token | docker login ghcr.io -u GustSR --password-stdin"
-    echo "Continuando deploy..."
-fi
-
-# 3. Pull da imagem mais recente
+# 2. Pull da imagem mais recente
 echo "📦 Baixando imagem mais recente..."
 if docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest; then
     print_status "Imagem atualizada"
@@ -57,7 +49,7 @@ else
     exit 1
 fi
 
-# 4. Parar container atual
+# 3. Parar container atual
 echo "⏹️  Parando container atual..."
 if docker-compose down; then
     print_status "Container parado"
@@ -65,12 +57,12 @@ else
     print_warning "Container já estava parado ou erro ao parar"
 fi
 
-# 5. Criar diretórios necessários
+# 4. Criar diretórios necessários
 echo "📁 Criando diretórios necessários..."
 mkdir -p data/database logs backups
 print_status "Diretórios criados"
 
-# 6. Verificar .env
+# 5. Verificar .env
 echo "⚙️  Verificando configuração..."
 if [ ! -f ".env" ]; then
     print_error ".env não encontrado. Copie de .env.example e configure."
@@ -85,7 +77,7 @@ fi
 
 print_status "Configuração verificada"
 
-# 7. Subir nova versão
+# 6. Subir nova versão
 echo "🆙 Subindo nova versão..."
 if docker-compose up -d; then
     print_status "Nova versão em execução"
@@ -94,11 +86,11 @@ else
     exit 1
 fi
 
-# 8. Aguardar inicialização
+# 7. Aguardar inicialização
 echo "⏳ Aguardando inicialização..."
 sleep 10
 
-# 9. Verificar saúde
+# 8. Verificar saúde
 echo "🏥 Verificando saúde do sistema..."
 if docker-compose ps | grep -q "healthy"; then
     print_status "Sistema saudável"
@@ -111,7 +103,7 @@ else
     exit 1
 fi
 
-# 10. Mostrar status final
+# 9. Mostrar status final
 echo ""
 echo "📊 Status Final:"
 docker-compose ps

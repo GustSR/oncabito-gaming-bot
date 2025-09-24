@@ -43,6 +43,13 @@ cd oncabito-gaming-bot
 ./setup-public.sh
 ```
 
+### 🔄 **Deploy (após mudanças no código)**
+```bash
+# No servidor:
+cd /opt/oncabito-bot
+git pull && ./deploy.sh
+```
+
 ### 🔧 **Desenvolvimento Local**
 ```bash
 # 1. Ambiente virtual
@@ -146,6 +153,7 @@ docker exec -it oncabito-bot /bin/bash
 ## 📚 **DOCUMENTAÇÃO**
 
 ### 📖 **Guias Principais**
+- **[🚀 Deploy Manual Guide](docs/DEPLOY_MANUAL_GUIDE.md)** - Deploy simplificado (NOVO)
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Instalação em servidor
 - **[Topics Setup](docs/TOPICS_SETUP_GUIDE.md)** - Configuração de tópicos
 - **[Messages Templates](docs/MENSAGENS_TOPICOS.md)** - Templates para tópicos

@@ -1,4 +1,4 @@
-name: 🐳 Docker Deploy
+name: 🐳 Docker Build & Push
 
 on:
   push:
@@ -9,7 +9,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,34 +56,14 @@ jobs:
         build-args: |
           BUILDKIT_INLINE_CACHE=1
 
-    - name: 🚀 Deploy to Server
+    - name: ✅ Build Complete
       if: github.ref == 'refs/heads/main'
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        script: |
-          # Navegar para diretório do projeto
-          cd /opt/oncabito-bot
-
-          # Pull do repositório para pegar docker-compose.yml atualizado
-          git pull origin main
-
-          # Login no GitHub Container Registry (repositório público)
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Pull da nova imagem
-          docker pull ghcr.io/${{ github.repository }}:latest
-
-          # Para container antigo
-          docker-compose down || true
-
-          # Sobe nova versão usando docker-compose do repositório
-          docker-compose up -d
-
-          # Verifica se subiu
-          sleep 5
-          docker-compose ps
-
-          echo "🤖 OnCabito Bot deployed successfully!"
+      run: |
+        echo "🎉 Docker image built and pushed successfully!"
+        echo "📋 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+        echo "🚀 Ready for manual deploy on server"
+        echo ""
+        echo "To deploy on your server, run:"
+        echo "  cd /opt/oncabito-bot"
+        echo "  git pull"
+        echo "  ./deploy.sh"
