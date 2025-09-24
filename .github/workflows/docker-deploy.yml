@@ -53,7 +53,11 @@ jobs:
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          cd ${{ secrets.PROJECT_PATH }}
+          # Navegar para diretório do projeto
+          cd /opt/oncabito-bot
+
+          # Pull do repositório para pegar docker-compose.yml atualizado
+          git pull origin main
 
           # Login no GitHub Container Registry
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -61,10 +65,10 @@ jobs:
           # Pull da nova imagem
           docker pull ghcr.io/${{ github.repository }}:latest
 
-          # Para e remove container antigo
+          # Para container antigo
           docker-compose down || true
 
-          # Sobe nova versão
+          # Sobe nova versão usando docker-compose do repositório
           docker-compose up -d
 
           # Verifica se subiu
