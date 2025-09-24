@@ -25,6 +25,7 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 |-----------|-----------|-------|---------|
 | **[README Principal](../README.md)** | Visão geral e setup básico | 10 min | Todos |
 | **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** | Deploy simplificado e confiável | 15 min | Administradores |
+| **[Quick Reference](QUICK_REFERENCE.md)** | Comandos e troubleshooting rápidos | 5 min | Operadores |
 
 ### 🏗️ **ARQUITETURA E DESENVOLVIMENTO**
 
@@ -66,8 +67,7 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 ### 🔧 **Administradores de Sistema**
 ```
 📚 Documentação Recomendada:
-├── Easy Deploy Guide ⭐⭐⭐⭐⭐
-├── Deployment Guide ⭐⭐⭐⭐
+├── Deploy Manual Guide ⭐⭐⭐⭐⭐
 ├── Segurança ⭐⭐⭐⭐⭐
 ├── Operações ⭐⭐⭐⭐
 └── Troubleshooting ⭐⭐⭐⭐
@@ -86,7 +86,7 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 ```
 📚 Documentação Recomendada:
 ├── README Principal ⭐⭐⭐⭐⭐
-├── Easy Deploy Guide ⭐⭐⭐
+├── Deploy Manual Guide ⭐⭐⭐
 ├── Operações (visão geral) ⭐⭐
 └── Segurança (compliance) ⭐⭐⭐
 ```
@@ -97,14 +97,13 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 
 ### 🆕 **Primeira Instalação**
 1. **[README Principal](../README.md)** - Entender o sistema
-2. **[Easy Deploy Guide](EASY_DEPLOY_GUIDE.md)** - Deploy em 1 comando
+2. **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** - Deploy simplificado
 3. **[Topics Setup Guide](TOPICS_SETUP_GUIDE.md)** - Configurar tópicos
 4. **[Operações](OPERACOES_E_MANUTENCAO.md)** - Configurar monitoramento
 
-### 🔄 **Setup de CI/CD**
-1. **[CI/CD Setup Guide](CICD_SETUP_GUIDE.md)** - GitHub Actions
-2. **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Deploy tradicional
-3. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Hardening
+### 🔄 **Deploy e Automação**
+1. **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** - Método atual
+2. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Hardening e compliance
 
 ### 🐛 **Resolução de Problemas**
 1. **[Troubleshooting](TROUBLESHOOTING_COMPLETO.md)** - Guia completo
@@ -113,8 +112,7 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 
 ### 🔧 **Desenvolvimento**
 1. **[Arquitetura](ARQUITETURA_COMPLETA.md)** - Entender sistema
-2. **[HubSoft API](hubsoft-api.md)** - Integração ERP
-3. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Boas práticas
+2. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Boas práticas
 
 ### 🛡️ **Auditoria/Compliance**
 1. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - LGPD e segurança
@@ -127,12 +125,11 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 
 ### ⭐ **Básico (15-30 min)**
 - README Principal
-- Easy Deploy Guide
+- Deploy Manual Guide
 - Topics Setup Guide
 - Messages Templates
 
 ### ⭐⭐ **Intermediário (30-60 min)**
-- Deployment Guide
 - Topics Discovery Guide
 - Notifications Setup
 - Operações (visão geral)
