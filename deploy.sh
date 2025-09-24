@@ -40,12 +40,12 @@ else
     print_warning "Falha ao atualizar código (continuando com versão local)"
 fi
 
-# 2. Login no Container Registry (se necessário)
-echo "🔐 Verificando login no Container Registry..."
-if ! docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest >/dev/null 2>&1; then
-    print_warning "Login necessário no Container Registry"
-    echo "Execute: gh auth token | docker login ghcr.io -u GustSR --password-stdin"
-    exit 1
+# 2. Login no Container Registry (repositório público - opcional)
+echo "🔐 Container Registry (repositório público)..."
+if ! docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest --quiet 2>/dev/null; then
+    print_warning "Primeira execução ou login necessário"
+    echo "Se necessário, execute: gh auth token | docker login ghcr.io -u GustSR --password-stdin"
+    echo "Continuando deploy..."
 fi
 
 # 3. Pull da imagem mais recente

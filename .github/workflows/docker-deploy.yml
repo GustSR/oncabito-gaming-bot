@@ -59,7 +59,7 @@ jobs:
           # Pull do repositório para pegar docker-compose.yml atualizado
           git pull origin main
 
-          # Login no GitHub Container Registry
+          # Login no GitHub Container Registry (repositório público)
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
           # Pull da nova imagem
