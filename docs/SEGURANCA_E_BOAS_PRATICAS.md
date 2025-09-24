@@ -107,14 +107,14 @@ jobs:
 # Permissões: 600 (read/write apenas para owner)
 
 # Bot Telegram
-TELEGRAM_TOKEN="8334929310:AAF..."  # Token do BotFather
+TELEGRAM_TOKEN="SEU_TOKEN_DO_BOTFATHER"  # Token do BotFather
 
 # API HubSoft
 HUBSOFT_HOST="https://api.oncabo.hubsoft.com.br/"
 HUBSOFT_CLIENT_ID="77"
-HUBSOFT_CLIENT_SECRET="DIejQ8z6PlNoIfa74gwvd672Fry8tlqHaoAQfohR"
-HUBSOFT_USER="bottelegram@oncabo.com.br"
-HUBSOFT_PASSWORD="TelBot@2025"
+HUBSOFT_CLIENT_SECRET="SEU_CLIENT_SECRET"
+HUBSOFT_USER="seu_usuario@email.com"
+HUBSOFT_PASSWORD="SUA_SENHA"
 ```
 
 **3. Container Runtime:**
