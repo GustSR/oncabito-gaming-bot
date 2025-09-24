@@ -40,12 +40,12 @@ else
     print_warning "Falha ao atualizar código (continuando com versão local)"
 fi
 
-# 2. Pull da imagem mais recente
-echo "📦 Baixando imagem mais recente..."
-if docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest; then
-    print_status "Imagem atualizada"
+# 2. Build da imagem localmente
+echo "🔨 Construindo imagem Docker localmente..."
+if docker build -t ghcr.io/gustsr/oncabito-gaming-bot:latest . ; then
+    print_status "Imagem construída localmente"
 else
-    print_error "Falha ao baixar imagem"
+    print_error "Falha ao construir imagem"
     exit 1
 fi
 
