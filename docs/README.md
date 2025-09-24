@@ -24,16 +24,13 @@ O **OnCabito Bot** é um sistema completo de automação para comunidades gamers
 | Documento | Descrição | Tempo | Público |
 |-----------|-----------|-------|---------|
 | **[README Principal](../README.md)** | Visão geral e setup básico | 10 min | Todos |
-| **[Easy Deploy Guide](EASY_DEPLOY_GUIDE.md)** | Deploy super fácil em 1 comando | 15 min | Administradores |
-| **[CI/CD Setup Guide](CICD_SETUP_GUIDE.md)** | Configuração de deploy automático | 30 min | DevOps |
+| **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** | Deploy simplificado e confiável | 15 min | Administradores |
 
 ### 🏗️ **ARQUITETURA E DESENVOLVIMENTO**
 
 | Documento | Descrição | Complexidade | Público |
 |-----------|-----------|--------------|---------|
 | **[Arquitetura Completa](ARQUITETURA_COMPLETA.md)** | Documentação técnica detalhada | ⭐⭐⭐⭐⭐ | Arquitetos/Desenvolvedores |
-| **[HubSoft API](hubsoft-api.md)** | Integração com ERP OnCabo | ⭐⭐⭐ | Desenvolvedores |
-| **[Deployment Guide](DEPLOYMENT_GUIDE.md)** | Guia completo de instalação | ⭐⭐⭐ | Administradores |
 
 ### 🔧 **CONFIGURAÇÃO E SETUP**
 

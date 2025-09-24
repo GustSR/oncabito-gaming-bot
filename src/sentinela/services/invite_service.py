@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 from telegram import Bot
 from telegram.error import TelegramError
 from src.sentinela.core.config import (
@@ -25,8 +26,8 @@ async def create_temporary_invite_link(user_id: int, username: str) -> str | Non
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
 
-        # Calcula o tempo de expiração
-        expire_date = datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)
+        # Calcula o tempo de expiração usando um timestamp Unix puro
+        expire_date = int(time.time()) + INVITE_LINK_EXPIRE_TIME
 
         logger.info(f"Criando link de convite temporário para {username} (ID: {user_id})")
 
