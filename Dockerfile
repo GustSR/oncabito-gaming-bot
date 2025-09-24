@@ -1,23 +1,83 @@
-# OnCabito Gaming Bot - Dockerfile
-# Bot oficial da comunidade gamer OnCabo
-FROM python:3.10-slim
+# =====================================
+# OnCabito Gaming Bot - Production Dockerfile
+# =====================================
+# Multi-stage build for optimized production image
 
-# Define o diretório de trabalho dentro do contêiner
+# Build stage
+FROM python:3.11-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN groupadd -r oncabito && useradd -r -g oncabito oncabito
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
 WORKDIR /app
 
-# Labels para identificação
-LABEL maintainer="OnCabo Gaming Community"
-LABEL description="OnCabito - Bot oficial da comunidade gamer OnCabo"
-LABEL version="2.0"
+# Copy application code with proper ownership
+COPY --chown=oncabito:oncabito src/ ./src/
+COPY --chown=oncabito:oncabito main.py ./
+COPY --chown=oncabito:oncabito .env.example ./
 
-# Copia o arquivo de dependências primeiro para aproveitar o cache do Docker
-COPY requirements.txt .
+# Create required directories
+RUN mkdir -p data/database logs \
+    && chown -R oncabito:oncabito /app
 
-# Instala as dependências
-RUN pip install --no-cache-dir -r requirements.txt
+# Switch to non-root user
+USER oncabito
 
-# Copia o resto do código da aplicação para o diretório de trabalho
-COPY . .
+# Expose health check port (if needed)
+EXPOSE 8080
 
-# Define o comando que será executado quando o contêiner iniciar
-CMD ["python", "main.py"]
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import sys; sys.path.append('/app/src'); \
+    from sentinela.core.config import TELEGRAM_TOKEN; \
+    exit(0 if TELEGRAM_TOKEN else 1)" || exit 1
+
+# Labels (OCI standard)
+LABEL org.opencontainers.image.title="OnCabito Gaming Bot"
+LABEL org.opencontainers.image.description="Intelligent Telegram bot for OnCabo Gaming Community"
+LABEL org.opencontainers.image.version="2.0"
+LABEL org.opencontainers.image.vendor="OnCabo Gaming Community"
+LABEL org.opencontainers.image.authors="gaming@oncabo.com.br"
+LABEL org.opencontainers.image.url="https://github.com/GustSR/oncabito-gaming-bot"
+LABEL org.opencontainers.image.source="https://github.com/GustSR/oncabito-gaming-bot"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# Environment variables
+ENV PYTHONPATH=/app/src \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Run application
+CMD ["python3", "main.py"]

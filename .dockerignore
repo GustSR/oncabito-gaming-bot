@@ -1,29 +1,118 @@
+# =====================================
+# OnCabito Gaming Bot - .dockerignore
+# =====================================
+
 # Git
 .git
 .gitignore
+.gitattributes
 
-# Docker
-Dockerfile
-.dockerignore
+# CI/CD
+.github/
+.gitlab-ci.yml
 
-# Ambiente virtual
-.venv
-venv/
+# Documentation
+README.md
+docs/
+CHANGELOG.md
+LICENSE
+*.md
 
-# Cache do Python
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Arquivos de segredo (NUNCA devem ser incluídos na imagem)
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific
 .env
+.env.local
+.env.production
 *.env.local
+*.log
+logs/*.log
 
-# Arquivos de banco de dados (devem ser montados como um volume, não incluídos na imagem)
+# Database
 *.db
 *.sqlite3
-*.db-journal
+data/database/
 
-# Logs
-*.log
+# Backups
+backup/
+backups/
+*.backup
+*.sql
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Scripts (not needed in container)
+scripts/
+deployment/
+tools/
+
+# Tests
+tests/
+test_*
+*_test.py
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Linting
+.flake8
+.pylintrc
+mypy.ini
+
+# Other
+*.orig
+.claude/
