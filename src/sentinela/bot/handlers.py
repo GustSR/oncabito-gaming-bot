@@ -213,6 +213,35 @@ async def test_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             "❌ Erro ao testar configuração. Verifique os logs do bot."
         )
 
+async def suporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /suporte - Inicia processo de abertura de chamado de suporte.
+    Funciona tanto no grupo (tópico específico) quanto em chat privado.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID
+    from src.sentinela.services.support_service import handle_support_request
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    message_thread_id = getattr(update.message, 'message_thread_id', None)
+
+    logger.info(f"Comando /suporte recebido de {user.username} (ID: {user.id}) no chat {chat_id}")
+
+    # Se for no grupo, verifica se é no tópico de suporte
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        if not SUPPORT_TOPIC_ID or str(message_thread_id) != str(SUPPORT_TOPIC_ID):
+            logger.info(f"Comando /suporte ignorado - tópico incorreto {message_thread_id}")
+            return
+
+        # Responde no grupo e inicia no privado
+        await update.message.reply_html(
+            f"🎮 <b>{user.mention_html()}</b>, estou te chamando no privado para abrir seu chamado de suporte!\n\n"
+            f"📱 Verifique suas mensagens privadas comigo para preencher o formulário."
+        )
+
+    # Processa a solicitação de suporte
+    await handle_support_request(user.id, user.username, user.mention_html())
+
 async def scan_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /scan_topics - Força descoberta de tópicos via API.
@@ -313,10 +342,22 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     """
     Handler para callback queries (botões inline).
     """
+    from src.sentinela.services.support_service import handle_support_callback
+
     query = update.callback_query
+    user = query.from_user
+
+    logger.info(f"Callback query recebido: {query.data} de {user.username}")
 
     if query.data.startswith("accept_rules_"):
         await handle_rules_button(update)
+    elif query.data.startswith("support_"):
+        # Processa botões do formulário de suporte
+        support_handled = await handle_support_callback(user.id, query.data, user.username)
+        if support_handled:
+            await query.answer()  # Confirma o clique
+        else:
+            await query.answer("Erro ao processar solicitação")
     else:
         # Outros botões podem ser adicionados aqui
         await query.answer("Botão não reconhecido")
@@ -326,10 +367,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Handler para mensagens de texto.
     - Primeira interação: Boas-vindas para qualquer mensagem
     - Interações seguintes: Aceita apenas CPF válido
+    - Durante formulário de suporte: Processa passos do formulário
     """
     from src.sentinela.utils.cpf_validator import extract_cpf_from_message, is_message_cpf_only
     from src.sentinela.core.config import TELEGRAM_GROUP_ID
     from src.sentinela.clients.db_client import is_first_interaction, mark_user_interacted
+    from src.sentinela.services.support_service import handle_support_message
 
     message_text = update.message.text
     user = update.effective_user
@@ -341,6 +384,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     logger.info(f"Mensagem de texto recebida de {user.username} no chat privado.")
+
+    # Verifica se é parte do formulário de suporte
+    support_handled = await handle_support_message(user.id, message_text, user.username)
+    if support_handled:
+        return  # Mensagem foi processada pelo sistema de suporte
 
     # Verifica se é primeira interação
     if is_first_interaction(user.id):
@@ -420,6 +468,7 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("auto_config", auto_config_command))
     application.add_handler(CommandHandler("test_topics", test_topics_command))
     application.add_handler(CommandHandler("scan_topics", scan_topics_command))
+    application.add_handler(CommandHandler("suporte", suporte_command))
 
     # Handler para callback queries (botões inline)
     application.add_handler(CallbackQueryHandler(handle_callback_query))

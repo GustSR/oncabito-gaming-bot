@@ -81,11 +81,12 @@ Seu contrato Gamer está ativo! Houve um problema técnico para gerar seu link a
 Entre em contato com nosso suporte para receber acesso ao <b>Grupo Gamer OnCabo</b>:
 
 📞 <b>Contatos OnCabo:</b>
-• WhatsApp: (99) 9 8483-0799
+• WhatsApp: (99) 3199-4444
+• Telefones: (99) 3014-0025 // 0800 099 0025
 • Email: suporte@oncabo.com.br
 
 🕐 <b>Horário de Atendimento:</b>
-Segunda a Sexta: 8h às 18h
+Segunda a Sexta: 8h às 00h
 Sábado: 8h às 12h
 
 🚀 <i>Aguardamos você na comunidade gamer!</i>

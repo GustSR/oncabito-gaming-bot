@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 # Carrega as variáveis de ambiente do arquivo .env localizado na raiz do projeto
@@ -30,6 +31,15 @@ if not TELEGRAM_GROUP_ID:
 # --- Configurações de Tópicos ---
 RULES_TOPIC_ID = get_env_var("RULES_TOPIC_ID")  # ID do tópico de regras (opcional)
 WELCOME_TOPIC_ID = get_env_var("WELCOME_TOPIC_ID")  # ID do tópico de boas-vindas (opcional)
+SUPPORT_TOPIC_ID = get_env_var("SUPPORT_TOPIC_ID", "148")  # ID do tópico de suporte (🆘 Suporte Gamer)
+
+# --- Configurações de Notificações ---
+TECH_NOTIFICATION_CHANNEL_ID = get_env_var("TECH_NOTIFICATION_CHANNEL_ID")  # Canal técnico
+
+# Valida configuração do canal técnico
+if not TECH_NOTIFICATION_CHANNEL_ID:
+    logger = logging.getLogger(__name__)
+    logger.warning("TECH_NOTIFICATION_CHANNEL_ID não configurado - notificações técnicas desabilitadas")
 
 # --- Configurações do Link de Convite ---
 INVITE_LINK_EXPIRE_TIME = int(get_env_var("INVITE_LINK_EXPIRE_TIME", "3600"))  # 1 hora por padrão

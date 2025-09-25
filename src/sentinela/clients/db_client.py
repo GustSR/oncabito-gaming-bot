@@ -61,6 +61,63 @@ def initialize_database():
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             """)
+
+            # Tabela para atendimentos de suporte
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS support_tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    hubsoft_atendimento_id TEXT UNIQUE,
+                    user_id INTEGER NOT NULL,
+                    username TEXT,
+                    user_mention TEXT,
+                    client_id TEXT,
+                    cpf TEXT,
+                    client_name TEXT,
+                    category TEXT NOT NULL,
+                    affected_game TEXT,
+                    problem_started TEXT,
+                    description TEXT NOT NULL,
+                    urgency_level TEXT DEFAULT 'normal',
+                    status TEXT DEFAULT 'pending',
+                    telegram_message_id INTEGER,
+                    topic_thread_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
+
+            # Tabela para conversas de formulário (anti-spam e controle de estado)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS support_conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    conversation_state TEXT DEFAULT 'idle',
+                    current_step INTEGER DEFAULT 0,
+                    form_data TEXT,
+                    is_active BOOLEAN DEFAULT 0,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
+
+            # Tabela para controle anti-spam
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS support_spam_control (
+                    user_id INTEGER PRIMARY KEY,
+                    active_tickets_count INTEGER DEFAULT 0,
+                    daily_tickets_count INTEGER DEFAULT 0,
+                    last_ticket_date DATE DEFAULT CURRENT_DATE,
+                    last_ticket_time TIMESTAMP,
+                    spam_score INTEGER DEFAULT 0,
+                    blocked_until TIMESTAMP,
+                    total_tickets INTEGER DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
             # Adicionar um gatilho para atualizar 'updated_at' automaticamente
             cursor.execute("""
                 CREATE TRIGGER IF NOT EXISTS update_users_updated_at
@@ -372,3 +429,313 @@ def mark_user_expired(user_id: int) -> bool:
     except sqlite3.Error as e:
         logger.error(f"Erro ao marcar usuário {user_id} como expirado: {e}")
         return False
+
+# ==================== FUNÇÕES DE SUPORTE ====================
+
+def can_create_support_ticket(user_id: int) -> dict:
+    """
+    Verifica se usuário pode criar um novo ticket de suporte (anti-spam).
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        dict: Resultado da verificação
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Busca controle de spam
+            cursor.execute("""
+                SELECT active_tickets_count, daily_tickets_count, last_ticket_date,
+                       last_ticket_time, spam_score, blocked_until
+                FROM support_spam_control
+                WHERE user_id = ?
+            """, (user_id,))
+            spam_data = cursor.fetchone()
+
+            # Verifica tickets ativos
+            cursor.execute("""
+                SELECT COUNT(*) as active_count
+                FROM support_tickets
+                WHERE user_id = ? AND status IN ('pending', 'open', 'in_progress')
+            """, (user_id,))
+            active_tickets = cursor.fetchone()['active_count']
+
+            # Verifica conversas ativas
+            cursor.execute("""
+                SELECT COUNT(*) as active_conversations
+                FROM support_conversations
+                WHERE user_id = ? AND is_active = 1
+            """, (user_id,))
+            active_conversations = cursor.fetchone()['active_conversations']
+
+            # Regras de validação
+            if active_tickets > 0:
+                return {
+                    'can_create': False,
+                    'reason': 'active_ticket',
+                    'message': 'Você já possui um atendimento ativo'
+                }
+
+            if active_conversations > 0:
+                return {
+                    'can_create': False,
+                    'reason': 'active_conversation',
+                    'message': 'Você já está preenchendo um formulário de suporte'
+                }
+
+            # Verifica bloqueio por spam
+            if spam_data and spam_data['blocked_until']:
+                from datetime import datetime
+                blocked_until = datetime.fromisoformat(spam_data['blocked_until'])
+                if datetime.now() < blocked_until:
+                    return {
+                        'can_create': False,
+                        'reason': 'blocked',
+                        'message': 'Você está temporariamente bloqueado para criar novos chamados'
+                    }
+
+            # Verifica limite diário (3 por dia)
+            if spam_data and spam_data['daily_tickets_count'] >= 3:
+                from datetime import datetime, date
+                last_date = datetime.fromisoformat(spam_data['last_ticket_date']).date()
+                if last_date == date.today():
+                    return {
+                        'can_create': False,
+                        'reason': 'daily_limit',
+                        'message': 'Limite diário de 3 chamados atingido'
+                    }
+
+            return {'can_create': True, 'reason': 'approved', 'message': 'Pode criar ticket'}
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao verificar permissão de ticket para usuário {user_id}: {e}")
+        return {'can_create': False, 'reason': 'error', 'message': 'Erro interno'}
+
+def start_support_conversation(user_id: int, username: str) -> bool:
+    """
+    Inicia uma conversa de formulário de suporte.
+
+    Args:
+        user_id: ID do usuário
+        username: Nome do usuário
+
+    Returns:
+        bool: True se iniciou com sucesso
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Finaliza conversas antigas do usuário
+            cursor.execute("""
+                UPDATE support_conversations
+                SET is_active = 0, completed_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND is_active = 1
+            """, (user_id,))
+
+            # Inicia nova conversa
+            cursor.execute("""
+                INSERT INTO support_conversations
+                (user_id, conversation_state, current_step, is_active, form_data)
+                VALUES (?, 'category_selection', 1, 1, '{}')
+            """, (user_id,))
+
+            conn.commit()
+            logger.info(f"Conversa de suporte iniciada para usuário {username} (ID: {user_id})")
+            return True
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao iniciar conversa de suporte para {user_id}: {e}")
+        return False
+
+def get_support_conversation(user_id: int) -> dict:
+    """
+    Busca conversa ativa de suporte do usuário.
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        dict: Dados da conversa ou None
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_conversations
+                WHERE user_id = ? AND is_active = 1
+                ORDER BY started_at DESC LIMIT 1
+            """, (user_id,))
+            result = cursor.fetchone()
+
+            if result:
+                return dict(result)
+            return None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar conversa de suporte para {user_id}: {e}")
+        return None
+
+def update_support_conversation(user_id: int, step: int, state: str, form_data: str) -> bool:
+    """
+    Atualiza estado da conversa de suporte.
+
+    Args:
+        user_id: ID do usuário
+        step: Passo atual
+        state: Estado atual
+        form_data: Dados do formulário (JSON)
+
+    Returns:
+        bool: True se atualizou com sucesso
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE support_conversations
+                SET current_step = ?, conversation_state = ?, form_data = ?,
+                    last_activity = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND is_active = 1
+            """, (step, state, form_data, user_id))
+            conn.commit()
+            return True
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar conversa de suporte para {user_id}: {e}")
+        return False
+
+def save_support_ticket(ticket_data: dict) -> int:
+    """
+    Salva ticket de suporte no banco.
+
+    Args:
+        ticket_data: Dados completos do ticket
+
+    Returns:
+        int: ID do ticket criado ou None se erro
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO support_tickets
+                (user_id, username, user_mention, client_id, cpf, client_name,
+                 category, affected_game, problem_started, description,
+                 urgency_level, telegram_message_id, topic_thread_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ticket_data['user_id'], ticket_data['username'], ticket_data['user_mention'],
+                ticket_data['client_id'], ticket_data['cpf'], ticket_data['client_name'],
+                ticket_data['category'], ticket_data['affected_game'], ticket_data['problem_started'],
+                ticket_data['description'], ticket_data['urgency_level'],
+                ticket_data.get('telegram_message_id'), ticket_data.get('topic_thread_id')
+            ))
+
+            ticket_id = cursor.lastrowid
+
+            # Atualiza controle anti-spam
+            update_spam_control(ticket_data['user_id'])
+
+            # Finaliza conversa
+            cursor.execute("""
+                UPDATE support_conversations
+                SET is_active = 0, completed_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND is_active = 1
+            """, (ticket_data['user_id'],))
+
+            conn.commit()
+            logger.info(f"Ticket de suporte #{ticket_id} criado para usuário {ticket_data['username']}")
+            return ticket_id
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao salvar ticket de suporte: {e}")
+        return None
+
+def update_spam_control(user_id: int) -> bool:
+    """
+    Atualiza controles anti-spam para o usuário.
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        bool: True se atualizou com sucesso
+    """
+    try:
+        from datetime import datetime, date
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Busca dados atuais
+            cursor.execute("""
+                SELECT daily_tickets_count, last_ticket_date, total_tickets
+                FROM support_spam_control WHERE user_id = ?
+            """, (user_id,))
+            current_data = cursor.fetchone()
+
+            today = date.today()
+            daily_count = 1
+            total_count = 1
+
+            if current_data:
+                last_date = datetime.fromisoformat(current_data['last_ticket_date']).date()
+                total_count = current_data['total_tickets'] + 1
+
+                if last_date == today:
+                    daily_count = current_data['daily_tickets_count'] + 1
+                else:
+                    daily_count = 1
+
+            # Conta tickets ativos
+            cursor.execute("""
+                SELECT COUNT(*) as active_count
+                FROM support_tickets
+                WHERE user_id = ? AND status IN ('pending', 'open', 'in_progress')
+            """, (user_id,))
+            active_count = cursor.fetchone()['active_count']
+
+            # Atualiza/insere dados
+            cursor.execute("""
+                INSERT OR REPLACE INTO support_spam_control
+                (user_id, active_tickets_count, daily_tickets_count, last_ticket_date,
+                 last_ticket_time, total_tickets)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (user_id, active_count, daily_count, today.isoformat(), total_count))
+
+            conn.commit()
+            return True
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar controle anti-spam para {user_id}: {e}")
+        return False
+
+def get_active_support_tickets(user_id: int) -> list:
+    """
+    Busca tickets ativos do usuário.
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        list: Lista de tickets ativos
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_tickets
+                WHERE user_id = ? AND status IN ('pending', 'open', 'in_progress')
+                ORDER BY created_at DESC
+            """, (user_id,))
+            results = cursor.fetchall()
+
+            return [dict(row) for row in results]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar tickets ativos para {user_id}: {e}")
+        return []

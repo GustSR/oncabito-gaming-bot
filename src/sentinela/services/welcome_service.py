@@ -34,9 +34,8 @@ async def handle_new_member(update: Update) -> None:
             # Envia mensagem de boas-vindas
             await send_welcome_message(update, new_member)
 
-            # Se tiver tópico de regras configurado, direciona para lá
-            if RULES_TOPIC_ID:
-                await send_rules_reminder(update, new_member)
+            # Envia lembrete de regras com botão no tópico de regras
+            await send_rules_reminder(update, new_member)
 
     except Exception as e:
         logger.error(f"Erro ao processar novo membro: {e}")
@@ -50,7 +49,7 @@ async def send_welcome_message(update: Update, new_member) -> None:
         new_member: Objeto do novo membro
     """
     try:
-        # Determina onde enviar (tópico específico ou grupo geral)
+        # Mensagem de boas-vindas sempre no tópico geral ou WELCOME_TOPIC_ID
         message_thread_id = None
         if WELCOME_TOPIC_ID:
             message_thread_id = int(WELCOME_TOPIC_ID)
@@ -58,15 +57,19 @@ async def send_welcome_message(update: Update, new_member) -> None:
         welcome_text = (
             f"🎮 <b>Bem-vindo à Comunidade Gamer OnCabo, {new_member.mention_html()}!</b> 🎮\n\n"
             f"🔥 Você acaba de entrar na melhor comunidade de gamers! 🔥\n\n"
-            f"📋 <b>IMPORTANTE:</b> Para participar ativamente do grupo, você precisa:\n"
-            f"✅ Ler e aceitar nossas regras\n"
-            f"✅ Reagir com 👍 na mensagem de regras\n\n"
+            f"📋 <b>PRÓXIMO PASSO OBRIGATÓRIO:</b>\n"
+            f"✅ Vá para o tópico '<b>Regras da Comunidade</b>'\n"
+            f"✅ Leia nossas regras e clique no botão para aceitar\n"
+            f"✅ Você tem <b>24 horas</b> para aceitar as regras\n\n"
         )
 
         if RULES_TOPIC_ID:
-            welcome_text += f"📌 <b>Vá para o tópico 'Regras' e reaja à mensagem principal!</b>\n\n"
+            welcome_text += f"⚠️ <b>IMPORTANTE:</b> Sem aceitar as regras, você será removido automaticamente!\n\n"
 
         welcome_text += f"🚀 <b>Aproveite a comunidade e bons jogos!</b>"
+
+        # Remove botão desta mensagem - vai para o tópico de regras
+        keyboard = None
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
@@ -74,7 +77,8 @@ async def send_welcome_message(update: Update, new_member) -> None:
                 chat_id=TELEGRAM_GROUP_ID,
                 text=welcome_text,
                 parse_mode='HTML',
-                message_thread_id=message_thread_id
+                message_thread_id=message_thread_id,
+                reply_markup=keyboard
             )
 
         logger.info(f"Mensagem de boas-vindas enviada para {new_member.username}")
