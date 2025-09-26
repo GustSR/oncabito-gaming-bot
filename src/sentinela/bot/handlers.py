@@ -218,11 +218,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Comando /status - Consulta status dos atendimentos do cliente.
     Funciona em chat privado e no tópico de suporte do grupo.
     """
-    from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID, HUBSOFT_ENABLED
     from src.sentinela.clients.db_client import get_user_data
-    from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
-    from src.sentinela.integrations.hubsoft.config import get_status_display, format_protocol
     from datetime import datetime
+
+    # Importa HubSoft apenas se habilitado
+    if HUBSOFT_ENABLED:
+        from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
+        from src.sentinela.integrations.hubsoft.config import get_status_display, format_protocol
 
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -290,18 +293,39 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        # Busca todos os atendimentos no HubSoft e filtra apenas os criados pelo bot
-        all_atendimentos = await hubsoft_atendimento_client.get_client_atendimentos(
-            client_cpf=client_cpf,
-            apenas_pendente=True  # Apenas atendimentos ativos
-        )
-
-        # Filtra apenas atendimentos criados pelo bot
+        # Se HubSoft estiver habilitado, busca atendimentos e filtra
         atendimentos = []
-        for atendimento in all_atendimentos:
-            atendimento_id = str(atendimento.get('id', ''))
-            if atendimento_id in bot_created_ids:
-                atendimentos.append(atendimento)
+        if HUBSOFT_ENABLED:
+            try:
+                # Busca todos os atendimentos no HubSoft e filtra apenas os criados pelo bot
+                all_atendimentos = await hubsoft_atendimento_client.get_client_atendimentos(
+                    client_cpf=client_cpf,
+                    apenas_pendente=True  # Apenas atendimentos ativos
+                )
+
+                # Filtra apenas atendimentos criados pelo bot
+                for atendimento in all_atendimentos:
+                    atendimento_id = str(atendimento.get('id', ''))
+                    if atendimento_id in bot_created_ids:
+                        atendimentos.append(atendimento)
+
+            except Exception as e:
+                logger.error(f"Erro ao consultar HubSoft: {e}")
+                await send_status_message(
+                    "⚠️ <b>HubSoft temporariamente indisponível</b>\n\n"
+                    "🎮 Seus atendimentos existem, mas não conseguimos acessar o status no momento.\n\n"
+                    "🔄 Tente novamente em alguns minutos ou contate o suporte."
+                )
+                return
+        else:
+            # HubSoft desabilitado - mostra apenas info local
+            await send_status_message(
+                "ℹ️ <b>Modo local ativo</b>\n\n"
+                f"🎮 Você possui {len(bot_created_ids)} atendimento(s) registrado(s) localmente.\n\n"
+                "💡 <b>Observação:</b> HubSoft não está configurado. Seus tickets estão salvos apenas localmente.\n\n"
+                "📞 Para abrir um novo chamado, use o comando /suporte."
+            )
+            return
 
         if not atendimentos:
             await send_status_message(
@@ -319,7 +343,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         for atendimento in atendimentos[:5]:  # Máximo 5 atendimentos
             # Usa protocolo oficial da API ou formata se não houver
-            protocol = atendimento.get('protocolo') or format_protocol(atendimento.get('id'))
+            if HUBSOFT_ENABLED:
+                protocol = atendimento.get('protocolo') or format_protocol(atendimento.get('id'))
+            else:
+                protocol = f"LOC{atendimento.get('id', 0):06d}"
             titulo = atendimento.get('titulo') or atendimento.get('tipo_atendimento', 'Suporte Gaming')
             data_cadastro = atendimento.get('data_cadastro', '')
 

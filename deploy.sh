@@ -70,9 +70,20 @@ if [ ! -f ".env" ]; then
 fi
 
 # Verificar variáveis essenciais
-if ! grep -q "TELEGRAM_TOKEN=" .env || ! grep -q "HUBSOFT_" .env; then
-    print_error ".env incompleto. Verifique as configurações."
+if ! grep -q "TELEGRAM_TOKEN=" .env; then
+    print_error ".env incompleto. TELEGRAM_TOKEN é obrigatório."
     exit 1
+fi
+
+# Verificar se HubSoft está habilitado e configurado
+if grep -q "HUBSOFT_ENABLED=true" .env || grep -q "HUBSOFT_ENABLED=\"true\"" .env; then
+    if ! grep -q "HUBSOFT_HOST=" .env || ! grep -q "HUBSOFT_CLIENT_ID=" .env; then
+        print_warning "HubSoft habilitado mas configuração incompleta. Bot funcionará em modo local."
+    else
+        print_status "Integração HubSoft configurada"
+    fi
+else
+    print_status "HubSoft desabilitado - modo apenas local"
 fi
 
 print_status "Configuração verificada"

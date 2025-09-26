@@ -281,6 +281,12 @@ async def send_photo_processing_error(user_id: int):
 async def process_hubsoft_attachments(hubsoft_id: str, attachments: list, username: str):
     """Processa e envia anexos para o HubSoft"""
     try:
+        from src.sentinela.core.config import HUBSOFT_ENABLED
+
+        if not HUBSOFT_ENABLED:
+            logger.warning("HubSoft desabilitado - não é possível enviar anexos")
+            return
+
         from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
         import os
 
@@ -773,8 +779,12 @@ async def create_support_ticket(user_id: int, form_data: dict, username: str):
     """Cria ticket de suporte final"""
     try:
         from src.sentinela.services.tech_notification_service import notify_tech_team_new_ticket
-        from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
-        from src.sentinela.integrations.hubsoft.config import format_protocol
+        from src.sentinela.core.config import HUBSOFT_ENABLED
+
+        # Importa clientes HubSoft apenas se habilitado
+        if HUBSOFT_ENABLED:
+            from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
+            from src.sentinela.integrations.hubsoft.config import format_protocol
 
         # Busca dados do cliente
         user_data = get_user_data(user_id)
@@ -797,33 +807,38 @@ async def create_support_ticket(user_id: int, form_data: dict, username: str):
             'topic_thread_id': 148  # ID do tópico de suporte
         }
 
-        # Tenta criar atendimento no HubSoft primeiro
+        # Tenta criar atendimento no HubSoft primeiro (se habilitado)
         hubsoft_id = None
         protocol = None
         hubsoft_success = False
 
-        try:
-            logger.info(f"Criando atendimento HubSoft para usuário {username}")
-            hubsoft_response = await hubsoft_atendimento_client.create_atendimento(
-                client_cpf=user_data.get('cpf', ''),
-                ticket_data=ticket_data
-            )
+        if HUBSOFT_ENABLED:
+            try:
+                logger.info(f"Criando atendimento HubSoft para usuário {username}")
+                hubsoft_response = await hubsoft_atendimento_client.create_atendimento(
+                    client_cpf=user_data.get('cpf', ''),
+                    ticket_data=ticket_data
+                )
 
-            # Usa estrutura correta da resposta da API
-            if hubsoft_response:
-                hubsoft_id = hubsoft_response.get('id_atendimento')
-                protocol = hubsoft_response.get('protocolo')
+                # Usa estrutura correta da resposta da API
+                if hubsoft_response:
+                    hubsoft_id = hubsoft_response.get('id_atendimento')
+                    protocol = hubsoft_response.get('protocolo')
 
-                if hubsoft_id and protocol:
-                    hubsoft_success = True
-                    logger.info(f"Atendimento HubSoft criado com sucesso: ID {hubsoft_id}, Protocolo: {protocol}")
+                    if hubsoft_id and protocol:
+                        hubsoft_success = True
+                        logger.info(f"Atendimento HubSoft criado com sucesso: ID {hubsoft_id}, Protocolo: {protocol}")
 
-                    # Salva no banco local com ID do HubSoft
-                    ticket_data['hubsoft_atendimento_id'] = hubsoft_id
-                    ticket_data['protocolo'] = protocol
-                    ticket_id = save_support_ticket(ticket_data)
+                        # Salva no banco local com ID do HubSoft
+                        ticket_data['hubsoft_atendimento_id'] = hubsoft_id
+                        ticket_data['protocolo'] = protocol
+                        ticket_id = save_support_ticket(ticket_data)
 
-                    # Adiciona mensagem inicial com contexto enriquecido do bot
+                    else:
+                        logger.warning("Resposta HubSoft sem ID ou protocolo válido - usando fallback local")
+
+                # Adiciona contexto enriquecido se criou com sucesso
+                if hubsoft_success:
                     attachments_info = ""
                     attachments = form_data.get('attachments', [])
                     if attachments:
@@ -846,23 +861,21 @@ async def create_support_ticket(user_id: int, form_data: dict, username: str):
                     # Envia anexos para o HubSoft se existirem
                     if attachments:
                         await process_hubsoft_attachments(str(hubsoft_id), attachments, username)
-                else:
-                    raise Exception("Resposta da API sem ID ou protocolo válido")
-            else:
-                raise Exception("Resposta vazia da API HubSoft")
 
-        except Exception as hubsoft_error:
-            logger.error(f"Erro ao criar atendimento no HubSoft: {hubsoft_error}")
+            except Exception as e:
+                logger.error(f"Erro ao criar atendimento HubSoft: {e}")
+                logger.info("Fallback: criando ticket apenas local")
+        else:
+            logger.info("HubSoft desabilitado - criando ticket apenas local")
 
-            # Fallback: salva apenas localmente
-            logger.info("Salvando ticket apenas no banco local como fallback")
-            ticket_id = save_support_ticket(ticket_data)
-            protocol = f"ATD{ticket_id:06d}" if ticket_id else "ERRO"
-            hubsoft_success = False
-
-        # Se não conseguiu criar no HubSoft, usa fallback local
+        # Se não conseguiu criar no HubSoft ou está desabilitado, cria ticket local
         if not hubsoft_success:
-            logger.warning(f"Atendimento salvo apenas localmente como fallback: {protocol}")
+            ticket_id = save_support_ticket(ticket_data)
+            if HUBSOFT_ENABLED:
+                protocol = format_protocol(ticket_id) if ticket_id else "ERRO"
+            else:
+                protocol = f"LOC{ticket_id:06d}" if ticket_id else "ERRO"
+            logger.info(f"Ticket local criado: {protocol}")
 
         # Envia notificação para canal técnico
         await notify_tech_team_new_ticket(ticket_data, user_data, protocol)

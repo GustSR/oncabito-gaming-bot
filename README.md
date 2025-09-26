@@ -13,20 +13,30 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 - Verificação de contratos ativos
 - Links de convite temporários (30 min)
 
+### 🆘 **Sistema de Suporte Completo**
+- Formulário conversacional inteligente em 6 etapas
+- Upload de imagens (screenshots, fotos) até 3 por ticket
+- Integração automática com HubSoft ERP
+- Protocolos oficiais e acompanhamento via /status
+- Notificações técnicas por prioridade (alta, média, normal)
+- Anti-spam: 1 ticket a cada 30 minutos
+
 ### 🎮 **Gestão de Comunidade**
 - Sistema de regras obrigatórias
 - Tópicos restritos até aceitação
+- Comandos funcionam no grupo e privado
 - Mensagens apenas em canais específicos
 
 ### ⏰ **Automação Avançada**
 - Checkup diário de usuários ativos
 - Remoção automática de contratos cancelados
 - Notificações para administradores
+- Fallback automático quando HubSoft offline
 
 ### 📊 **Monitoramento**
 - Logs detalhados de todas as ações
-- Dashboard de atividade
-- Relatórios de uso
+- Configuração flexível de integrações
+- Relatórios de uso e tickets
 
 ---
 
@@ -100,28 +110,51 @@ oncabito-bot/
 
 ### 🔑 **Variáveis Obrigatórias (.env)**
 ```bash
-# Bot Telegram
-TELEGRAM_TOKEN=seu_token_do_botfather
+# === Bot Telegram ===
+TELEGRAM_TOKEN="SEU_TOKEN_DO_BOTFATHER"
 TELEGRAM_GROUP_ID="-100123456789"
 
-# API HubSoft
-HUBSOFT_HOST="https://api.oncabo.hubsoft.com.br/"
-HUBSOFT_CLIENT_ID="77"
-HUBSOFT_CLIENT_SECRET="sua_secret"
-HUBSOFT_USER="bottelegram@oncabo.com.br"
-HUBSOFT_PASSWORD="sua_senha"
-
-# Tópicos do Telegram
+# === Configurações de Tópicos ===
 RULES_TOPIC_ID="87"          # ID do tópico de regras
 WELCOME_TOPIC_ID="89"        # ID do tópico de boas-vindas
+SUPPORT_TOPIC_ID="148"       # ID do tópico de suporte gamer
 
-# Configurações
-INVITE_LINK_EXPIRE_TIME=1800  # 30 minutos
-DATABASE_FILE=database/sentinela.db
+# === Notificações ===
+TECH_NOTIFICATION_CHANNEL_ID="-1003102389025"  # Canal técnico privado
+
+# === Administração ===
+ADMIN_USER_IDS="123456789,987654321"  # IDs dos admins
+
+# === API HubSoft (Opcional) ===
+HUBSOFT_ENABLED="true"       # true/false para habilitar integração
+HUBSOFT_HOST="https://api.sua-instancia.hubsoft.com.br/"
+HUBSOFT_CLIENT_ID="SEU_CLIENT_ID"
+HUBSOFT_CLIENT_SECRET="SEU_CLIENT_SECRET"
+HUBSOFT_USER="seu_usuario@email.com"
+HUBSOFT_PASSWORD="SUA_SENHA"
+
+# === Configurações ===
+INVITE_LINK_EXPIRE_TIME=3600  # 1 hora
+DATABASE_FILE="data/database/sentinela.db"
 ```
 
 ### 🎯 **Como Obter IDs dos Tópicos**
 Siga o guia: **[docs/TOPICS_DISCOVERY_GUIDE.md](docs/TOPICS_DISCOVERY_GUIDE.md)**
+
+### 🤖 **Comandos do Bot**
+```bash
+# === Comandos para Usuários ===
+/start              # Validação de CPF e acesso ao grupo
+/suporte           # Abrir ticket de suporte (grupo/privado)
+/status            # Consultar status dos seus tickets
+
+# === Comandos Administrativos ===
+/admin_tickets     # Consulta avançada de tickets (admins apenas)
+/topics            # Listar tópicos descobertos
+/auto_config       # Gerar configuração automática de tópicos
+/test_topics       # Testar configuração atual de tópicos
+/scan_topics       # Escanear grupo em busca de tópicos
+```
 
 ---
 
@@ -285,4 +318,4 @@ Este projeto é propriedade da **OnCabo Gaming Community**.
 
 ---
 
-*Documentação atualizada em 23/09/2025 - OnCabito Gaming Bot v2.0*
+*Documentação atualizada em 26/09/2025 - OnCabito Gaming Bot v2.1*

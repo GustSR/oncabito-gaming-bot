@@ -68,6 +68,32 @@ HUBSOFT_CLIENT_SECRET = get_env_var("HUBSOFT_CLIENT_SECRET")
 HUBSOFT_USER = get_env_var("HUBSOFT_USER")
 HUBSOFT_PASSWORD = get_env_var("HUBSOFT_PASSWORD")
 
-# Valida as variáveis essenciais do Hubsoft
-if not all([HUBSOFT_HOST, HUBSOFT_CLIENT_ID, HUBSOFT_CLIENT_SECRET, HUBSOFT_USER, HUBSOFT_PASSWORD]):
-    raise ValueError("Uma ou mais variáveis de ambiente da API Hubsoft não foram definidas no .env")
+# Determina se a integração HubSoft está habilitada
+HUBSOFT_ENABLED = get_env_var("HUBSOFT_ENABLED", "true").lower() in ("true", "1", "yes", "on")
+
+# Valida configuração HubSoft apenas se habilitado
+if HUBSOFT_ENABLED:
+    missing_vars = []
+    required_vars = {
+        "HUBSOFT_HOST": HUBSOFT_HOST,
+        "HUBSOFT_CLIENT_ID": HUBSOFT_CLIENT_ID,
+        "HUBSOFT_CLIENT_SECRET": HUBSOFT_CLIENT_SECRET,
+        "HUBSOFT_USER": HUBSOFT_USER,
+        "HUBSOFT_PASSWORD": HUBSOFT_PASSWORD
+    }
+
+    for var_name, var_value in required_vars.items():
+        if not var_value:
+            missing_vars.append(var_name)
+
+    if missing_vars:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Integração HubSoft DESABILITADA - Variáveis ausentes: {', '.join(missing_vars)}")
+        logger.warning("Bot funcionará apenas com tickets locais. Para habilitar HubSoft, configure todas as variáveis necessárias.")
+        HUBSOFT_ENABLED = False
+    else:
+        logger = logging.getLogger(__name__)
+        logger.info("Integração HubSoft HABILITADA - Todas as credenciais configuradas")
+else:
+    logger = logging.getLogger(__name__)
+    logger.info("Integração HubSoft DESABILITADA via configuração (HUBSOFT_ENABLED=false)")
