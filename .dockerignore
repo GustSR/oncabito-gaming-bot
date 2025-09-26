@@ -93,10 +93,8 @@ Dockerfile*
 docker-compose*.yml
 .dockerignore
 
-# Scripts (not needed in container)
-scripts/
-deployment/
-tools/
+# Scripts
+
 
 # Tests
 tests/
