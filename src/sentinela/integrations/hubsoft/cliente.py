@@ -1,13 +1,17 @@
-
 import logging
 import time
 import requests
-from src.sentinela.core.config import (
+from typing import Optional, Dict, Any
+from urllib.parse import urljoin
+
+from .config import (
     HUBSOFT_HOST,
     HUBSOFT_CLIENT_ID,
     HUBSOFT_CLIENT_SECRET,
     HUBSOFT_USER,
     HUBSOFT_PASSWORD,
+    HUBSOFT_ENDPOINT_TOKEN,
+    HUBSOFT_ENDPOINT_CLIENTE
 )
 
 logger = logging.getLogger(__name__)
@@ -16,7 +20,7 @@ logger = logging.getLogger(__name__)
 _access_token = None
 _token_expires_at = 0
 
-def _get_access_token() -> str | None:
+def _get_access_token() -> Optional[str]:
     """
     Busca um token de acesso da API Hubsoft, usando cache em memória.
     """
@@ -27,7 +31,8 @@ def _get_access_token() -> str | None:
         return _access_token
 
     logger.info("Token de acesso expirado ou inexistente. Solicitando um novo...")
-    token_endpoint = f"{HUBSOFT_HOST}oauth/token"
+    token_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_TOKEN.lstrip('/'))
+
     payload = {
         "grant_type": "password",
         "client_id": HUBSOFT_CLIENT_ID,
@@ -50,9 +55,12 @@ def _get_access_token() -> str | None:
         logger.error(f"Erro ao solicitar token de acesso da API Hubsoft: {e}")
         return None
 
-def get_client_data(cpf: str) -> dict | None:
+def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
     """
     Busca dados completos do cliente com serviço habilitado.
+
+    Args:
+        cpf: CPF do cliente (formatado ou não)
 
     Returns:
         dict: Dados do cliente se encontrado, None caso contrário
@@ -63,7 +71,8 @@ def get_client_data(cpf: str) -> dict | None:
         return None
 
     formatted_cpf = "".join(filter(str.isdigit, cpf))
-    api_endpoint = f"{HUBSOFT_HOST}api/v1/integracao/cliente"
+    api_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_CLIENTE.lstrip('/'))
+
     headers = {"Authorization": f"Bearer {token}"}
     params = {
         "busca": "cpf_cnpj",
@@ -72,7 +81,7 @@ def get_client_data(cpf: str) -> dict | None:
         "limit": 1
     }
 
-    logger.info(f"Buscando dados completos do cliente na API Hubsoft...")
+    logger.info("Buscando dados completos do cliente na API Hubsoft...")
 
     try:
         response = requests.get(api_endpoint, headers=headers, params=params, timeout=15)
@@ -87,10 +96,19 @@ def get_client_data(cpf: str) -> dict | None:
             clientes = data
 
         if clientes and len(clientes) > 0:
-            logger.info(f"Dados do cliente encontrados com sucesso.")
-            return clientes[0]  # Retorna o primeiro cliente encontrado
+            client_data = clientes[0]
+            logger.info("Dados do cliente encontrados com sucesso.")
 
-        logger.warning(f"Nenhum cliente encontrado para o CPF.")
+            # Enriquece os dados com informações úteis para atendimento
+            if 'servicos' in client_data and client_data['servicos']:
+                servico = client_data['servicos'][0]
+                client_data['id_cliente_servico'] = servico.get('id')
+                client_data['servico_nome'] = servico.get('nome', '')
+                client_data['servico_status'] = servico.get('status', '')
+
+            return client_data
+
+        logger.warning("Nenhum cliente encontrado para o CPF.")
         return None
 
     except requests.exceptions.RequestException as e:
@@ -103,6 +121,12 @@ def get_client_data(cpf: str) -> dict | None:
 def check_contract_status(cpf: str) -> bool:
     """
     Verifica se o cliente com o CPF informado possui qualquer serviço habilitado.
+
+    Args:
+        cpf: CPF do cliente (formatado ou não)
+
+    Returns:
+        bool: True se cliente tem serviço ativo, False caso contrário
     """
     token = _get_access_token()
     if not token:
@@ -110,7 +134,8 @@ def check_contract_status(cpf: str) -> bool:
         return False
 
     formatted_cpf = "".join(filter(str.isdigit, cpf))
-    api_endpoint = f"{HUBSOFT_HOST}api/v1/integracao/cliente"
+    api_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_CLIENTE.lstrip('/'))
+
     headers = {"Authorization": f"Bearer {token}"}
     params = {
         "busca": "cpf_cnpj",
@@ -119,7 +144,7 @@ def check_contract_status(cpf: str) -> bool:
         "limit": 1  # Só precisamos saber se existe pelo menos 1
     }
 
-    logger.info(f"Consultando API Hubsoft por cliente com serviço habilitado para o CPF.")
+    logger.info("Consultando API Hubsoft por cliente com serviço habilitado para o CPF.")
     logger.debug(f"URL: {api_endpoint}")
     logger.debug(f"Parâmetros: {params}")
 
@@ -128,12 +153,14 @@ def check_contract_status(cpf: str) -> bool:
         logger.info(f"Status da resposta: {response.status_code}")
         response.raise_for_status()
         data = response.json()
-        logger.info(f"Resposta completa da API Hubsoft: {data}")
-        logger.info(f"Tipo da resposta: {type(data)}")
+
+        logger.debug(f"Resposta completa da API Hubsoft: {data}")
+        logger.debug(f"Tipo da resposta: {type(data)}")
+
         if isinstance(data, list):
-            logger.info(f"Quantidade de resultados: {len(data)}")
+            logger.debug(f"Quantidade de resultados: {len(data)}")
         elif isinstance(data, dict):
-            logger.info(f"Chaves da resposta: {list(data.keys())}")
+            logger.debug(f"Chaves da resposta: {list(data.keys())}")
 
         # Verifica o formato da resposta e extrai os clientes
         clientes = []
@@ -148,23 +175,10 @@ def check_contract_status(cpf: str) -> bool:
 
         # Se encontrou pelo menos um cliente, consideramos válido
         if clientes and len(clientes) > 0:
-            
-            # --- LOCAL PARA FUTURA ALTERAÇÃO ---
-            # Se no futuro for necessário verificar um SERVIÇO ESPECÍFICO, a lógica
-            # de verificação entraria aqui. Seria algo como:
-            # client_data = data[0] # Pega o primeiro cliente retornado
-            # for servico in client_data.get('servicos', []):
-            #     if servico.get('servico') == 'NOME_DO_SERVICO_ESPECIFICO':
-            #         logger.info("Serviço específico encontrado!")
-            #         return True
-            # return False # Se não encontrar o serviço específico
-            # -------------------------------------
-
-            logger.info(f"Cliente com serviço habilitado encontrado para o CPF.")
+            logger.info("Cliente com serviço habilitado encontrado para o CPF.")
             return True
-        
-        logger.warning(f"Nenhum cliente com serviço habilitado encontrado para o CPF.")
 
+        logger.warning("Nenhum cliente com serviço habilitado encontrado para o CPF.")
         return False
 
     except requests.exceptions.RequestException as e:

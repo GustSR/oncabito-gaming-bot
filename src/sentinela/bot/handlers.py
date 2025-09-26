@@ -213,6 +213,156 @@ async def test_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             "❌ Erro ao testar configuração. Verifique os logs do bot."
         )
 
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /status - Consulta status dos atendimentos do cliente.
+    Funciona em chat privado e no tópico de suporte do grupo.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID
+    from src.sentinela.clients.db_client import get_user_data
+    from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
+    from src.sentinela.integrations.hubsoft.config import get_status_display, format_protocol
+    from datetime import datetime
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    message_thread_id = getattr(update.message, 'message_thread_id', None)
+    is_group_request = False
+
+    # Se for no grupo, verifica se é no tópico de suporte
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        if not SUPPORT_TOPIC_ID or str(message_thread_id) != str(SUPPORT_TOPIC_ID):
+            logger.info(f"Comando /status ignorado - tópico incorreto {message_thread_id}")
+            return
+
+        # Responde no grupo informando que será enviado no privado
+        await update.message.reply_html(
+            f"👤 {user.mention_html()}\n\n"
+            "📱 <b>Consultando seus atendimentos...</b>\n\n"
+            "🔒 As informações serão enviadas no <b>chat privado</b> por questões de privacidade.\n\n"
+            "💬 Verifique suas mensagens privadas comigo!"
+        )
+
+        # Marca que foi requisição do grupo
+        is_group_request = True
+
+    logger.info(f"Comando /status recebido de {user.username} (ID: {user.id})")
+
+    async def send_status_message(content: str):
+        """Envia mensagem do status - no privado se foi solicitado do grupo"""
+        if is_group_request:
+            from src.sentinela.core.config import TELEGRAM_TOKEN
+            from telegram import Bot
+            bot = Bot(token=TELEGRAM_TOKEN)
+            await bot.send_message(chat_id=user.id, text=content, parse_mode='HTML')
+        else:
+            await update.message.reply_html(content)
+
+    try:
+        # Busca dados do usuário
+        user_data = get_user_data(user.id)
+        if not user_data:
+            await send_status_message(
+                "❌ <b>Cliente não encontrado</b>\n\n"
+                "Para consultar seus atendimentos, você precisa ser um cliente OnCabo verificado.\n\n"
+                "📝 Use o comando /start para validar seu CPF primeiro."
+            )
+            return
+
+        client_cpf = user_data.get('cpf')
+        if not client_cpf:
+            await send_status_message(
+                "❌ <b>CPF não encontrado</b>\n\n"
+                "Não foi possível localizar seu CPF no sistema.\n\n"
+                "📝 Use o comando /start para revalidar seus dados."
+            )
+            return
+
+        # Busca IDs dos atendimentos criados pelo bot para este usuário
+        from src.sentinela.clients.db_client import get_user_bot_created_hubsoft_ids
+        bot_created_ids = get_user_bot_created_hubsoft_ids(user.id)
+
+        if not bot_created_ids:
+            await send_status_message(
+                "✅ <b>Nenhum atendimento do bot</b>\n\n"
+                "🎮 Você não possui atendimentos criados via bot em aberto no momento.\n\n"
+                "📞 Se precisar de ajuda, use o comando /suporte para abrir um novo chamado."
+            )
+            return
+
+        # Busca todos os atendimentos no HubSoft e filtra apenas os criados pelo bot
+        all_atendimentos = await hubsoft_atendimento_client.get_client_atendimentos(
+            client_cpf=client_cpf,
+            apenas_pendente=True  # Apenas atendimentos ativos
+        )
+
+        # Filtra apenas atendimentos criados pelo bot
+        atendimentos = []
+        for atendimento in all_atendimentos:
+            atendimento_id = str(atendimento.get('id', ''))
+            if atendimento_id in bot_created_ids:
+                atendimentos.append(atendimento)
+
+        if not atendimentos:
+            await send_status_message(
+                "ℹ️ <b>Atendimentos do bot finalizados</b>\n\n"
+                "🎮 Seus atendimentos criados via bot já foram finalizados ou não estão mais pendentes.\n\n"
+                "💡 <b>Observação:</b> Este comando mostra apenas atendimentos abertos via /suporte no bot.\n\n"
+                "📞 Para abrir um novo chamado, use o comando /suporte."
+            )
+            return
+
+        # Monta mensagem com lista de atendimentos
+        message = "🎮 <b>SEUS ATENDIMENTOS ONCABO (BOT)</b>\n\n"
+        message += f"💡 <b>Exibindo apenas atendimentos criados via /suporte no bot</b>\n"
+        message += f"📊 <b>Total encontrados:</b> {len(atendimentos)}\n\n"
+
+        for atendimento in atendimentos[:5]:  # Máximo 5 atendimentos
+            # Usa protocolo oficial da API ou formata se não houver
+            protocol = atendimento.get('protocolo') or format_protocol(atendimento.get('id'))
+            titulo = atendimento.get('titulo') or atendimento.get('tipo_atendimento', 'Suporte Gaming')
+            data_cadastro = atendimento.get('data_cadastro', '')
+
+            # Formata data
+            try:
+                if data_cadastro:
+                    dt = datetime.fromisoformat(data_cadastro.replace('Z', '+00:00'))
+                    data_formatada = dt.strftime("%d/%m/%Y às %H:%M")
+                else:
+                    data_formatada = "Data não disponível"
+            except:
+                data_formatada = "Data não disponível"
+
+            # Status com emoji
+            status_info = atendimento.get('status_display', {})
+            status_emoji = status_info.get('emoji', '❓')
+            status_name = status_info.get('name', 'Status Desconhecido')
+            status_message = status_info.get('message', 'Sem informações')
+
+            message += f"📋 <b>{protocol}</b> - {titulo[:30]}{'...' if len(titulo) > 30 else ''}\n"
+            message += f"{status_emoji} <b>Status:</b> {status_name}\n"
+            message += f"📅 <b>Aberto:</b> {data_formatada}\n"
+            message += f"💬 {status_message}\n\n"
+
+        # Adiciona rodapé
+        if len(atendimentos) > 5:
+            message += f"➕ <i>E mais {len(atendimentos) - 5} atendimentos...</i>\n\n"
+
+        message += (
+            "🔄 <b>Dica:</b> Os status são atualizados automaticamente.\n"
+            "📞 Para novo atendimento, use /suporte"
+        )
+
+        await send_status_message(message)
+
+    except Exception as e:
+        logger.error(f"Erro ao processar comando /status para {user.username}: {e}")
+        await send_status_message(
+            "❌ <b>Erro ao consultar atendimentos</b>\n\n"
+            "Ocorreu um erro ao buscar seus chamados. Tente novamente em alguns minutos.\n\n"
+            "📞 Se o problema persistir, use /suporte para abrir um novo chamado."
+        )
+
 async def suporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /suporte - Inicia processo de abertura de chamado de suporte.
@@ -455,6 +605,143 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_html(response_message)
 
 
+async def admin_tickets_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /admin_tickets - Consulta avançada de tickets para administradores.
+    Funciona apenas em chat privado e para usuários autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID, ADMIN_USER_IDS
+    from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
+    from datetime import datetime, timedelta
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /admin_tickets ignorado no grupo {chat_id}")
+        return
+
+    # Verifica se usuário é admin
+    if user.id not in ADMIN_USER_IDS:
+        await update.message.reply_html("❌ <b>Acesso negado</b>\n\nEste comando é restrito a administradores.")
+        return
+
+    logger.info(f"Comando /admin_tickets recebido de {user.username} (ID: {user.id})")
+
+    try:
+        # Parsear argumentos do comando
+        args = context.args
+        pagina = 0
+        itens_por_pagina = 10
+        data_inicio = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        data_fim = datetime.now().strftime('%Y-%m-%d')
+
+        # Processar argumentos opcionais
+        if args:
+            for arg in args:
+                if arg.startswith('pagina='):
+                    pagina = max(0, int(arg.split('=')[1]) - 1)  # Usuário usa 1-based, API usa 0-based
+                elif arg.startswith('limite='):
+                    itens_por_pagina = min(50, max(1, int(arg.split('=')[1])))
+                elif arg.startswith('dias='):
+                    dias = int(arg.split('=')[1])
+                    data_inicio = (datetime.now() - timedelta(days=dias)).strftime('%Y-%m-%d')
+
+        # Consulta usando endpoint otimizado
+        resultado = await hubsoft_atendimento_client.get_atendimentos_paginado(
+            pagina=pagina,
+            itens_por_pagina=itens_por_pagina,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            relacoes="atendimento_mensagem,cliente_servico"
+        )
+
+        if resultado['status'] != 'success':
+            await update.message.reply_html(
+                f"❌ <b>Erro na consulta:</b> {resultado.get('msg', 'Erro desconhecido')}"
+            )
+            return
+
+        atendimentos = resultado['atendimentos']
+        paginacao = resultado['paginacao']
+
+        if not atendimentos:
+            await update.message.reply_html(
+                f"📊 <b>CONSULTA ADMINISTRATIVA</b>\n\n"
+                f"📅 Período: {data_inicio} a {data_fim}\n"
+                f"📄 Página: {pagina + 1}\n\n"
+                f"✅ Nenhum atendimento encontrado no período."
+            )
+            return
+
+        # Monta relatório
+        message = f"📊 <b>RELATÓRIO ADMINISTRATIVO DE TICKETS</b>\n\n"
+        message += f"📅 <b>Período:</b> {data_inicio} a {data_fim}\n"
+        message += f"📄 <b>Página:</b> {pagina + 1} de {paginacao.get('ultima_pagina', 0) + 1}\n"
+        message += f"📈 <b>Total:</b> {paginacao.get('total_registros', 0)} tickets\n"
+        message += f"📋 <b>Exibindo:</b> {len(atendimentos)} tickets\n\n"
+        message += "───────────────────────────────────\n\n"
+
+        for i, atendimento in enumerate(atendimentos, 1):
+            protocolo = atendimento.get('protocolo', 'N/A')
+            status_info = atendimento.get('status', {})
+            status_name = status_info.get('display', 'Status Desconhecido') if isinstance(status_info, dict) else str(status_info)
+
+            # Cliente info
+            cliente_info = "Cliente Desconhecido"
+            if 'cliente_servico' in atendimento and 'cliente' in atendimento['cliente_servico']:
+                cliente_info = atendimento['cliente_servico']['cliente'].get('display', 'Cliente')
+
+            # Tempo em aberto formatado
+            tempo_formatado = atendimento.get('tempo_aberto_formatado', 'N/A')
+
+            # Tipo de atendimento
+            tipo_info = atendimento.get('tipo_atendimento', {})
+            tipo_nome = tipo_info.get('descricao', 'Tipo Desconhecido') if isinstance(tipo_info, dict) else str(tipo_info)
+
+            message += f"<b>{i}. #{protocolo}</b>\n"
+            message += f"👤 {cliente_info}\n"
+            message += f"🏷️ {tipo_nome}\n"
+            message += f"📊 {status_name} | ⏱️ {tempo_formatado}\n\n"
+
+        # Instruções de uso
+        message += "───────────────────────────────────\n\n"
+        message += "<b>💡 COMANDOS DISPONÍVEIS:</b>\n"
+        message += "• <code>/admin_tickets</code> - Esta página\n"
+        message += "• <code>/admin_tickets pagina=2</code> - Página específica\n"
+        message += "• <code>/admin_tickets limite=20</code> - Mais resultados\n"
+        message += "• <code>/admin_tickets dias=30</code> - Últimos 30 dias\n"
+        message += "• <code>/admin_tickets pagina=2 limite=5 dias=14</code> - Combinado"
+
+        await update.message.reply_html(message)
+
+    except ValueError as ve:
+        await update.message.reply_html(
+            f"❌ <b>Erro nos parâmetros:</b> {str(ve)}\n\n"
+            f"💡 Uso correto: <code>/admin_tickets pagina=1 limite=10 dias=7</code>"
+        )
+    except Exception as e:
+        logger.error(f"Erro no comando /admin_tickets: {e}")
+        await update.message.reply_html(
+            "❌ <b>Erro interno</b>\n\n"
+            "Ocorreu um erro ao processar a consulta. Verifique os logs do sistema."
+        )
+
+async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler para fotos enviadas em chat privado (anexos de suporte).
+    """
+    from src.sentinela.services.support_service import handle_photo_attachment
+
+    user = update.effective_user
+    photo = update.message.photo[-1]  # Pega a maior resolução
+
+    logger.info(f"Foto recebida de {user.username} (ID: {user.id})")
+
+    # Processa anexo de foto no contexto de suporte
+    await handle_photo_attachment(user.id, photo, user.username)
+
 def register_handlers(application: Application) -> None:
     """
     Registra todos os handlers de comando e mensagem na aplicação.
@@ -469,6 +756,8 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("test_topics", test_topics_command))
     application.add_handler(CommandHandler("scan_topics", scan_topics_command))
     application.add_handler(CommandHandler("suporte", suporte_command))
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("admin_tickets", admin_tickets_command))
 
     # Handler para callback queries (botões inline)
     application.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -477,6 +766,10 @@ def register_handlers(application: Application) -> None:
     from src.sentinela.core.config import TELEGRAM_GROUP_ID
     group_filter = filters.Chat(chat_id=int(TELEGRAM_GROUP_ID))
     application.add_handler(MessageHandler(group_filter, handle_group_message))
+
+    # Handler para fotos (anexos de suporte) - apenas fora do grupo
+    photo_filter = filters.PHOTO & ~group_filter
+    application.add_handler(MessageHandler(photo_filter, handle_photo_message))
 
     # Handler para mensagens privadas (CPF, etc) - apenas fora do grupo
     private_filter = filters.TEXT & ~filters.COMMAND & ~group_filter

@@ -36,6 +36,16 @@ SUPPORT_TOPIC_ID = get_env_var("SUPPORT_TOPIC_ID", "148")  # ID do tópico de su
 # --- Configurações de Notificações ---
 TECH_NOTIFICATION_CHANNEL_ID = get_env_var("TECH_NOTIFICATION_CHANNEL_ID")  # Canal técnico
 
+# --- Configurações de Administração ---
+ADMIN_USER_IDS_STR = get_env_var("ADMIN_USER_IDS", "")  # IDs dos usuários admin separados por vírgula
+ADMIN_USER_IDS = []
+if ADMIN_USER_IDS_STR:
+    try:
+        ADMIN_USER_IDS = [int(user_id.strip()) for user_id in ADMIN_USER_IDS_STR.split(',') if user_id.strip()]
+    except ValueError:
+        logger = logging.getLogger(__name__)
+        logger.error("Erro ao processar ADMIN_USER_IDS - verifique o formato no .env")
+
 # Valida configuração do canal técnico
 if not TECH_NOTIFICATION_CHANNEL_ID:
     logger = logging.getLogger(__name__)

@@ -22,7 +22,7 @@ sys.path.append(root_dir)
 sys.path.append(os.path.join(root_dir, 'src'))
 
 from src.sentinela.clients.db_client import get_all_active_users, mark_user_inactive
-from src.sentinela.clients.erp_client import check_contract_status
+from src.sentinela.integrations.hubsoft.cliente import check_contract_status
 from src.sentinela.services.group_service import is_user_in_group, remove_user_from_group, notify_administrators
 from src.sentinela.core.logging_config import setup_logging
 

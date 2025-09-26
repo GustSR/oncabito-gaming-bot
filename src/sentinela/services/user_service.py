@@ -1,5 +1,5 @@
 import logging
-from src.sentinela.clients import erp_client
+from src.sentinela.integrations.hubsoft import cliente as hubsoft_cliente
 from src.sentinela.clients.db_client import save_user_data
 from src.sentinela.services.invite_service import create_temporary_invite_link
 from src.sentinela.services.client_info_service import format_client_service_info
@@ -38,7 +38,7 @@ async def process_user_verification(cpf: str, user_id: int, username: str) -> st
 
     # Passo 2: Buscar dados completos do cliente
     logger.info(f"Buscando dados do cliente via API Hubsoft...")
-    client_data = erp_client.get_client_data(cpf)
+    client_data = hubsoft_cliente.get_client_data(cpf)
 
     if not client_data:
         logger.warning(f"Cliente não encontrado ou sem serviço ativo para o usuário {username} (ID: {user_id}).")

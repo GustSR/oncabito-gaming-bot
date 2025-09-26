@@ -1,7 +1,8 @@
 import logging
 
 # Em breve, estes módulos serão importados para uso real
-# from src.sentinela.clients import db_client, erp_client
+# from src.sentinela.clients import db_client
+# from src.sentinela.integrations.hubsoft import cliente as hubsoft_cliente
 # from src.sentinela.core.config import TELEGRAM_GROUP_ID
 # from src.sentinela.bot.bot_instance import application
 

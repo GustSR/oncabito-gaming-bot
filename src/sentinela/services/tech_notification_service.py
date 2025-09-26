@@ -47,26 +47,48 @@ async def send_critical_notification(ticket_data: dict, user_data: dict, protoco
         # Calcula tempo como cliente
         time_as_client = calculate_client_time(user_data.get('created_at'))
 
+        # Informações enriquecidas da integração HubSoft
+        hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
+        origem_sistema = "🤖 Bot Telegram (HubSoft Integrado)" if hubsoft_id else "🤖 Bot Telegram (Local)"
+        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
+
+        # Status da integração
+        integracao_status = ""
+        if hubsoft_id:
+            integracao_status = f"✅ <b>Sincronizado com HubSoft</b> (ID: {hubsoft_id})\n"
+        else:
+            integracao_status = f"⚠️ <b>Aguardando sincronização HubSoft</b>\n"
+
         message = (
             f"🚨⚡️ <b>CHAMADO CRÍTICO - {category_name.upper()}</b>\n\n"
-            f"📋 <b>Protocolo:</b> #{protocol}\n"
+            f"📋 <b>Protocolo:</b> {protocolo_display}\n"
+            f"🔗 <b>Sistema:</b> {origem_sistema}\n"
+            f"{integracao_status}"
             f"🕒 <b>Horário:</b> {current_time}\n\n"
             f"👤 <b>CLIENTE:</b>\n"
             f"• Nome: <b>{client_name}</b>\n"
             f"• CPF: {mask_cpf(user_data.get('cpf', ''))}\n"
             f"• Contrato: {user_data.get('service_name', 'Plano OnCabo')}\n"
-            f"• Cliente desde: {time_as_client}\n\n"
+            f"• Cliente desde: {time_as_client}\n"
+            f"• User ID: #{ticket_data.get('user_id', 'N/A')}\n\n"
             f"🎮 <b>PROBLEMA RELATADO:</b>\n"
             f"• Categoria: <b>{category_name}</b>\n"
             f"• Jogo afetado: <b>{affected_game}</b>\n"
             f"• Iniciado: {get_timing_display_name(ticket_data.get('problem_started'))}\n"
-            f"• Prioridade: 🚨 <b>ALTA</b>\n\n"
-            f"📝 <b>Descrição:</b>\n"
+            f"• Prioridade: 🚨 <b>ALTA</b>\n"
+            f"• Origem: Via formulário conversacional\n\n"
+            f"📝 <b>Descrição completa:</b>\n"
             f"<i>\"{truncate_text(ticket_data.get('description', ''), 200)}\"</i>\n\n"
             f"🔧 <b>AÇÕES RECOMENDADAS:</b>\n"
             f"{get_recommended_actions(ticket_data.get('category'), affected_game)}\n\n"
+            f"🎯 <b>CONTEXTO TÉCNICO:</b>\n"
+            f"• Coletado via bot inteligente\n"
+            f"• Dados validados automaticamente\n"
+            f"• Cliente guiado no diagnóstico\n"
+            f"• Categorização automática de prioridade\n"
+            f"{get_attachments_info(ticket_data)}\n\n"
             f"───────────────────────────────────\n"
-            f"📞 Responder no tópico 🆘 Suporte Gamer mencionando #{protocol}"
+            f"📞 Responder no tópico 🆘 Suporte Gamer mencionando {protocolo_display}"
         )
 
         await send_to_tech_channel(message)
@@ -82,15 +104,22 @@ async def send_medium_notification(ticket_data: dict, user_data: dict, protocol:
         affected_game = ticket_data.get('affected_game', 'Não especificado')
         category_name = get_category_display_name(ticket_data.get('category'))
 
+        # Informações da integração
+        hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
+        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
+        sync_status = "🔄 HubSoft" if hubsoft_id else "📱 Local"
+
         message = (
             f"🔧 <b>NOVO CHAMADO - {category_name.upper()}</b>\n\n"
-            f"📋 <b>Protocolo:</b> #{protocol}\n"
+            f"📋 <b>Protocolo:</b> {protocolo_display} | {sync_status}\n"
             f"👤 <b>Cliente:</b> {client_name}\n"
             f"🎮 <b>Problema:</b> {affected_game} - {category_name}\n"
             f"🕒 <b>Horário:</b> {current_time}\n"
-            f"⚡️ <b>Prioridade:</b> MÉDIA\n\n"
+            f"⚡️ <b>Prioridade:</b> MÉDIA\n"
+            f"🤖 <b>Origem:</b> Bot conversacional\n"
+            f"{get_attachments_info(ticket_data, compact=True)}\n\n"
             f"📝 <b>Resumo:</b> <i>{truncate_text(ticket_data.get('description', ''), 150)}</i>\n\n"
-            f"🔗 Responder no tópico 🆘 Suporte Gamer com #{protocol}"
+            f"🔗 Responder no tópico 🆘 Suporte Gamer com {protocolo_display}"
         )
 
         await send_to_tech_channel(message)
@@ -106,10 +135,18 @@ async def send_normal_notification(ticket_data: dict, user_data: dict, protocol:
         affected_game = ticket_data.get('affected_game', 'Não especificado')
         category_name = get_category_display_name(ticket_data.get('category'))
 
+        # Status de sincronização simplificado para notificação normal
+        hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
+        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
+        integration_emoji = "🔄" if hubsoft_id else "📱"
+
+        # Info compacta sobre anexos
+        attachments_compact = get_attachments_info(ticket_data, compact=True, emoji_only=True)
+
         message = (
             f"💡 <b>SUPORTE TÉCNICO - {category_name.upper()}</b>\n\n"
-            f"📋 #{protocol} | {client_name} | {affected_game}\n"
-            f"🕒 {current_time} | Prioridade: Normal\n\n"
+            f"📋 {protocolo_display} {integration_emoji} | {client_name} | {affected_game} {attachments_compact}\n"
+            f"🕒 {current_time} | Prioridade: Normal | 🤖 Bot\n\n"
             f"📝 <i>{truncate_text(ticket_data.get('description', ''), 100)}</i>\n\n"
             f"📞 Responder no 🆘 Suporte Gamer"
         )
@@ -265,7 +302,7 @@ async def notify_ticket_update(protocol: str, status: str, update_message: str =
 
         message = (
             f"{emoji} <b>ATUALIZAÇÃO DE CHAMADO</b>\n\n"
-            f"📋 <b>Protocolo:</b> #{protocol}\n"
+            f"📋 <b>Protocolo:</b> {protocol}\n"
             f"🔄 <b>Status:</b> {status.title()}\n"
             f"🕒 <b>Horário:</b> {current_time}\n"
         )
@@ -290,3 +327,38 @@ async def send_daily_summary():
         pass
     except Exception as e:
         logger.error(f"Erro ao enviar resumo diário: {e}")
+
+def get_attachments_info(ticket_data: dict, compact: bool = False, emoji_only: bool = False) -> str:
+    """
+    Retorna informações sobre anexos formatadas para notificações
+
+    Args:
+        ticket_data: Dados do ticket
+        compact: Se True, formato compacto
+        emoji_only: Se True, apenas emoji (para linha única)
+
+    Returns:
+        String formatada com info dos anexos
+    """
+    try:
+        attachments = ticket_data.get('attachments', [])
+
+        if not attachments:
+            if emoji_only:
+                return ""
+            return "• Anexos: Nenhum" if compact else "• Sem anexos enviados"
+
+        count = len(attachments)
+
+        if emoji_only:
+            return f"📎{count}"
+
+        if compact:
+            return f"📎 {count} anexo(s)"
+
+        # Formato completo
+        return f"• Anexos: {count} imagem(ns) anexada(s) ✅"
+
+    except Exception as e:
+        logger.warning(f"Erro ao processar info de anexos: {e}")
+        return "" if emoji_only else "• Anexos: Erro ao processar"

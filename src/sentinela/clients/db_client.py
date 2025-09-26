@@ -623,13 +623,14 @@ def save_support_ticket(ticket_data: dict) -> int:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO support_tickets
-                (user_id, username, user_mention, client_id, cpf, client_name,
+                (hubsoft_atendimento_id, user_id, username, user_mention, client_id, cpf, client_name,
                  category, affected_game, problem_started, description,
                  urgency_level, telegram_message_id, topic_thread_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                ticket_data.get('hubsoft_atendimento_id'),
                 ticket_data['user_id'], ticket_data['username'], ticket_data['user_mention'],
-                ticket_data['client_id'], ticket_data['cpf'], ticket_data['client_name'],
+                ticket_data.get('client_id', ticket_data['user_id']), ticket_data['cpf'], ticket_data['client_name'],
                 ticket_data['category'], ticket_data['affected_game'], ticket_data['problem_started'],
                 ticket_data['description'], ticket_data['urgency_level'],
                 ticket_data.get('telegram_message_id'), ticket_data.get('topic_thread_id')
@@ -738,4 +739,34 @@ def get_active_support_tickets(user_id: int) -> list:
 
     except sqlite3.Error as e:
         logger.error(f"Erro ao buscar tickets ativos para {user_id}: {e}")
+        return []
+
+def get_user_bot_created_hubsoft_ids(user_id: int) -> list:
+    """
+    Busca IDs do HubSoft de todos os atendimentos criados pelo bot para um usuário.
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        list: Lista de IDs do HubSoft de atendimentos criados pelo bot
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT hubsoft_atendimento_id
+                FROM support_tickets
+                WHERE user_id = ?
+                AND hubsoft_atendimento_id IS NOT NULL
+                AND hubsoft_atendimento_id != ''
+                ORDER BY created_at DESC
+            """, (user_id,))
+            results = cursor.fetchall()
+
+            # Retorna apenas os IDs, não os dicts completos
+            return [row['hubsoft_atendimento_id'] for row in results]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar IDs HubSoft para usuário {user_id}: {e}")
         return []
