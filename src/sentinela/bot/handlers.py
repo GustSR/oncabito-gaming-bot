@@ -7,6 +7,7 @@ from src.sentinela.services import user_service
 from src.sentinela.services.welcome_service import handle_new_member, handle_rules_button, should_bot_respond_in_topic
 from src.sentinela.services.topics_service import topics_service
 from src.sentinela.services.topics_discovery import scan_group_for_topics, get_group_real_info
+from src.sentinela.services.cpf_verification_service import CPFVerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +536,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer()  # Confirma o clique
         else:
             await query.answer("Erro ao processar solicitação")
+    elif query.data == "cpf_verification_cancel":
+        # Cancela verificação de CPF
+        await handle_cpf_verification_cancel(query)
     else:
         # Outros botões podem ser adicionados aqui
         await query.answer("Botão não reconhecido")
@@ -566,6 +570,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     support_handled = await handle_support_message(user.id, message_text, user.username)
     if support_handled:
         return  # Mensagem foi processada pelo sistema de suporte
+
+    # Verifica se há verificação de CPF pendente
+    pending_verification = CPFVerificationService.get_pending_verification(user.id)
+    if pending_verification:
+        await handle_cpf_verification_response(update, user.id, user.username, message_text)
+        return
 
     # Verifica se é primeira interação
     if is_first_interaction(user.id):
@@ -630,6 +640,98 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Envia a resposta do serviço (sucesso ou falha) de volta para o usuário
     await update.message.reply_html(response_message)
+
+async def handle_cpf_verification_response(update: Update, user_id: int, username: str, message_text: str):
+    """Handler para processar respostas de verificação de CPF"""
+    try:
+        from src.sentinela.utils.cpf_validator import extract_cpf_from_message, is_message_cpf_only
+
+        # Extrai CPF da mensagem
+        cpf = extract_cpf_from_message(message_text)
+
+        if not cpf or not is_message_cpf_only(message_text):
+            await update.message.reply_html(
+                f"❌ <b>Formato de CPF inválido!</b>\n\n"
+                f"📝 <b>Envie apenas seu CPF:</b>\n"
+                f"• Formato: 12345678901\n"
+                f"• Ou: 123.456.789-01\n\n"
+                f"🔄 Tente novamente:"
+            )
+            return
+
+        # Mostra mensagem de processamento
+        await update.message.reply_html("🔍 <b>Verificando CPF...</b> Aguarde um momento...")
+
+        # Processa verificação
+        result = await CPFVerificationService.process_cpf_verification(user_id, username, cpf)
+
+        # Busca dados da verificação para saber o tipo
+        verification = CPFVerificationService.get_pending_verification(user_id)
+        verification_type = verification['verification_type'] if verification else "auto_checkup"
+
+        # Envia resultado
+        await CPFVerificationService.send_verification_result(user_id, result, verification_type)
+
+        # Se foi bem-sucedida e era para suporte, orienta uso do /suporte
+        if result['success'] and verification_type == "support_request":
+            await update.message.reply_html(
+                f"🎮 <b>Agora você pode usar o suporte!</b>\n\n"
+                f"Digite /suporte para abrir seu chamado."
+            )
+
+    except Exception as e:
+        logger.error(f"Erro ao processar resposta de verificação de CPF para {user_id}: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Erro interno</b>\n\n"
+            f"Ocorreu um erro ao processar seu CPF. Tente novamente mais tarde."
+        )
+
+async def handle_cpf_verification_cancel(query):
+    """Handler para cancelamento de verificação de CPF"""
+    try:
+        user_id = query.from_user.id
+        username = query.from_user.username
+
+        # Busca verificação pendente
+        verification = CPFVerificationService.get_pending_verification(user_id)
+
+        if verification:
+            verification_type = verification['verification_type']
+
+            # Marca como cancelada
+            CPFVerificationService.complete_verification(
+                user_id, False, None, "user_cancelled"
+            )
+
+            if verification_type == "support_request":
+                message = (
+                    f"❌ <b>Verificação cancelada</b>\n\n"
+                    f"Você cancelou a verificação de CPF.\n\n"
+                    f"🔄 Para usar o suporte, digite /suporte novamente quando quiser confirmar seus dados."
+                )
+            else:  # auto_checkup
+                message = (
+                    f"❌ <b>Verificação cancelada</b>\n\n"
+                    f"Você cancelou a verificação de CPF.\n\n"
+                    f"⚠️ <b>Atenção:</b> Se não confirmar seus dados em 24 horas desde o primeiro aviso, "
+                    f"será removido do grupo automaticamente.\n\n"
+                    f"📝 Digite seu CPF quando quiser confirmar."
+                )
+
+            await query.edit_message_text(message, parse_mode='HTML')
+            logger.info(f"Verificação de CPF cancelada pelo usuário {username} (ID: {user_id})")
+        else:
+            await query.edit_message_text(
+                f"❌ <b>Nenhuma verificação encontrada</b>\n\n"
+                f"Não há verificação pendente para cancelar.",
+                parse_mode='HTML'
+            )
+
+        await query.answer("Verificação cancelada")
+
+    except Exception as e:
+        logger.error(f"Erro ao cancelar verificação de CPF: {e}")
+        await query.answer("Erro ao cancelar verificação")
 
 
 async def admin_tickets_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

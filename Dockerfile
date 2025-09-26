@@ -45,6 +45,7 @@ WORKDIR /app
 COPY --chown=oncabito:oncabito src/ ./src/
 COPY --chown=oncabito:oncabito main.py ./
 COPY --chown=oncabito:oncabito .env.example ./
+COPY --chown=oncabito:oncabito migrations/ ./migrations/
 
 # Create required directories
 RUN mkdir -p data/database logs \

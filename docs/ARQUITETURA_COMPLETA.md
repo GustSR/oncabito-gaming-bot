@@ -55,14 +55,15 @@ Código → Build → Test → Package → Deploy → Monitor
 ├── 🐍 Python 3.11+
 ├── 📝 Code Editor (VS Code)
 ├── 🔧 Git SCM
-└── 🧪 Local Testing Tools
+├── 🧪 Local Testing Tools
+└── 🔄 Migration System (Database Schema)
 ```
 
 **Responsabilidades:**
 - ✅ Desenvolvimento de funcionalidades
-- ✅ Testes locais
-- ✅ Validação de código
-- ✅ Commit e push
+- ✅ Testes locais e validação de migrations
+- ✅ Validação de código e integridade de dados
+- ✅ Commit e push com migrations automáticas
 
 ### 2️⃣ **Camada de Integração Contínua**
 
@@ -120,14 +121,21 @@ Código → Build → Test → Package → Deploy → Monitor
 🖥️ Production Server
 ├── 🐳 Docker Engine
 │   ├── oncabito-bot container
-│   ├── Volume mounts
+│   ├── Volume mounts (data persistence)
 │   └── Network configuration
-├── 💾 Persistent Storage
-│   ├── SQLite database
+├── 💾 Persistent Storage (Triple Protection)
+│   ├── SQLite database (primary)
+│   ├── JSON exports (backup)
 │   ├── Application logs
 │   └── Configuration files
+├── 🔄 Automated Systems
+│   ├── Daily checkup (contratos + CPF + integridade)
+│   ├── Re-verification system (CPF ↔ Telegram ID)
+│   ├── Migration engine (schema updates)
+│   └── Backup automation (3h, 6h, 9h)
 └── 🔍 Monitoring Stack
     ├── Health checks
+    ├── Data integrity validation
     ├── Log aggregation
     └── Metrics collection
 ```
@@ -438,22 +446,40 @@ Log Destinations:
 └── Optional: External aggregation (Loki, ELK)
 ```
 
-### 📈 **Métricas**
+### 📈 **Métricas Avançadas**
 
 ```
 Application Metrics:
-├── Bot uptime
+├── Bot uptime e responsividade
 ├── Message processing rate
-├── API response times
-├── Error rates
-└── User verification success/failure
+├── API response times (HubSoft + Telegram)
+├── Error rates por categoria
+├── User verification success/failure
+└── Re-verification effectiveness
+
+Data Protection Metrics:
+├── Database schema version
+├── Migration success rate
+├── Data integrity score (daily)
+├── Backup completion status
+├── Critical data export frequency
+└── Record count variations
+
+Business Metrics:
+├── Active users with valid CPF
+├── Support tickets created/resolved
+├── Group member retention rate
+├── Contract verification accuracy
+├── Re-verification conversion rate
+└── Daily checkup coverage
 
 Infrastructure Metrics:
 ├── Container resource usage
 ├── Deployment frequency
 ├── Build success/failure rate
 ├── Registry pull statistics
-└── Server resource utilization
+├── Server resource utilization
+└── Automated job execution (cron)
 ```
 
 ---
@@ -491,25 +517,85 @@ docker-compose down
 docker-compose up -d
 ```
 
-### 📦 **Backup and Recovery**
+### 📦 **Backup and Recovery (Triple Protection)**
 
 ```bash
-# Automated backup strategy
+# Automated backup strategy with data integrity
 #!/bin/bash
 BACKUP_DIR="/backup/oncabito-bot"
 DATE=$(date +%Y%m%d_%H%M%S)
 
-# Database backup
+# 1. SQLite Database backup
 cp /opt/oncabito-bot/data/database/sentinela.db $BACKUP_DIR/db-$DATE.db
 
-# Configuration backup
+# 2. JSON Critical Data Export
+python3 /app/scripts/export_critical_data.py
+cp /opt/oncabito-bot/data/exports/critical_data_latest.json $BACKUP_DIR/critical-$DATE.json
+
+# 3. Migration History
+cp -r /opt/oncabito-bot/data/migrations/ $BACKUP_DIR/migrations-$DATE/
+
+# 4. Configuration backup
 cp /opt/oncabito-bot/.env $BACKUP_DIR/env-$DATE.backup
 
-# Log archive
+# 5. Log archive
 tar -czf $BACKUP_DIR/logs-$DATE.tar.gz /opt/oncabito-bot/logs/
+
+# 6. Data integrity verification
+python3 /app/scripts/verify_data_integrity.py --backup-mode
 
 # Cleanup old backups (keep 30 days)
 find $BACKUP_DIR -type f -mtime +30 -delete
+```
+
+### 🔄 **Migration System Architecture**
+
+```
+Migration Engine
+├── 📋 Schema Versioning
+│   ├── migrations/001_initial.sql
+│   ├── migrations/002_support_system.sql
+│   ├── migrations/003_cpf_verification.sql
+│   └── migrations/migration_engine.py
+├── 🛡️ Data Protection
+│   ├── Before/after record counting
+│   ├── Integrity validation
+│   ├── Automatic rollback on >5% data loss
+│   └── Administrator notifications
+├── 🔄 Auto-execution
+│   ├── On bot startup (check pending migrations)
+│   ├── Pre-deployment verification
+│   └── Manual execution via scripts
+└── 📊 Migration History
+    ├── Applied migrations log
+    ├── Before/after statistics
+    ├── Rollback information
+    └── Integrity reports
+```
+
+### 🔍 **Re-verification System**
+
+```
+CPF Re-verification Flow
+├── 🔍 Detection Phase
+│   ├── Daily checkup (group members without CPF)
+│   ├── Support request (user without CPF data)
+│   └── Manual verification triggers
+├── ⏱️ Verification Process
+│   ├── Create pending verification (24h deadline)
+│   ├── Send private message with instructions
+│   ├── Handle CPF input and validation
+│   └── Save verified data with history
+├── 🚫 Timeout Handling
+│   ├── Automatic removal after 24h
+│   ├── Administrator notifications
+│   ├── Re-entry process with /start
+│   └── Grace period for administrators
+└── 📊 Statistics & Monitoring
+    ├── Pending verifications count
+    ├── Success/failure rates (24h)
+    ├── Expired verification cleanup
+    └── Data integrity validation
 ```
 
 ---
@@ -575,28 +661,46 @@ Mitigation Strategies:
 
 ## 🛠️ **FERRAMENTAS E TECNOLOGIAS**
 
-### 🧰 **Stack Tecnológico**
+### 🧰 **Stack Tecnológico Avançado**
 
 ```
 Development:
 ├── Python 3.11 (Runtime)
 ├── python-telegram-bot (Telegram SDK)
 ├── requests (HTTP client)
-├── sqlite3 (Database)
-└── asyncio (Async processing)
+├── sqlite3 (Database + migrations)
+├── asyncio (Async processing)
+└── Migration engine (schema versioning)
+
+Data Protection:
+├── SQLite (primary database)
+├── JSON exports (critical data backup)
+├── Migration system (schema evolution)
+├── Integrity validation (daily checks)
+└── Triple backup strategy (3h/6h/9h)
+
+Automation:
+├── Daily checkup (multi-phase)
+├── Re-verification system (24h deadline)
+├── Automatic cleanup (expired verifications)
+├── Cron jobs (backup + monitoring)
+└── Migration auto-execution
 
 Infrastructure:
 ├── Docker (Containerization)
 ├── Docker Compose (Orchestration)
 ├── GitHub Actions (CI/CD)
 ├── GitHub Container Registry (Artifacts)
-└── SSH (Deployment)
+├── SSH (Deployment)
+└── Volume persistence (data + logs)
 
 Monitoring:
 ├── Docker health checks
-├── Application logging
+├── Application logging (structured)
+├── Data integrity monitoring
 ├── System metrics
-└── Error tracking
+├── Error tracking
+└── Business metrics (verification rates)
 ```
 
 ### 🔧 **Ferramentas de Desenvolvimento**
@@ -688,4 +792,181 @@ Volume Mounting:
 
 ---
 
-*Documentação técnica criada em 23/09/2025 - OnCabito Gaming Bot v2.0*
+---
+
+## 🚀 **SISTEMA DE RE-VERIFICAÇÃO DETALHADO**
+
+### 🎯 **Arquitetura do Sistema**
+
+```mermaid
+graph TB
+    subgraph "Detection Layer"
+        DC[Daily Checkup]
+        SC[Support Command]
+        MC[Manual Check]
+    end
+
+    subgraph "Verification Engine"
+        PV[Pending Verifications]
+        CVS[CPF Verification Service]
+        VH[Verification History]
+    end
+
+    subgraph "Data Layer"
+        DB[(SQLite Database)]
+        TBL1[pending_cpf_verifications]
+        TBL2[cpf_verification_history]
+        TBL3[users]
+    end
+
+    subgraph "External APIs"
+        TG[Telegram API]
+        HS[HubSoft API]
+    end
+
+    DC --> CVS
+    SC --> CVS
+    MC --> CVS
+    CVS --> PV
+    CVS --> VH
+    PV --> DB
+    VH --> DB
+    DB --> TBL1
+    DB --> TBL2
+    DB --> TBL3
+    CVS --> TG
+    CVS --> HS
+```
+
+### ⚙️ **Fluxo de Execução**
+
+```
+1. DETECÇÃO (Detection Phase)
+   ├── Daily Checkup (6:00 AM)
+   │   ├── Scan all group members
+   │   ├── Check CPF data in database
+   │   └── Create pending verifications
+   ├── Support Request Trigger
+   │   ├── User sends /suporte
+   │   ├── Check user CPF data
+   │   └── Redirect to verification if missing
+   └── Manual Admin Commands
+       ├── /admin_reverify [user_id]
+       └── Manual verification creation
+
+2. VERIFICAÇÃO (Verification Phase)
+   ├── Create Pending Record
+   │   ├── 24-hour deadline
+   │   ├── Verification type tracking
+   │   └── Source action logging
+   ├── Send Private Message
+   │   ├── Clear instructions
+   │   ├── CPF format explanation
+   │   └── Deadline warning
+   └── Handle User Response
+       ├── CPF validation (format)
+       ├── HubSoft API verification
+       └── Database update
+
+3. FINALIZAÇÃO (Completion Phase)
+   ├── Success Path
+   │   ├── Save verified CPF
+   │   ├── Link to Telegram ID
+   │   ├── Allow group access
+   │   └── Log success history
+   ├── Failure Path
+   │   ├── Invalid CPF format
+   │   ├── No active contract
+   │   ├── Allow retry (max 3)
+   │   └── Log failure reason
+   └── Timeout Path
+       ├── 24-hour deadline reached
+       ├── Remove from group
+       ├── Notify administrators
+       └── Cleanup pending record
+```
+
+### 🔄 **Estados da Verificação**
+
+```
+Verification States:
+├── pending      # Aguardando resposta do usuário
+├── processing   # Validando CPF no HubSoft
+├── completed    # Verificação bem-sucedida
+├── failed       # Falha na verificação (CPF inválido)
+├── expired      # Prazo de 24h expirado
+└── cancelled    # Cancelado pelo usuário
+
+State Transitions:
+├── pending → processing (user sends CPF)
+├── processing → completed (valid CPF + active contract)
+├── processing → failed (invalid CPF or no contract)
+├── pending → expired (24-hour timeout)
+├── pending → cancelled (user cancels)
+└── failed → pending (retry attempt)
+```
+
+---
+
+## 🛡️ **SISTEMA DE MIGRATIONS DETALHADO**
+
+### 📋 **Estrutura de Migrations**
+
+```
+migrations/
+├── migration_engine.py     # Engine principal
+├── 001_initial.sql         # Schema inicial
+├── 002_support_system.sql  # Sistema de suporte
+├── 003_cpf_verification.sql # Re-verificação
+└── applied_migrations.log  # Histórico de aplicação
+```
+
+### 🔧 **Engine Features**
+
+```python
+class MigrationEngine:
+    def __init__(self, db_path):
+        self.features = [
+            "📊 Before/after record counting",
+            "🛡️ Data integrity validation",
+            "🔄 Automatic rollback on >5% loss",
+            "📬 Administrator notifications",
+            "📋 Detailed migration history",
+            "⚡ Auto-execution on startup",
+            "🔍 Schema version tracking"
+        ]
+```
+
+### 🚨 **Safety Mechanisms**
+
+```
+Data Protection:
+├── Pre-migration Backup
+│   ├── Full database copy
+│   ├── Critical data export
+│   └── Schema dump
+├── Integrity Validation
+│   ├── Record count comparison
+│   ├── Critical table verification
+│   └── Foreign key consistency
+├── Rollback Triggers
+│   ├── >5% data loss detection
+│   ├── Critical table empty
+│   └── Migration execution failure
+└── Administrator Alerts
+    ├── Telegram notifications
+    ├── Detailed error reports
+    └── Rollback confirmations
+```
+
+---
+
+*Documentação técnica atualizada em 26/09/2025 - OnCabito Gaming Bot v2.2*
+
+### 🆕 **Novidades v2.2**
+- ✨ **Sistema de Re-verificação Automática**: Detecção e recuperação de clientes órfãos
+- 🛡️ **Proteção Tripla de Dados**: SQLite + JSON + Migrations com integridade
+- 🔄 **Checkup Inteligente**: 3 fases com estatísticas detalhadas
+- ⚡ **Monitoramento 24/7**: Automação completa com cron jobs
+- 📊 **Sistema de Migrations**: Evolução segura do schema
+- 🎯 **Zero Perda de Dados**: Garantia total da ligação CPF ↔ Telegram ID

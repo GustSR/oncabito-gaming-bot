@@ -8,10 +8,13 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 
 ## ✨ **FUNCIONALIDADES**
 
-### 🔐 **Verificação Automática**
+### 🔐 **Verificação Automática Inteligente**
 - Validação de CPF contra API HubSoft
 - Verificação de contratos ativos
+- **Re-verificação automática** quando dados são perdidos
+- Detecção proativa de membros sem CPF
 - Links de convite temporários (30 min)
+- Sistema de migrations para preservação de dados
 
 ### 🆘 **Sistema de Suporte Completo**
 - Formulário conversacional inteligente em 6 etapas
@@ -28,15 +31,23 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 - Mensagens apenas em canais específicos
 
 ### ⏰ **Automação Avançada**
-- Checkup diário de usuários ativos
-- Remoção automática de contratos cancelados
+- **Checkup diário triplo**: contratos + CPF + integridade
+- Re-verificação automática de membros órfãos
+- Remoção automática de contratos cancelados (24h aviso)
+- **Sistema de migrations** com backup automático
+- **Proteção de dados críticos** (CPF ↔ Telegram ID)
 - Notificações para administradores
 - Fallback automático quando HubSoft offline
 
-### 📊 **Monitoramento**
-- Logs detalhados de todas as ações
+### 📊 **Monitoramento e Proteção de Dados**
+- **Sistema triplo de backup**: SQLite + JSON + Logs
+- Verificação de integridade diária automática
+- Export de dados críticos com histórico
+- Detecção de anomalias (perda > 5% de dados)
+- Logs estruturados de todas as ações
 - Configuração flexível de integrações
 - Relatórios de uso e tickets
+- **Migrations com contagem before/after**
 
 ---
 
@@ -214,16 +225,28 @@ python scripts/validate_checkup.py
 
 ### 🧪 **Testes e Debug**
 ```bash
+# Teste completo do sistema de re-verificação
+python3 scripts/test_cpf_verification.py
+
 # Teste de configuração
 ./tools/test_config_final.sh
 
-# Logs do checkup
-tail -f logs/checkup.log
+# Verificação manual de integridade
+python3 scripts/verify_data_integrity.py
 
-# Status do banco
+# Logs do sistema
+tail -f logs/checkup.log
+tail -f logs/integrity_check.log
+tail -f logs/backup_cron.log
+
+# Status completo do banco
 docker exec oncabito-bot python3 -c "
 from src.sentinela.clients.db_client import get_all_active_users
+from src.sentinela.services.cpf_verification_service import CPFVerificationService
 print(f'Usuários ativos: {len(get_all_active_users())}')
+stats = CPFVerificationService.get_verification_stats()
+print(f'Verificações pendentes: {stats[\"pending\"]}')
+print(f'Sucessos últimas 24h: {stats[\"last_24h\"][\"successful\"]}')
 "
 ```
 
@@ -231,20 +254,33 @@ print(f'Usuários ativos: {len(get_all_active_users())}')
 
 ## 🔄 **AUTOMAÇÃO**
 
-### ⏰ **Cron Jobs Configurados**
+### ⏰ **Cron Jobs Configurados (Automático)**
 ```bash
-# Checkup diário às 6:00
-0 6 * * * /caminho/do/projeto/deployment/run_checkup.sh
+# Setup automático via scripts/setup_monitoring.sh
 
-# Backup semanal (opcional)
-0 3 * * 0 cp /caminho/do/projeto/data/database/sentinela.db /backup/
+# Backup diário às 3:00 AM
+0 3 * * * ./scripts/backup_database.sh auto
+
+# Checkup completo às 6:00 AM (contratos + CPF + integridade)
+0 6 * * * python3 ./scripts/daily_checkup.py
+
+# Export de dados críticos às 9:00 AM
+0 9 * * * python3 ./scripts/export_critical_data.py
+
+# Verificação de integridade (manual)
+python3 ./scripts/verify_data_integrity.py
 ```
 
-### 📊 **Monitoramento Automático**
-- ✅ Verificação diária de contratos ativos
-- ✅ Remoção automática de usuários inativos
+### 📊 **Monitoramento Automático Completo**
+- ✅ **Checkup diário triplo** (contratos + CPF + integridade)
+- ✅ **Re-verificação automática** de membros sem CPF
+- ✅ **Backup automático** diário às 3h
+- ✅ **Verificação de integridade** às 6h
+- ✅ **Export de dados críticos** às 9h
+- ✅ Remoção automática de usuários inativos (com aviso 24h)
+- ✅ **Proteção tripla** contra perda de dados
 - ✅ Notificações para administradores
-- ✅ Logs detalhados de todas as operações
+- ✅ Logs estruturados de todas as operações
 
 ---
 
@@ -318,4 +354,12 @@ Este projeto é propriedade da **OnCabo Gaming Community**.
 
 ---
 
-*Documentação atualizada em 26/09/2025 - OnCabito Gaming Bot v2.1*
+*Documentação atualizada em 26/09/2025 - OnCabito Gaming Bot v2.2*
+
+### 🆕 **Novidades v2.2**
+- ✨ **Sistema de Re-verificação Automática**: Detecta e recupera clientes que perderam dados
+- 🛡️ **Proteção Tripla de Dados**: Backup SQLite + JSON + Migrations com integridade
+- 🔄 **Checkup Inteligente**: 3 fases (contratos + CPF + integridade) com estatísticas completas
+- ⚡ **Monitoramento 24/7**: Backup às 3h, checkup às 6h, export às 9h
+- 📊 **Sistema de Migrations**: Contagem before/after, detecção de anomalias
+- 🎯 **Zero Perda de Dados**: Garantia total da ligação CPF ↔ Telegram ID

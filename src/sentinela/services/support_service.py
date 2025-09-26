@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -8,6 +9,7 @@ from src.sentinela.clients.db_client import (
     can_create_support_ticket, start_support_conversation, get_support_conversation,
     update_support_conversation, save_support_ticket, get_user_data, get_active_support_tickets
 )
+from src.sentinela.services.cpf_verification_service import CPFVerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +78,9 @@ async def handle_support_request(user_id: int, username: str, user_mention: str)
 
         # Busca dados do cliente no banco
         user_data = get_user_data(user_id)
-        if not user_data:
-            await send_client_not_found_message(user_id)
+        if not user_data or not user_data.get('cpf'):
+            # Inicia processo de re-verificação de CPF
+            await handle_missing_cpf_for_support(user_id, username, user_mention)
             return
 
         # Inicia conversa de formulário
@@ -397,7 +400,7 @@ async def send_welcome_support_message(user_id: int, user_data: dict, user_menti
             f"🔍 Vejo que você é <b>{time_as_client}</b> e tem o <b>{service_name}</b> - perfeito para gaming!\n\n"
             f"Vamos resolver seu problema juntos? Preciso de algumas informações para criar seu atendimento oficial no nosso sistema.\n\n"
             f"⏱️ Levará apenas <b>2-3 minutos</b> e você terá um protocolo para acompanhar.\n\n"
-            f"🚀 <b>Vamos começar?</b>"
+            f"🎯 <b>Qual tipo de problema você está enfrentando?</b>"
         )
 
         # Cria botões para categorias
@@ -482,19 +485,23 @@ async def process_category_selection(user_id: int, category: str, form_data: dic
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
-            await bot.send_message(
-                chat_id=user_id,
-                text=game_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-
-            # Atualiza progress
+            # Primeiro: Progress bar atualizado
             progress_text = "🎯 <b>CRIANDO SEU ATENDIMENTO</b> [▓▓░░░░] 2/6\n\n✅ Tipo do problema: " + form_data['category_name'] + "\n🔄 Jogo afetado...\n⏳ Quando começou...\n⏳ Detalhes...\n⏳ Anexos (opcional)...\n⏳ Confirmação..."
             await bot.send_message(
                 chat_id=user_id,
                 text=progress_text,
                 parse_mode='HTML'
+            )
+
+            # Aguarda para dar sensação de progresso
+            await asyncio.sleep(1.5)
+
+            # Depois: Pergunta da etapa
+            await bot.send_message(
+                chat_id=user_id,
+                text=game_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
 
     except Exception as e:
@@ -519,19 +526,23 @@ async def process_game_selection(user_id: int, game: str, form_data: dict, usern
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
-            await bot.send_message(
-                chat_id=user_id,
-                text=timing_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-
-            # Atualiza progress
+            # Primeiro: Progress bar atualizado
             progress_text = f"🎯 <b>CRIANDO SEU ATENDIMENTO</b> [▓▓▓░░░] 3/6\n\n✅ Tipo do problema: {form_data['category_name']}\n✅ Jogo afetado: {form_data['game_name']}\n🔄 Quando começou...\n⏳ Detalhes...\n⏳ Anexos (opcional)...\n⏳ Confirmação..."
             await bot.send_message(
                 chat_id=user_id,
                 text=progress_text,
                 parse_mode='HTML'
+            )
+
+            # Aguarda para dar sensação de progresso
+            await asyncio.sleep(1.5)
+
+            # Depois: Pergunta da etapa
+            await bot.send_message(
+                chat_id=user_id,
+                text=timing_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
 
     except Exception as e:
@@ -560,17 +571,21 @@ async def process_timing_selection(user_id: int, timing: str, form_data: dict, u
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
-            await bot.send_message(
-                chat_id=user_id,
-                text=description_text,
-                parse_mode='HTML'
-            )
-
-            # Atualiza progress
+            # Primeiro: Progress bar atualizado
             progress_text = f"🎯 <b>CRIANDO SEU ATENDIMENTO</b> [▓▓▓▓░░] 4/6\n\n✅ Tipo do problema: {form_data['category_name']}\n✅ Jogo afetado: {form_data['game_name']}\n✅ Quando começou: {form_data['timing_name']}\n🔄 Coletando detalhes...\n⏳ Anexos (opcional)...\n⏳ Confirmação..."
             await bot.send_message(
                 chat_id=user_id,
                 text=progress_text,
+                parse_mode='HTML'
+            )
+
+            # Aguarda para dar sensação de progresso
+            await asyncio.sleep(1.5)
+
+            # Depois: Pergunta da etapa
+            await bot.send_message(
+                chat_id=user_id,
+                text=description_text,
                 parse_mode='HTML'
             )
 
@@ -624,19 +639,23 @@ async def send_attachments_step(user_id: int, form_data: dict, username: str):
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
-            await bot.send_message(
-                chat_id=user_id,
-                text=attachments_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-
-            # Progress bar para anexos
+            # Primeiro: Progress bar atualizado
             progress_text = f"🎯 <b>CRIANDO SEU ATENDIMENTO</b> [▓▓▓▓▓░] 5/6\n\n✅ Tipo do problema: {form_data['category_name']}\n✅ Jogo afetado: {form_data['game_name']}\n✅ Quando começou: {form_data['timing_name']}\n✅ Detalhes coletados\n🔄 Anexos (opcional)...\n⏳ Confirmação..."
             await bot.send_message(
                 chat_id=user_id,
                 text=progress_text,
                 parse_mode='HTML'
+            )
+
+            # Aguarda para dar sensação de progresso
+            await asyncio.sleep(1.5)
+
+            # Depois: Pergunta da etapa
+            await bot.send_message(
+                chat_id=user_id,
+                text=attachments_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
 
     except Exception as e:
@@ -739,20 +758,24 @@ async def send_confirmation_summary(user_id: int, form_data: dict, username: str
 
         bot = Bot(token=TELEGRAM_TOKEN)
         async with bot:
-            await bot.send_message(
-                chat_id=user_id,
-                text=summary_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-
-            # Progress final
+            # Primeiro: Progress bar final
             attachments_status = f"✅ Anexos: {len(form_data.get('attachments', []))} imagem(ns)" if form_data.get('attachments') else "✅ Anexos: Nenhum"
             progress_text = f"🎯 <b>CRIANDO SEU ATENDIMENTO</b> [▓▓▓▓▓▓] 6/6\n\n✅ Tipo do problema: {form_data['category_name']}\n✅ Jogo afetado: {form_data['game_name']}\n✅ Quando começou: {form_data['timing_name']}\n✅ Detalhes coletados\n{attachments_status}\n🔄 Aguardando confirmação..."
             await bot.send_message(
                 chat_id=user_id,
                 text=progress_text,
                 parse_mode='HTML'
+            )
+
+            # Aguarda para dar sensação de progresso
+            await asyncio.sleep(1.5)
+
+            # Depois: Resumo e confirmação
+            await bot.send_message(
+                chat_id=user_id,
+                text=summary_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
 
     except Exception as e:
@@ -1008,12 +1031,66 @@ async def send_support_blocked_message(user_id: int, permission: dict):
     except Exception as e:
         logger.error(f"Erro ao enviar mensagem de bloqueio: {e}")
 
-async def send_client_not_found_message(user_id: int):
-    """Envia mensagem quando cliente não é encontrado"""
+async def handle_missing_cpf_for_support(user_id: int, username: str, user_mention: str):
+    """Lida com ausência de CPF durante solicitação de suporte"""
+    try:
+        # Verifica se já existe uma verificação pendente
+        pending_verification = CPFVerificationService.get_pending_verification(user_id)
+
+        if pending_verification:
+            # Já tem verificação pendente, apenas lembra o usuário
+            await send_existing_verification_reminder(user_id)
+            return
+
+        # Cria nova verificação pendente
+        success = CPFVerificationService.create_pending_verification(
+            user_id=user_id,
+            username=username,
+            user_mention=user_mention,
+            verification_type="support_request",
+            source_action="/suporte command"
+        )
+
+        if success:
+            # Envia solicitação de verificação
+            await CPFVerificationService.send_cpf_verification_request(
+                user_id, username, "support_request"
+            )
+            logger.info(f"Verificação de CPF iniciada para suporte - usuário {username} (ID: {user_id})")
+        else:
+            # Fallback para mensagem antiga se verificação falhar
+            await send_client_not_found_message(user_id)
+
+    except Exception as e:
+        logger.error(f"Erro ao lidar com CPF ausente para suporte - usuário {user_id}: {e}")
+        await send_client_not_found_message(user_id)
+
+async def send_existing_verification_reminder(user_id: int):
+    """Lembra usuário que já tem verificação pendente"""
     message = (
-        f"❌ <b>Cliente não encontrado</b>\n\n"
-        f"Para usar o suporte, você precisa ser um cliente OnCabo verificado.\n\n"
-        f"📝 Use o comando /start para validar seu CPF primeiro."
+        f"⏳ <b>Verificação de CPF pendente</b>\n\n"
+        f"Você já tem uma verificação de CPF em andamento.\n\n"
+        f"📝 <b>Para continuar:</b>\n"
+        f"• Digite seu CPF (apenas números)\n"
+        f"• Ou aguarde até 24 horas para expirar\n\n"
+        f"🎮 <b>Após confirmar seu CPF, você poderá usar o /suporte normalmente!</b>"
+    )
+
+    bot = Bot(token=TELEGRAM_TOKEN)
+    async with bot:
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            parse_mode='HTML'
+        )
+
+async def send_client_not_found_message(user_id: int):
+    """Envia mensagem quando cliente não é encontrado (fallback)"""
+    message = (
+        f"❌ <b>Dados não encontrados</b>\n\n"
+        f"Para usar o suporte, preciso confirmar seus dados primeiro.\n\n"
+        f"📝 Use o comando /start para registrar seu CPF ou aguarde - "
+        f"estou tentando verificar automaticamente."
     )
 
     bot = Bot(token=TELEGRAM_TOKEN)
