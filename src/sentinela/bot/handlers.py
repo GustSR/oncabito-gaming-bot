@@ -685,7 +685,7 @@ async def handle_cpf_verification_response(update: Update, user_id: int, usernam
             )
 
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("1️⃣ Usar esta conta e remover a outra", callback_data=f"confirm_remap:{user_id}:{existing_user_id}:{cpf}")],
+                [InlineKeyboardButton("1️⃣ Usar esta conta e remover a outra", callback_data=f"confirm_remap:{user_id}:{existing_user_id}:{cpf}:{username}")],
                 [InlineKeyboardButton("2️⃣ Cancelar e manter a conta antiga", callback_data="cpf_verification_cancel")]
             ])
 
@@ -720,11 +720,12 @@ async def handle_remap_confirmation(query: CallbackQuery) -> None:
     try:
         await query.answer("Processando sua solicitação...")
         
-        # Formato: confirm_remap:{new_user_id}:{old_user_id}:{cpf}
+        # Formato: confirm_remap:{new_user_id}:{old_user_id}:{cpf}:{new_username}
         parts = query.data.split(':')
         new_user_id = int(parts[1])
         old_user_id = int(parts[2])
         cpf = parts[3]
+        new_username = parts[4]
 
         # Medida de segurança: apenas o novo usuário pode confirmar
         if query.from_user.id != new_user_id:
@@ -734,7 +735,7 @@ async def handle_remap_confirmation(query: CallbackQuery) -> None:
         await query.edit_message_text("🔄 <b>Processando...</b> Removendo conta antiga e atualizando seus dados.")
 
         # Chamar o serviço para fazer a troca
-        success = await CPFVerificationService.remap_cpf_to_new_user(new_user_id, old_user_id, cpf)
+        success = await CPFVerificationService.remap_cpf_to_new_user(new_user_id, old_user_id, cpf, new_username)
 
         if success:
             message = (
