@@ -196,6 +196,16 @@ async def run_daily_checkup():
     logger.info("=== INICIANDO CHECKUP DIÁRIO COMPLETO ===")
 
     try:
+        # Busca administradores do grupo para isenção
+        bot = Bot(token=TELEGRAM_TOKEN)
+        try:
+            admins = await bot.get_chat_administrators(TELEGRAM_GROUP_ID)
+            admin_ids = {admin.user.id for admin in admins}
+            logger.info(f"Encontrados {len(admin_ids)} administradores. Eles serão isentos da verificação de contrato.")
+        except Exception as e:
+            logger.error(f"Não foi possível buscar a lista de administradores: {e}. Ninguém será isento.")
+            admin_ids = set()
+
         # === PARTE 1: VERIFICAÇÃO DE CONTRATOS ATIVOS (ORIGINAL) ===
         logger.info("🔍 FASE 1: Verificando contratos ativos...")
 
@@ -205,11 +215,19 @@ async def run_daily_checkup():
 
         removed_count = 0
         verified_count = 0
+        skipped_admins_count = 0
         removed_users = []  # Lista para armazenar usuários removidos
 
         for user_data in active_users:
             user_id = user_data['user_id']
             client_name = user_data['client_name']
+
+            # Pula a verificação para administradores
+            if user_id in admin_ids:
+                logger.info(f"⏭️  Pulando verificação para o administrador {client_name} (ID: {user_id})")
+                skipped_admins_count += 1
+                verified_count += 1 # Conta como verificado para manter as estatísticas corretas
+                continue
 
             try:
                 logger.info(f"📋 Processando usuário {client_name} (ID: {user_id})...")
@@ -235,6 +253,7 @@ async def run_daily_checkup():
 
         logger.info(f"✅ FASE 1 CONCLUÍDA - Verificação de contratos")
         logger.info(f"   • Usuários com acesso mantido: {verified_count}")
+        logger.info(f"   • Administradores isentos: {skipped_admins_count}")
         logger.info(f"   • Usuários removidos por contrato inativo: {removed_count}")
 
         # === PARTE 2: DETECÇÃO DE MEMBROS SEM CPF ===

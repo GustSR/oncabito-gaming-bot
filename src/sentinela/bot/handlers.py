@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, ChatMemberUpdated
+from telegram import Update, ChatMemberUpdated, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, ChatMemberHandler, CallbackQueryHandler
 
 # Importa o serviço de usuário para ser usado no handler
@@ -536,6 +536,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer()  # Confirma o clique
         else:
             await query.answer("Erro ao processar solicitação")
+    elif query.data.startswith("confirm_remap:"):
+        await handle_remap_confirmation(query)
     elif query.data == "cpf_verification_cancel":
         # Cancela verificação de CPF
         await handle_cpf_verification_cancel(query)
@@ -665,6 +667,33 @@ async def handle_cpf_verification_response(update: Update, user_id: int, usernam
         # Processa verificação
         result = await CPFVerificationService.process_cpf_verification(user_id, username, cpf)
 
+        # --- TRATAMENTO DE CPF DUPLICADO ---
+        if result.get('reason') == 'duplicate_cpf':
+            existing_username = result.get('existing_username', 'N/A')
+            existing_user_id = result.get('existing_user_id')
+
+            message = (
+                f"⚠️ <b>CPF já em uso!</b>\n\n"
+                f"Este CPF já está associado à conta Telegram: <b>@{existing_username}</b>.\n\n"
+                f"Por segurança, um CPF só pode estar ligado a uma conta por vez.\n\n"
+                f"🤔 <b>O que você deseja fazer?</b>\n\n"
+                f"1️⃣ <b>Usar esta conta (<code>@{username}</code>) e remover a outra?</b>\n"
+                f"   - A conta @{existing_username} será removida do grupo.\n"
+                f"   - Este CPF será associado a você.\n\n"
+                f"2️⃣ <b>Manter a conta antiga (<code>@{existing_username}</code>)?</b>\n"
+                f"   - Sua verificação atual será cancelada."
+            )
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("1️⃣ Usar esta conta e remover a outra", callback_data=f"confirm_remap:{user_id}:{existing_user_id}:{cpf}")],
+                [InlineKeyboardButton("2️⃣ Cancelar e manter a conta antiga", callback_data="cpf_verification_cancel")]
+            ])
+
+            await update.message.reply_html(message, reply_markup=keyboard)
+            return
+
+        # --- FIM TRATAMENTO DE CPF DUPLICADO ---
+
         # Busca dados da verificação para saber o tipo
         verification = CPFVerificationService.get_pending_verification(user_id)
         verification_type = verification['verification_type'] if verification else "auto_checkup"
@@ -685,6 +714,41 @@ async def handle_cpf_verification_response(update: Update, user_id: int, usernam
             f"❌ <b>Erro interno</b>\n\n"
             f"Ocorreu um erro ao processar seu CPF. Tente novamente mais tarde."
         )
+
+async def handle_remap_confirmation(query: CallbackQuery) -> None:
+    """Handler para confirmar a troca de conta associada a um CPF."""
+    try:
+        await query.answer("Processando sua solicitação...")
+        
+        # Formato: confirm_remap:{new_user_id}:{old_user_id}:{cpf}
+        parts = query.data.split(':')
+        new_user_id = int(parts[1])
+        old_user_id = int(parts[2])
+        cpf = parts[3]
+
+        # Medida de segurança: apenas o novo usuário pode confirmar
+        if query.from_user.id != new_user_id:
+            await query.edit_message_text("❌ Ação não permitida.")
+            return
+
+        await query.edit_message_text("🔄 <b>Processando...</b> Removendo conta antiga e atualizando seus dados.")
+
+        # Chamar o serviço para fazer a troca
+        success = await CPFVerificationService.remap_cpf_to_new_user(new_user_id, old_user_id, cpf)
+
+        if success:
+            message = (
+                f"✅ <b>Sucesso!</b>\n\n"
+                f"O CPF <code>{cpf}</code> agora está associado a esta conta.\n\n"
+                f"A conta antiga foi removida do grupo para garantir a segurança."
+            )
+            await query.edit_message_text(message, parse_mode='HTML')
+        else:
+            await query.edit_message_text("❌ <b>Erro ao processar a troca.</b> Por favor, contate um administrador.", parse_mode='HTML')
+
+    except Exception as e:
+        logger.error(f"Erro ao processar a confirmação de remap: {e}")
+        await query.edit_message_text("❌ <b>Erro interno.</b> Tente novamente ou contate um administrador.")
 
 async def handle_cpf_verification_cancel(query):
     """Handler para cancelamento de verificação de CPF"""

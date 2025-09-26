@@ -5,7 +5,7 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 
 from src.sentinela.core.config import TELEGRAM_TOKEN
-from src.sentinela.clients.db_client import get_db_connection, save_user_data
+from src.sentinela.clients.db_client import get_db_connection, save_user_data, get_user_by_cpf
 from src.sentinela.integrations.hubsoft.cliente import get_client_data
 from src.sentinela.services.group_service import remove_user_from_group
 
@@ -270,18 +270,20 @@ class CPFVerificationService:
                     'message': 'CPF não encontrado em nossa base de clientes ativos.'
                 }
 
-            # Salva dados do cliente no banco local
-            user_data = {
-                'user_id': user_id,
-                'username': username,
-                'cpf': clean_cpf,
-                'client_name': client_data.get('nome', ''),
-                'service_name': client_data.get('servico_nome', ''),
-                'service_status': client_data.get('servico_status', ''),
-                'is_active': True
-            }
+            # VERIFICA DUPLICIDADE DE CPF
+            existing_user = get_user_by_cpf(clean_cpf)
+            if existing_user and existing_user['user_id'] != user_id:
+                logger.warning(f"CPF duplicado detectado. CPF {clean_cpf} já está em uso pelo user_id {existing_user['user_id']}")
+                return {
+                    'success': False,
+                    'reason': 'duplicate_cpf',
+                    'message': 'Este CPF já está sendo usado por outra conta no Telegram.',
+                    'existing_user_id': existing_user['user_id'],
+                    'existing_username': existing_user.get('username', 'N/A')
+                }
 
-            if save_user_data(user_data):
+            # Salva dados do cliente no banco local
+            if save_user_data(user_id, username, clean_cpf, client_data):
                 CPFVerificationService.complete_verification(
                     user_id, True, clean_cpf
                 )
@@ -443,6 +445,31 @@ class CPFVerificationService:
 
         except Exception as e:
             logger.error(f"Erro ao enviar aviso de expiração para {user_id}: {e}")
+
+    @staticmethod
+    async def remap_cpf_to_new_user(new_user_id: int, old_user_id: int, cpf: str, new_username: str) -> bool:
+        """Remapeia um CPF para um novo usuário, removendo o antigo."""
+        from src.sentinela.clients.db_client import update_user_id_for_cpf
+
+        try:
+            logger.info(f"Iniciando remapeamento de CPF {cpf}. Novo dono: {new_user_id}, antigo: {old_user_id}")
+
+            # 1. Remove o usuário antigo do grupo
+            reason = f"CPF associado a uma nova conta Telegram (@{new_username})"
+            await remove_user_from_group(old_user_id, reason)
+
+            # 2. Atualiza o banco de dados para o novo usuário
+            update_user_id_for_cpf(cpf, new_user_id, new_username)
+
+            # 3. Completa a verificação para o novo usuário
+            CPFVerificationService.complete_verification(new_user_id, True, cpf)
+            
+            logger.info(f"CPF {cpf} remapeado com sucesso para o usuário {new_user_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Erro crítico ao remapear CPF {cpf} para o usuário {new_user_id}: {e}")
+            return False
 
     @staticmethod
     def get_verification_stats() -> dict:

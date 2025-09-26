@@ -247,6 +247,32 @@ def get_user_data(user_id: int) -> dict | None:
         logger.error(f"Erro ao buscar dados do usuário {user_id}: {e}")
         return None
 
+def get_user_by_cpf(cpf: str) -> dict | None:
+    """
+    Busca dados do usuário no banco pelo CPF.
+
+    Args:
+        cpf: CPF do usuário
+
+    Returns:
+        dict: Dados do usuário ou None se não encontrado
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM users WHERE cpf = ?
+            """, (cpf,))
+            result = cursor.fetchone()
+
+            if result:
+                return dict(result)
+            return None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar dados do usuário pelo CPF {cpf}: {e}")
+        return None
+
 def get_all_active_users() -> list:
     """
     Retorna todos os usuários ativos (para checkups diários futuros).
@@ -770,3 +796,37 @@ def get_user_bot_created_hubsoft_ids(user_id: int) -> list:
     except sqlite3.Error as e:
         logger.error(f"Erro ao buscar IDs HubSoft para usuário {user_id}: {e}")
         return []
+
+def update_user_id_for_cpf(cpf: str, new_user_id: int, new_username: str) -> bool:
+    """
+    Atualiza o user_id e username para um registro de usuário existente baseado no CPF.
+    Usado para remapear um CPF para uma nova conta do Telegram.
+
+    Args:
+        cpf: O CPF do registro a ser atualizado.
+        new_user_id: O novo ID de usuário do Telegram.
+        new_username: O novo username do Telegram.
+
+    Returns:
+        bool: True se a atualização foi bem-sucedida, False caso contrário.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE users
+                SET user_id = ?, username = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE cpf = ?
+            """, (new_user_id, new_username, cpf))
+            conn.commit()
+
+            if cursor.rowcount > 0:
+                logger.info(f"Registro de usuário para CPF {cpf[:3]}*** remapeado para o novo user_id {new_user_id}")
+                return True
+            else:
+                logger.warning(f"Nenhum usuário encontrado com o CPF {cpf[:3]}*** para remapear.")
+                return False
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao remapear CPF para o novo user_id {new_user_id}: {e}")
+        return False
