@@ -52,7 +52,44 @@ def main() -> None:
     # 4. Registra os handlers (comandos /start, mensagens, etc.)
     register_handlers(application)
 
-    # 5. Inicia o bot e o mantém rodando para receber atualizações
+    # 5. Inicia serviços de background (monitoramento HubSoft)
+    async def startup_services():
+        """Inicia serviços de background"""
+        try:
+            from src.sentinela.services.hubsoft_monitor_service import hubsoft_monitor_service
+            from src.sentinela.services.admin_detection_service import admin_detection_service
+            from src.sentinela.clients.db_client import update_support_tickets_table_for_sync, create_administrators_table
+
+            # Atualiza estrutura do banco para sincronização
+            update_support_tickets_table_for_sync()
+
+            # Garante que a tabela de administradores existe
+            create_administrators_table()
+
+            # Realiza sincronização inicial de administradores
+            await admin_detection_service.sync_administrators_to_database()
+
+            # Inicia monitoramento HubSoft
+            await hubsoft_monitor_service.start_monitoring()
+
+            logger.info("✅ Serviços de background iniciados com sucesso")
+        except Exception as e:
+            logger.error(f"Erro ao iniciar serviços de background: {e}")
+
+    async def shutdown_services():
+        """Para serviços de background"""
+        try:
+            from src.sentinela.services.hubsoft_monitor_service import hubsoft_monitor_service
+            await hubsoft_monitor_service.stop_monitoring()
+            logger.info("🔄 Serviços de background parados")
+        except Exception as e:
+            logger.error(f"Erro ao parar serviços de background: {e}")
+
+    # Registra callbacks de inicialização e shutdown
+    application.post_init = startup_services
+    application.post_shutdown = shutdown_services
+
+    # 6. Inicia o bot e o mantém rodando para receber atualizações
     logger = logging.getLogger(__name__)
     logger.info("--- Iniciando o bot Sentinela ---")
     application.run_polling()

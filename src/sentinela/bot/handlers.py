@@ -9,8 +9,115 @@ from src.sentinela.services.topics_service import topics_service
 from src.sentinela.services.topics_discovery import scan_group_for_topics, get_group_real_info
 from src.sentinela.services.cpf_verification_service import CPFVerificationService
 
+# Importa sistema de controle de acesso
+from src.sentinela.core.access_control import require_access, require_command_permission, AccessLevel
+
 logger = logging.getLogger(__name__)
 
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /help - Mostra comandos disponíveis baseados no nível de acesso do usuário.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
+    from src.sentinela.core.access_control import PermissionManager, AccessLevel
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /help ignorado no grupo {chat_id}")
+        return
+
+    logger.info(f"Comando /help recebido de {user.username} (ID: {user.id})")
+
+    try:
+        # Obtém nível de acesso do usuário
+        user_level = PermissionManager.get_user_access_level(user.id)
+        user_level_display = PermissionManager.get_access_level_display(user_level)
+        available_commands = PermissionManager.get_available_commands(user.id)
+
+        # Descrições dos comandos
+        command_descriptions = {
+            "start": "Inicia verificação de CPF e acesso ao sistema",
+            "status": "Consulta status dos seus atendimentos",
+            "suporte": "Abre um novo chamado de suporte",
+            "help": "Mostra esta lista de comandos disponíveis",
+
+            # Comandos administrativos
+            "test_group": "Testa acesso e configuração do grupo",
+            "topics": "Lista tópicos descobertos no grupo",
+            "auto_config": "Sugere configuração automática de tópicos",
+            "test_topics": "Testa configuração atual de tópicos",
+            "scan_topics": "Força descoberta de tópicos via API",
+            "admin_tickets": "Consulta avançada de tickets (admin)",
+            "sync_tickets": "Força sincronização manual de tickets",
+            "health_hubsoft": "Verifica status da integração HubSoft",
+            # Comandos de gerenciamento de administradores
+            "sync_admins": "Sincroniza administradores do grupo",
+            "list_admins": "Lista administradores detectados"
+        }
+
+        # Monta mensagem de ajuda
+        message = f"📚 <b>COMANDOS DISPONÍVEIS</b>\n\n"
+        message += f"👤 <b>Seu nível:</b> {user_level_display}\n\n"
+
+        if user_level == AccessLevel.USER:
+            message += "🎮 <b>COMANDOS DE USUÁRIO:</b>\n"
+        elif user_level == AccessLevel.ADMIN:
+            message += "🎮 <b>COMANDOS DE USUÁRIO:</b>\n"
+
+        # Lista comandos de usuário comum
+        user_commands = ["start", "status", "suporte", "help"]
+        for cmd in user_commands:
+            if cmd in available_commands:
+                description = command_descriptions.get(cmd, "Comando do sistema")
+                message += f"• <code>/{cmd}</code> - {description}\n"
+
+        # Lista comandos administrativos se for admin
+        if user_level == AccessLevel.ADMIN:
+            admin_commands = [cmd for cmd in available_commands if cmd not in user_commands]
+            if admin_commands:
+                message += f"\n👑 <b>COMANDOS ADMINISTRATIVOS:</b>\n"
+                for cmd in sorted(admin_commands):
+                    description = command_descriptions.get(cmd, "Comando administrativo")
+                    message += f"• <code>/{cmd}</code> - {description}\n"
+
+        message += "\n"
+
+        # Adiciona informações contextuais
+        if user_level == AccessLevel.USER:
+            message += (
+                "💡 <b>COMO USAR:</b>\n"
+                "1️⃣ Use /start se ainda não verificou seu CPF\n"
+                "2️⃣ Use /suporte para abrir chamados\n"
+                "3️⃣ Use /status para acompanhar seus tickets\n\n"
+                "🎯 <b>Principais funcionalidades:</b>\n"
+                "• Verificação automática de clientes OnCabo\n"
+                "• Sistema de suporte com formulário inteligente\n"
+                "• Acompanhamento em tempo real de chamados\n"
+                "• Sincronização automática com HubSoft"
+            )
+        elif user_level == AccessLevel.ADMIN:
+            message += (
+                "🔧 <b>RECURSOS ADMINISTRATIVOS:</b>\n"
+                "• Gestão de tópicos do grupo\n"
+                "• Consulta avançada de tickets\n"
+                "• Sincronização manual HubSoft\n"
+                "• Monitoramento de sistema\n"
+                "• Health checks e diagnósticos\n\n"
+                "💡 Comandos administrativos funcionam apenas em chat privado."
+            )
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro no comando /help: {e}")
+        await update.message.reply_html(
+            "❌ <b>Erro ao exibir ajuda</b>\n\n"
+            "Ocorreu um erro ao carregar a lista de comandos. Tente novamente."
+        )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -35,6 +142,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"📝 Por favor, envie seu <b>CPF</b> para validarmos seu acesso:"
     )
 
+@require_command_permission("test_group")
 async def test_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler para o comando /test_group. Testa o acesso ao grupo configurado.
@@ -83,6 +191,7 @@ async def test_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(response)
 
 
+@require_command_permission("topics")
 async def topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /topics - Lista todos os tópicos descobertos no grupo.
@@ -112,6 +221,7 @@ async def topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "❌ Erro ao listar tópicos. Verifique os logs do bot."
         )
 
+@require_command_permission("auto_config")
 async def auto_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /auto_config - Sugere configurações automáticas de tópicos.
@@ -141,6 +251,7 @@ async def auto_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             "❌ Erro ao gerar configuração automática. Verifique os logs do bot."
         )
 
+@require_command_permission("test_topics")
 async def test_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /test_topics - Testa a configuração atual de tópicos.
@@ -216,11 +327,12 @@ async def test_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Comando /status - Consulta status dos atendimentos do cliente.
+    Comando /status - Consulta status dos atendimentos do cliente com sincronização automática.
     Funciona em chat privado e no tópico de suporte do grupo.
     """
     from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID, HUBSOFT_ENABLED
     from src.sentinela.clients.db_client import get_user_data
+    from src.sentinela.services.hubsoft_sync_service import hubsoft_sync_service
     from datetime import datetime
 
     # Importa HubSoft apenas se habilitado
@@ -252,6 +364,12 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"Comando /status recebido de {user.username} (ID: {user.id})")
 
+    # Mostra feedback de carregamento
+    if not is_group_request:
+        loading_message = await update.message.reply_html("🔍 <b>Consultando seus atendimentos...</b>")
+    else:
+        loading_message = None
+
     async def send_status_message(content: str):
         """Envia mensagem do status - no privado se foi solicitado do grupo"""
         if is_group_request:
@@ -260,6 +378,12 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             bot = Bot(token=TELEGRAM_TOKEN)
             await bot.send_message(chat_id=user.id, text=content, parse_mode='HTML')
         else:
+            # Remove mensagem de carregamento e envia resultado
+            if loading_message:
+                try:
+                    await loading_message.delete()
+                except:
+                    pass
             await update.message.reply_html(content)
 
     try:
@@ -269,7 +393,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_status_message(
                 "❌ <b>Cliente não encontrado</b>\n\n"
                 "Para consultar seus atendimentos, você precisa ser um cliente OnCabo verificado.\n\n"
-                "📝 Use o comando /start para validar seu CPF primeiro."
+                "📝 Use /start para validar seu CPF."
             )
             return
 
@@ -278,7 +402,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_status_message(
                 "❌ <b>CPF não encontrado</b>\n\n"
                 "Não foi possível localizar seu CPF no sistema.\n\n"
-                "📝 Use o comando /start para revalidar seus dados."
+                "📝 Use /start para revalidar seus dados."
             )
             return
 
@@ -288,15 +412,34 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if not bot_created_ids:
             await send_status_message(
-                "✅ <b>Nenhum atendimento do bot</b>\n\n"
-                "🎮 Você não possui atendimentos criados via bot em aberto no momento.\n\n"
-                "📞 Se precisar de ajuda, use o comando /suporte para abrir um novo chamado."
+                "✅ <b>Nenhum atendimento em aberto</b>\n\n"
+                "🎮 Você não possui atendimentos em aberto no momento.\n\n"
+                "📞 Use /suporte para abrir um novo chamado quando precisar."
             )
             return
 
-        # Se HubSoft estiver habilitado, busca atendimentos e filtra
-        atendimentos = []
+        # === NOVA LÓGICA COM SINCRONIZAÇÃO ===
+
+        # 1. Primeiro verifica se HubSoft está online e faz health check
+        hubsoft_online = False
         if HUBSOFT_ENABLED:
+            try:
+                hubsoft_online = await hubsoft_sync_service.check_hubsoft_health()
+                if hubsoft_online:
+                    # Se HubSoft está online, tenta sincronizar status dos tickets do usuário
+                    await hubsoft_sync_service.sync_all_active_tickets_status()
+                    logger.info(f"Sincronização automática de status executada para consulta de {user.username}")
+                else:
+                    logger.warning("HubSoft offline durante consulta de status")
+            except Exception as e:
+                logger.error(f"Erro durante verificação de health/sincronização: {e}")
+                hubsoft_online = False
+
+        # 2. Busca atendimentos com dados locais atualizados
+        atendimentos = []
+        sync_indicators = {}  # Para indicadores visuais de sincronização
+
+        if HUBSOFT_ENABLED and hubsoft_online:
             try:
                 # Busca todos os atendimentos no HubSoft e filtra apenas os criados pelo bot
                 all_atendimentos = await hubsoft_atendimento_client.get_client_atendimentos(
@@ -304,45 +447,92 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     apenas_pendente=True  # Apenas atendimentos ativos
                 )
 
-                # Filtra apenas atendimentos criados pelo bot
+                # Filtra apenas atendimentos criados pelo bot e adiciona indicadores
                 for atendimento in all_atendimentos:
                     atendimento_id = str(atendimento.get('id', ''))
                     if atendimento_id in bot_created_ids:
                         atendimentos.append(atendimento)
+                        sync_indicators[atendimento_id] = {
+                            'is_synced': True,
+                            'source': 'hubsoft',
+                            'last_sync': datetime.now().strftime("%H:%M")
+                        }
 
             except Exception as e:
                 logger.error(f"Erro ao consultar HubSoft: {e}")
+                # Fallback para dados locais quando HubSoft falha
+                from src.sentinela.clients.db_client import get_all_active_tickets_with_hubsoft_id
+                local_tickets = get_all_active_tickets_with_hubsoft_id()
+                for ticket in local_tickets:
+                    if ticket['user_id'] == user.id:
+                        sync_indicators[str(ticket['id'])] = {
+                            'is_synced': False,
+                            'source': 'local_fallback',
+                            'error': 'HubSoft temporariamente indisponível'
+                        }
+
                 await send_status_message(
-                    "⚠️ <b>HubSoft temporariamente indisponível</b>\n\n"
-                    "🎮 Seus atendimentos existem, mas não conseguimos acessar o status no momento.\n\n"
-                    "🔄 Tente novamente em alguns minutos ou contate o suporte."
+                    "⚠️ <b>Sistema temporariamente indisponível</b>\n\n"
+                    "🎮 Seus atendimentos existem e estão seguros!\n\n"
+                    "🔄 Tente novamente em alguns minutos.\n\n"
+                    "💡 <b>Não se preocupe:</b> Tudo será atualizado automaticamente quando o sistema voltar."
                 )
                 return
+        elif HUBSOFT_ENABLED and not hubsoft_online:
+            # HubSoft habilitado mas offline - mostra dados locais com indicação
+            from src.sentinela.clients.db_client import get_all_active_tickets_with_hubsoft_id
+            local_tickets = get_all_active_tickets_with_hubsoft_id()
+
+            offline_count = 0
+            for ticket in local_tickets:
+                if ticket['user_id'] == user.id:
+                    offline_count += 1
+                    sync_indicators[str(ticket['id'])] = {
+                        'is_synced': False,
+                        'source': 'local_offline',
+                        'last_attempt': ticket.get('last_sync_attempt', 'Nunca')
+                    }
+
+            await send_status_message(
+                f"🔄 <b>Verificando seus atendimentos...</b>\n\n"
+                f"🎮 Você possui {offline_count} atendimento(s) em acompanhamento.\n\n"
+                f"📶 <b>Status do sistema:</b> Atualização temporariamente indisponível\n\n"
+                f"✅ <b>Seus dados estão seguros!</b> Estamos trabalhando para manter "
+                f"tudo atualizado automaticamente.\n\n"
+                f"📞 Para abrir um novo chamado, use o comando /suporte."
+            )
+            return
         else:
             # HubSoft desabilitado - mostra apenas info local
             await send_status_message(
-                "ℹ️ <b>Modo local ativo</b>\n\n"
-                f"🎮 Você possui {len(bot_created_ids)} atendimento(s) registrado(s) localmente.\n\n"
-                "💡 <b>Observação:</b> HubSoft não está configurado. Seus tickets estão salvos apenas localmente.\n\n"
+                "ℹ️ <b>Consultando seus atendimentos...</b>\n\n"
+                f"🎮 Você possui {len(bot_created_ids)} atendimento(s) registrado(s).\n\n"
+                "💡 <b>Observação:</b> Seus tickets estão salvos e sendo acompanhados.\n\n"
                 "📞 Para abrir um novo chamado, use o comando /suporte."
             )
             return
 
         if not atendimentos:
             await send_status_message(
-                "ℹ️ <b>Atendimentos do bot finalizados</b>\n\n"
-                "🎮 Seus atendimentos criados via bot já foram finalizados ou não estão mais pendentes.\n\n"
-                "💡 <b>Observação:</b> Este comando mostra apenas atendimentos abertos via /suporte no bot.\n\n"
-                "📞 Para abrir um novo chamado, use o comando /suporte."
+                "✅ <b>Atendimentos finalizados</b>\n\n"
+                "🎮 Seus atendimentos já foram finalizados ou não estão mais pendentes.\n\n"
+                "📞 Use /suporte para abrir um novo chamado quando precisar."
             )
             return
 
-        # Monta mensagem com lista de atendimentos
-        message = "🎮 <b>SEUS ATENDIMENTOS ONCABO (BOT)</b>\n\n"
-        message += f"💡 <b>Exibindo apenas atendimentos criados via /suporte no bot</b>\n"
-        message += f"📊 <b>Total encontrados:</b> {len(atendimentos)}\n\n"
+        # Monta mensagem com lista de atendimentos e indicadores simples
+        status_icon = "🟢" if hubsoft_online else "🔄"
 
-        for atendimento in atendimentos[:5]:  # Máximo 5 atendimentos
+        message = f"{status_icon} <b>SEUS ATENDIMENTOS ONCABO</b>\n\n"
+        if hubsoft_online:
+            message += f"✅ <b>Status:</b> Atualizado em tempo real\n"
+        else:
+            message += f"🔄 <b>Status:</b> Aguardando atualização\n"
+        message += f"📊 <b>Total:</b> {len(atendimentos)} atendimento(s)\n\n"
+
+        for i, atendimento in enumerate(atendimentos[:5], 1):  # Máximo 5 atendimentos
+            atendimento_id = str(atendimento.get('id', ''))
+
             # Usa protocolo oficial da API ou formata se não houver
             if HUBSOFT_ENABLED:
                 protocol = atendimento.get('protocolo') or format_protocol(atendimento.get('id'))
@@ -367,7 +557,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             status_name = status_info.get('name', 'Status Desconhecido')
             status_message = status_info.get('message', 'Sem informações')
 
-            message += f"📋 <b>{protocol}</b> - {titulo[:30]}{'...' if len(titulo) > 30 else ''}\n"
+            # Indicador simples de status
+            sync_info = sync_indicators.get(atendimento_id, {})
+            if sync_info.get('is_synced', False):
+                sync_badge = "✅"
+            else:
+                sync_badge = "🔄"
+
+            message += f"{sync_badge} <b>{protocol}</b> - {titulo[:30]}{'...' if len(titulo) > 30 else ''}\n"
             message += f"{status_emoji} <b>Status:</b> {status_name}\n"
             message += f"📅 <b>Aberto:</b> {data_formatada}\n"
             message += f"💬 {status_message}\n\n"
@@ -376,19 +573,26 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if len(atendimentos) > 5:
             message += f"➕ <i>E mais {len(atendimentos) - 5} atendimentos...</i>\n\n"
 
-        message += (
-            "🔄 <b>Dica:</b> Os status são atualizados automaticamente.\n"
-            "📞 Para novo atendimento, use /suporte"
-        )
+        # Rodapé simples e claro
+        if hubsoft_online:
+            message += (
+                "✅ <b>Tudo atualizado!</b> Informações em tempo real.\n\n"
+                "📞 Para novo atendimento, use /suporte"
+            )
+        else:
+            message += (
+                "🔄 <b>Verificando atualizações...</b> Seus dados estão seguros.\n\n"
+                "📞 Para novo atendimento, use /suporte"
+            )
 
         await send_status_message(message)
 
     except Exception as e:
         logger.error(f"Erro ao processar comando /status para {user.username}: {e}")
         await send_status_message(
-            "❌ <b>Erro ao consultar atendimentos</b>\n\n"
-            "Ocorreu um erro ao buscar seus chamados. Tente novamente em alguns minutos.\n\n"
-            "📞 Se o problema persistir, use /suporte para abrir um novo chamado."
+            "❌ <b>Erro temporário</b>\n\n"
+            "Não foi possível consultar seus atendimentos no momento.\n\n"
+            "🔄 Tente novamente em alguns minutos."
         )
 
 async def suporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -420,6 +624,7 @@ async def suporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Processa a solicitação de suporte
     await handle_support_request(user.id, user.username, user.mention_html())
 
+@require_command_permission("scan_topics")
 async def scan_topics_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /scan_topics - Força descoberta de tópicos via API.
@@ -544,6 +749,70 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         # Outros botões podem ser adicionados aqui
         await query.answer("Botão não reconhecido")
+
+async def handle_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler para comandos desconhecidos ou não autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
+    from src.sentinela.core.access_control import PermissionManager
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    message_text = update.message.text
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        return
+
+    # Verifica se é um comando (começa com /)
+    if not message_text.startswith('/'):
+        return
+
+    # Extrai o nome do comando
+    command_parts = message_text.split()
+    command_name = command_parts[0][1:]  # Remove o /
+
+    logger.info(f"Comando desconhecido/não autorizado: /{command_name} de {user.username} (ID: {user.id})")
+
+    try:
+        # Verifica se o comando existe mas o usuário não tem permissão
+        all_commands = set()
+        for level_commands in PermissionManager.COMMAND_PERMISSIONS.values():
+            all_commands.update(level_commands)
+
+        user_level = PermissionManager.get_user_access_level(user.id)
+        user_level_display = PermissionManager.get_access_level_display(user_level)
+        available_commands = PermissionManager.get_available_commands(user.id)
+
+        if command_name in all_commands:
+            # Comando existe mas usuário não tem permissão
+            message = (
+                f"🚫 <b>Comando não disponível</b>\n\n"
+                f"O comando <code>/{command_name}</code> é restrito para administradores.\n\n"
+                f"💡 <b>Seus comandos disponíveis:</b>\n"
+            )
+            for cmd in sorted(available_commands):
+                message += f"• /{cmd}\n"
+            message += f"\n📱 Use /help para mais informações."
+        else:
+            # Comando não existe
+            message = (
+                f"❓ <b>Comando não encontrado</b>\n\n"
+                f"💡 <b>Comandos disponíveis:</b>\n"
+            )
+            for cmd in sorted(available_commands):
+                message += f"• /{cmd}\n"
+            message += f"\n📱 Use /help para mais detalhes."
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro ao processar comando desconhecido: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Comando não reconhecido</b>\n\n"
+            f"Use /help para ver os comandos disponíveis."
+        )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -799,12 +1068,375 @@ async def handle_cpf_verification_cancel(query):
         await query.answer("Erro ao cancelar verificação")
 
 
+@require_command_permission("sync_tickets")
+async def sync_tickets_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /sync_tickets - Força sincronização manual de tickets (admin only).
+    Funciona apenas em chat privado e para usuários autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
+    from src.sentinela.services.hubsoft_sync_service import hubsoft_sync_service
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /sync_tickets ignorado no grupo {chat_id}")
+        return
+
+    logger.info(f"Comando /sync_tickets recebido de {user.username} (ID: {user.id})")
+
+    try:
+        # Verifica argumentos
+        args = context.args
+        sync_type = args[0] if args else "all"
+
+        await update.message.reply_html("🔄 <b>Iniciando sincronização...</b>")
+
+        if sync_type == "offline":
+            # Sincroniza apenas tickets offline
+            result = await hubsoft_sync_service.sync_offline_tickets_to_hubsoft()
+        elif sync_type == "status":
+            # Sincroniza apenas status de tickets ativos
+            result = await hubsoft_sync_service.sync_all_active_tickets_status()
+        else:
+            # Sincronização completa (padrão)
+            await update.message.reply_html("🔄 Executando sincronização completa...")
+
+            # Primeiro sincroniza tickets offline
+            offline_result = await hubsoft_sync_service.sync_offline_tickets_to_hubsoft()
+
+            # Depois sincroniza status
+            status_result = await hubsoft_sync_service.sync_all_active_tickets_status()
+
+            result = {
+                "status": "completed",
+                "offline_sync": offline_result,
+                "status_sync": status_result
+            }
+
+        # Formata resposta
+        if result.get("status") == "completed":
+            if sync_type == "all":
+                offline_stats = result.get("offline_sync", {}).get("results", {})
+                status_stats = result.get("status_sync", {}).get("results", {})
+
+                message = (
+                    f"✅ <b>SINCRONIZAÇÃO COMPLETA CONCLUÍDA</b>\n\n"
+                    f"📤 <b>Tickets Offline:</b>\n"
+                    f"• Total processados: {offline_stats.get('total_tickets', 0)}\n"
+                    f"• Sucessos: {offline_stats.get('success_count', 0)}\n"
+                    f"• Falhas: {offline_stats.get('failed_count', 0)}\n\n"
+                    f"🔄 <b>Status Updates:</b>\n"
+                    f"• Total atualizados: {status_stats.get('updated_count', 0)}\n"
+                    f"• Falhas: {status_stats.get('failed_count', 0)}\n\n"
+                    f"⏰ <b>Concluído:</b> {datetime.now().strftime('%d/%m/%Y às %H:%M')}"
+                )
+            else:
+                stats = result.get("results", {})
+                message = (
+                    f"✅ <b>SINCRONIZAÇÃO ({sync_type.upper()}) CONCLUÍDA</b>\n\n"
+                    f"📊 <b>Resultados:</b>\n"
+                    f"• Total processados: {stats.get('total_tickets', 0)}\n"
+                    f"• Sucessos: {stats.get('success_count', stats.get('updated_count', 0))}\n"
+                    f"• Falhas: {stats.get('failed_count', 0)}\n\n"
+                    f"⏰ <b>Concluído:</b> {datetime.now().strftime('%d/%m/%Y às %H:%M')}"
+                )
+
+            # Adiciona erros se houver
+            errors = []
+            if sync_type == "all":
+                errors.extend(result.get("offline_sync", {}).get("results", {}).get("errors", []))
+            else:
+                errors.extend(stats.get("errors", []))
+
+            if errors:
+                message += f"\n\n⚠️ <b>Erros encontrados:</b>\n"
+                for error in errors[:3]:  # Máximo 3 erros
+                    message += f"• {error}\n"
+                if len(errors) > 3:
+                    message += f"• ... e mais {len(errors)-3} erros"
+        else:
+            message = (
+                f"❌ <b>ERRO NA SINCRONIZAÇÃO</b>\n\n"
+                f"💬 {result.get('message', 'Erro desconhecido')}\n\n"
+                f"🔧 Verifique os logs do sistema para mais detalhes."
+            )
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro no comando /sync_tickets: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Erro interno</b>\n\n"
+            f"Ocorreu um erro durante a sincronização: {str(e)}\n\n"
+            f"🔧 Verifique os logs do sistema."
+        )
+
+@require_command_permission("sync_admins")
+async def sync_admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /sync_admins - Sincroniza administradores do grupo automaticamente (admin only).
+    Funciona apenas em chat privado e para usuários autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
+    from src.sentinela.services.admin_detection_service import admin_detection_service
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /sync_admins ignorado no grupo {chat_id}")
+        return
+
+    logger.info(f"Comando /sync_admins recebido de {user.username} (ID: {user.id})")
+
+    try:
+        await update.message.reply_html("🔍 <b>Detectando administradores do grupo...</b>")
+
+        # Executa sincronização
+        result = await admin_detection_service.sync_administrators_to_database()
+
+        if result.get("status") == "success":
+            stats = result.get("statistics", {})
+
+            message = (
+                f"✅ <b>SINCRONIZAÇÃO DE ADMINISTRADORES CONCLUÍDA</b>\n\n"
+                f"📊 <b>Resultados:</b>\n"
+                f"• Administradores atuais: {stats.get('total_current', 0)}\n"
+                f"• Novos detectados: {stats.get('new_admins', 0)}\n"
+                f"• Removidos: {stats.get('removed_admins', 0)}\n"
+                f"• Inalterados: {stats.get('unchanged_admins', 0)}\n\n"
+                f"⏰ <b>Sincronizado em:</b> {result.get('sync_time', 'N/A')}\n\n"
+            )
+
+            # Lista novos administradores se houver
+            new_admins = result.get("new_admins", [])
+            if new_admins:
+                message += f"🆕 <b>Novos administradores detectados:</b>\n"
+                for admin in new_admins:
+                    name = admin.get('username', admin.get('first_name', 'N/A'))
+                    message += f"• {name} (ID: {admin['user_id']})\n"
+                message += "\n"
+
+            # Lista administradores removidos se houver
+            removed_ids = result.get("removed_admin_ids", [])
+            if removed_ids:
+                message += f"❌ <b>Administradores removidos:</b>\n"
+                for admin_id in removed_ids:
+                    message += f"• ID: {admin_id}\n"
+                message += "\n"
+
+            message += (
+                "💡 <b>Sistema atualizado!</b> Controle de acesso agora usa os administradores atuais do grupo.\n\n"
+                "🔄 A sincronização também ocorre automaticamente a cada 6 horas."
+            )
+
+        else:
+            message = (
+                f"❌ <b>ERRO NA SINCRONIZAÇÃO</b>\n\n"
+                f"💬 {result.get('message', 'Erro desconhecido')}\n\n"
+                f"🔧 Verifique se o bot tem permissão para ver administradores do grupo."
+            )
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro no comando /sync_admins: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Erro interno</b>\n\n"
+            f"Ocorreu um erro durante a sincronização: {str(e)}\n\n"
+            f"🔧 Verifique os logs do sistema."
+        )
+
+@require_command_permission("list_admins")
+async def list_admins_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /list_admins - Lista administradores detectados (admin only).
+    Funciona apenas em chat privado e para usuários autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
+    from src.sentinela.clients.db_client import get_stored_administrators
+    from src.sentinela.services.admin_detection_service import admin_detection_service
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /list_admins ignorado no grupo {chat_id}")
+        return
+
+    logger.info(f"Comando /list_admins recebido de {user.username} (ID: {user.id})")
+
+    try:
+        # Obtém informações de sincronização
+        sync_info = admin_detection_service.get_last_sync_info()
+
+        # Obtém administradores armazenados
+        admins = get_stored_administrators()
+
+        message = f"👑 <b>ADMINISTRADORES DO SISTEMA</b>\n\n"
+
+        if admins:
+            message += f"📊 <b>Total:</b> {len(admins)} administrador(es)\n\n"
+
+            for i, admin in enumerate(admins, 1):
+                name_parts = []
+                if admin.get('first_name'):
+                    name_parts.append(admin['first_name'])
+                if admin.get('last_name'):
+                    name_parts.append(admin['last_name'])
+
+                display_name = ' '.join(name_parts) if name_parts else 'N/A'
+                username = f"@{admin['username']}" if admin.get('username') else 'Sem username'
+
+                status_icon = "👑" if admin.get('status') == 'owner' else "👤"
+
+                message += (
+                    f"{status_icon} <b>{display_name}</b>\n"
+                    f"• Username: {username}\n"
+                    f"• ID: {admin['user_id']}\n"
+                    f"• Status: {admin.get('status', 'N/A').title()}\n"
+                    f"• Detectado: {admin.get('detected_at', 'N/A')}\n\n"
+                )
+        else:
+            message += "❌ <b>Nenhum administrador detectado</b>\n\n"
+            message += "💡 Use /sync_admins para detectar administradores do grupo.\n\n"
+
+        # Informações de sincronização
+        if sync_info.get('last_sync'):
+            last_sync = sync_info['last_sync']
+            message += f"🔄 <b>Última sincronização:</b> {last_sync}\n"
+        else:
+            message += f"🔄 <b>Última sincronização:</b> Nunca\n"
+
+        message += f"⏰ <b>Sincronização automática:</b> A cada {sync_info.get('sync_interval_hours', 6)} horas\n\n"
+
+        message += (
+            "💡 <b>Como funciona:</b>\n"
+            "• Sistema detecta automaticamente administradores do grupo\n"
+            "• Controle de acesso baseado nos administradores reais\n"
+            "• Sincronização automática mantém tudo atualizado\n"
+            "• Use /sync_admins para atualizar manualmente"
+        )
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro no comando /list_admins: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Erro interno</b>\n\n"
+            f"Ocorreu um erro ao listar administradores: {str(e)}\n\n"
+            f"🔧 Verifique os logs do sistema."
+        )
+
+@require_command_permission("health_hubsoft")
+async def health_hubsoft_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /health_hubsoft - Verifica status da integração HubSoft (admin only).
+    Funciona apenas em chat privado e para usuários autorizados.
+    """
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID, HUBSOFT_ENABLED
+    from src.sentinela.services.hubsoft_sync_service import hubsoft_sync_service
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    # Só funciona em chat privado
+    if str(chat_id) == str(TELEGRAM_GROUP_ID):
+        logger.info(f"Comando /health_hubsoft ignorado no grupo {chat_id}")
+        return
+
+    logger.info(f"Comando /health_hubsoft recebido de {user.username} (ID: {user.id})")
+
+    try:
+        await update.message.reply_html("🔍 <b>Verificando status do HubSoft...</b>")
+
+        # Verifica se HubSoft está habilitado
+        if not HUBSOFT_ENABLED:
+            await update.message.reply_html(
+                "⚠️ <b>HUBSOFT DESABILITADO</b>\n\n"
+                "💡 HubSoft não está configurado no sistema.\n"
+                "🔧 Configure HUBSOFT_ENABLED=true no .env para ativar."
+            )
+            return
+
+        # Executa health check
+        is_online = await hubsoft_sync_service.check_hubsoft_health()
+
+        # Obtém estatísticas de sincronização
+        sync_status = await hubsoft_sync_service.get_sync_status_summary()
+
+        # Monta relatório de saúde
+        status_icon = "🟢" if is_online else "🔴"
+        status_text = "ONLINE" if is_online else "OFFLINE"
+
+        message = f"{status_icon} <b>STATUS HUBSOFT: {status_text}</b>\n\n"
+
+        # Informações de conectividade
+        message += "📡 <b>CONECTIVIDADE:</b>\n"
+        if sync_status.get("last_health_check"):
+            last_check = datetime.fromisoformat(sync_status["last_health_check"]).strftime("%d/%m/%Y às %H:%M:%S")
+            message += f"• Última verificação: {last_check}\n"
+        else:
+            message += "• Última verificação: Nunca\n"
+
+        message += f"• Status atual: {'Conectado' if is_online else 'Desconectado'}\n"
+        message += f"• Sincronização em andamento: {'Sim' if sync_status.get('sync_in_progress') else 'Não'}\n\n"
+
+        # Estatísticas de sincronização
+        stats = sync_status.get("statistics", {})
+        if stats:
+            message += "📊 <b>ESTATÍSTICAS:</b>\n"
+            message += f"• Total de tickets: {stats.get('total_tickets', 0)}\n"
+            message += f"• Tickets sincronizados: {stats.get('synced_tickets', 0)}\n"
+            message += f"• Tickets offline: {stats.get('offline_tickets', 0)}\n"
+            message += f"• Falhas de sincronização: {stats.get('failed_sync_tickets', 0)}\n"
+            message += f"• Percentual sincronizado: {stats.get('sync_percentage', 0)}%\n"
+
+            if stats.get('last_successful_sync'):
+                last_sync = datetime.fromisoformat(stats['last_successful_sync']).strftime("%d/%m/%Y às %H:%M")
+                message += f"• Última sincronização: {last_sync}\n"
+            else:
+                message += f"• Última sincronização: Nunca\n"
+
+        message += "\n"
+
+        # Ações recomendadas
+        if is_online:
+            message += "✅ <b>SISTEMA FUNCIONANDO NORMALMENTE</b>\n\n"
+            if stats.get('offline_tickets', 0) > 0:
+                message += f"💡 <b>Ação recomendada:</b> Executar /sync_tickets offline para sincronizar {stats['offline_tickets']} ticket(s) pendente(s)"
+            else:
+                message += "🎯 <b>Todas as sincronizações estão em dia!</b>"
+        else:
+            message += "❌ <b>SISTEMA INDISPONÍVEL</b>\n\n"
+            message += "🔧 <b>Ações recomendadas:</b>\n"
+            message += "• Verificar conectividade de rede\n"
+            message += "• Verificar credenciais da API\n"
+            message += "• Aguardar sistema voltar online\n"
+            message += "• Tickets criados offline serão sincronizados automaticamente"
+
+        await update.message.reply_html(message)
+
+    except Exception as e:
+        logger.error(f"Erro no comando /health_hubsoft: {e}")
+        await update.message.reply_html(
+            f"❌ <b>Erro interno</b>\n\n"
+            f"Ocorreu um erro ao verificar o status: {str(e)}\n\n"
+            f"🔧 Verifique os logs do sistema."
+        )
+
+@require_command_permission("admin_tickets")
 async def admin_tickets_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Comando /admin_tickets - Consulta avançada de tickets para administradores.
     Funciona apenas em chat privado e para usuários autorizados.
     """
-    from src.sentinela.core.config import TELEGRAM_GROUP_ID, ADMIN_USER_IDS
+    from src.sentinela.core.config import TELEGRAM_GROUP_ID
     from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
     from datetime import datetime, timedelta
 
@@ -814,11 +1446,6 @@ async def admin_tickets_command(update: Update, context: ContextTypes.DEFAULT_TY
     # Só funciona em chat privado
     if str(chat_id) == str(TELEGRAM_GROUP_ID):
         logger.info(f"Comando /admin_tickets ignorado no grupo {chat_id}")
-        return
-
-    # Verifica se usuário é admin
-    if user.id not in ADMIN_USER_IDS:
-        await update.message.reply_html("❌ <b>Acesso negado</b>\n\nEste comando é restrito a administradores.")
         return
 
     logger.info(f"Comando /admin_tickets recebido de {user.username} (ID: {user.id})")
@@ -943,6 +1570,7 @@ def register_handlers(application: Application) -> None:
     logger.info("Registrando handlers de comandos e mensagens...")
 
     # Handlers de comandos (chat privado)
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test_group", test_group))
     application.add_handler(CommandHandler("topics", topics_command))
@@ -952,6 +1580,13 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("suporte", suporte_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("admin_tickets", admin_tickets_command))
+
+    # Comandos administrativos de sincronização
+    application.add_handler(CommandHandler("sync_tickets", sync_tickets_command))
+    application.add_handler(CommandHandler("health_hubsoft", health_hubsoft_command))
+    # Comandos administrativos de gerenciamento de admins
+    application.add_handler(CommandHandler("sync_admins", sync_admins_command))
+    application.add_handler(CommandHandler("list_admins", list_admins_command))
 
     # Handler para callback queries (botões inline)
     application.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -964,6 +1599,10 @@ def register_handlers(application: Application) -> None:
     # Handler para fotos (anexos de suporte) - apenas fora do grupo
     photo_filter = filters.PHOTO & ~group_filter
     application.add_handler(MessageHandler(photo_filter, handle_photo_message))
+
+    # Handler para comandos desconhecidos/não autorizados - apenas fora do grupo
+    unknown_command_filter = filters.COMMAND & ~group_filter
+    application.add_handler(MessageHandler(unknown_command_filter, handle_unknown_command))
 
     # Handler para mensagens privadas (CPF, etc) - apenas fora do grupo
     private_filter = filters.TEXT & ~filters.COMMAND & ~group_filter

@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+from datetime import datetime
 from src.sentinela.core.config import DATABASE_FILE
 
 logger = logging.getLogger(__name__)
@@ -830,3 +831,498 @@ def update_user_id_for_cpf(cpf: str, new_user_id: int, new_username: str) -> boo
     except sqlite3.Error as e:
         logger.error(f"Erro ao remapear CPF para o novo user_id {new_user_id}: {e}")
         return False
+
+# === FUNÇÕES DE SINCRONIZAÇÃO HUBSOFT ===
+
+def update_support_tickets_table_for_sync():
+    """
+    Atualiza a tabela support_tickets com campos necessários para sincronização.
+    Esta função é segura para ser executada múltiplas vezes.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Adiciona campos de sincronização se não existirem
+            cursor.execute("""
+                SELECT name FROM pragma_table_info('support_tickets')
+                WHERE name IN ('hubsoft_protocol', 'sync_status', 'synced_at', 'last_sync_attempt', 'sync_error')
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            if 'hubsoft_protocol' not in existing_columns:
+                cursor.execute("""
+                    ALTER TABLE support_tickets
+                    ADD COLUMN hubsoft_protocol TEXT
+                """)
+                logger.info("Adicionada coluna 'hubsoft_protocol' à tabela support_tickets")
+
+            if 'sync_status' not in existing_columns:
+                cursor.execute("""
+                    ALTER TABLE support_tickets
+                    ADD COLUMN sync_status TEXT DEFAULT 'pending'
+                """)
+                logger.info("Adicionada coluna 'sync_status' à tabela support_tickets")
+
+            if 'synced_at' not in existing_columns:
+                cursor.execute("""
+                    ALTER TABLE support_tickets
+                    ADD COLUMN synced_at TIMESTAMP
+                """)
+                logger.info("Adicionada coluna 'synced_at' à tabela support_tickets")
+
+            if 'last_sync_attempt' not in existing_columns:
+                cursor.execute("""
+                    ALTER TABLE support_tickets
+                    ADD COLUMN last_sync_attempt TIMESTAMP
+                """)
+                logger.info("Adicionada coluna 'last_sync_attempt' à tabela support_tickets")
+
+            if 'sync_error' not in existing_columns:
+                cursor.execute("""
+                    ALTER TABLE support_tickets
+                    ADD COLUMN sync_error TEXT
+                """)
+                logger.info("Adicionada coluna 'sync_error' à tabela support_tickets")
+
+            conn.commit()
+            logger.info("Atualização da tabela support_tickets para sincronização concluída")
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar tabela support_tickets para sincronização: {e}")
+        raise
+
+def create_administrators_table():
+    """
+    Cria tabela para armazenar administradores detectados automaticamente.
+    Esta função é segura para ser executada múltiplas vezes.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS administrators (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    status TEXT,
+                    detected_at TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )
+            """)
+            conn.commit()
+            logger.info("Tabela administrators criada/verificada com sucesso")
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao criar tabela administrators: {e}")
+        raise
+
+def get_offline_tickets() -> list:
+    """
+    Busca todos os tickets criados offline (sem hubsoft_atendimento_id).
+
+    Returns:
+        list: Lista de tickets offline
+    """
+    try:
+        # Garante que a tabela está atualizada
+        update_support_tickets_table_for_sync()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_tickets
+                WHERE (hubsoft_atendimento_id IS NULL OR hubsoft_atendimento_id = '')
+                AND status NOT IN ('resolved', 'closed', 'cancelled')
+                ORDER BY created_at ASC
+            """)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar tickets offline: {e}")
+        return []
+
+def get_all_active_tickets_with_hubsoft_id() -> list:
+    """
+    Busca todos os tickets ativos que possuem ID do HubSoft.
+
+    Returns:
+        list: Lista de tickets ativos com HubSoft ID
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_tickets
+                WHERE hubsoft_atendimento_id IS NOT NULL
+                AND hubsoft_atendimento_id != ''
+                AND status NOT IN ('resolved', 'closed', 'cancelled')
+                ORDER BY created_at DESC
+            """)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar tickets ativos com HubSoft ID: {e}")
+        return []
+
+def get_ticket_by_hubsoft_id(hubsoft_id: str) -> dict:
+    """
+    Busca ticket por ID do HubSoft.
+
+    Args:
+        hubsoft_id: ID do atendimento no HubSoft
+
+    Returns:
+        dict: Dados do ticket ou None se não encontrado
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_tickets
+                WHERE hubsoft_atendimento_id = ?
+            """, (hubsoft_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar ticket por HubSoft ID {hubsoft_id}: {e}")
+        return None
+
+def get_ticket_by_id(ticket_id: int) -> dict:
+    """
+    Busca ticket por ID local.
+
+    Args:
+        ticket_id: ID do ticket local
+
+    Returns:
+        dict: Dados do ticket ou None se não encontrado
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM support_tickets
+                WHERE id = ?
+            """, (ticket_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar ticket por ID {ticket_id}: {e}")
+        return None
+
+def update_ticket_sync_status(ticket_id: int, sync_data: dict) -> bool:
+    """
+    Atualiza dados de sincronização de um ticket.
+
+    Args:
+        ticket_id: ID do ticket local
+        sync_data: Dados de sincronização
+
+    Returns:
+        bool: True se sucesso, False caso contrário
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Monta query dinâmica baseada nos dados fornecidos
+            set_clauses = []
+            values = []
+
+            if 'hubsoft_status' in sync_data:
+                set_clauses.append("status = ?")
+                # Se hubsoft_status é um dict, extrair o campo relevante
+                status = sync_data['hubsoft_status']
+                if isinstance(status, dict):
+                    values.append(status.get('display', status.get('name', 'Em Andamento')))
+                else:
+                    values.append(str(status))
+
+            if 'last_sync' in sync_data:
+                set_clauses.append("last_sync_attempt = ?")
+                values.append(sync_data['last_sync'])
+
+            if 'is_synced' in sync_data:
+                set_clauses.append("sync_status = ?")
+                values.append('synced' if sync_data['is_synced'] else 'pending')
+
+                if sync_data['is_synced']:
+                    set_clauses.append("synced_at = ?")
+                    values.append(sync_data.get('last_sync', datetime.now().isoformat()))
+
+            if 'sync_error' in sync_data:
+                set_clauses.append("sync_error = ?")
+                values.append(sync_data['sync_error'])
+
+            # Sempre atualiza timestamp
+            set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(ticket_id)
+
+            if set_clauses:
+                query = f"""
+                    UPDATE support_tickets
+                    SET {', '.join(set_clauses)}
+                    WHERE id = ?
+                """
+                cursor.execute(query, values)
+                conn.commit()
+
+                logger.info(f"Status de sincronização do ticket {ticket_id} atualizado")
+                return cursor.rowcount > 0
+
+            return False
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar status de sincronização do ticket {ticket_id}: {e}")
+        return False
+
+def update_ticket_with_hubsoft_data(ticket_id: int, hubsoft_data: dict) -> bool:
+    """
+    Atualiza ticket local com dados do HubSoft após sincronização.
+
+    Args:
+        ticket_id: ID do ticket local
+        hubsoft_data: Dados recebidos do HubSoft
+
+    Returns:
+        bool: True se sucesso, False caso contrário
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE support_tickets
+                SET hubsoft_atendimento_id = ?,
+                    hubsoft_protocol = ?,
+                    sync_status = ?,
+                    synced_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (
+                hubsoft_data.get('hubsoft_atendimento_id'),
+                hubsoft_data.get('hubsoft_protocol'),
+                hubsoft_data.get('sync_status', 'synced'),
+                hubsoft_data.get('synced_at'),
+                ticket_id
+            ))
+            conn.commit()
+
+            if cursor.rowcount > 0:
+                logger.info(f"Ticket {ticket_id} atualizado com dados do HubSoft")
+                return True
+            else:
+                logger.warning(f"Nenhum ticket encontrado com ID {ticket_id}")
+                return False
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar ticket {ticket_id} com dados do HubSoft: {e}")
+        return False
+
+def get_sync_statistics() -> dict:
+    """
+    Retorna estatísticas de sincronização do sistema.
+
+    Returns:
+        dict: Estatísticas de sincronização
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Total de tickets
+            cursor.execute("SELECT COUNT(*) FROM support_tickets")
+            total_tickets = cursor.fetchone()[0]
+
+            # Tickets sincronizados
+            cursor.execute("""
+                SELECT COUNT(*) FROM support_tickets
+                WHERE hubsoft_atendimento_id IS NOT NULL
+                AND hubsoft_atendimento_id != ''
+            """)
+            synced_tickets = cursor.fetchone()[0]
+
+            # Tickets offline
+            cursor.execute("""
+                SELECT COUNT(*) FROM support_tickets
+                WHERE (hubsoft_atendimento_id IS NULL OR hubsoft_atendimento_id = '')
+                AND status NOT IN ('resolved', 'closed', 'cancelled')
+            """)
+            offline_tickets = cursor.fetchone()[0]
+
+            # Tickets com erro de sincronização
+            cursor.execute("""
+                SELECT COUNT(*) FROM support_tickets
+                WHERE sync_error IS NOT NULL AND sync_error != ''
+            """)
+            failed_sync_tickets = cursor.fetchone()[0]
+
+            # Última sincronização
+            cursor.execute("""
+                SELECT MAX(synced_at) FROM support_tickets
+                WHERE synced_at IS NOT NULL
+            """)
+            last_sync = cursor.fetchone()[0]
+
+            return {
+                "total_tickets": total_tickets,
+                "synced_tickets": synced_tickets,
+                "offline_tickets": offline_tickets,
+                "failed_sync_tickets": failed_sync_tickets,
+                "last_successful_sync": last_sync,
+                "sync_percentage": round((synced_tickets / total_tickets * 100) if total_tickets > 0 else 0, 2)
+            }
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao obter estatísticas de sincronização: {e}")
+        return {}
+
+# === FUNÇÕES DE ADMINISTRADORES ===
+
+def get_stored_administrators() -> list:
+    """
+    Busca todos os administradores armazenados no banco.
+
+    Returns:
+        list: Lista de administradores ativos
+    """
+    try:
+        # Garante que a tabela existe
+        create_administrators_table()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT user_id, username, first_name, last_name, status, detected_at, last_updated
+                FROM administrators
+                WHERE is_active = 1
+                ORDER BY detected_at DESC
+            """)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar administradores armazenados: {e}")
+        return []
+
+def update_administrators(admin_list: list) -> bool:
+    """
+    Atualiza lista completa de administradores no banco.
+
+    Args:
+        admin_list: Lista de dicionários com dados dos administradores
+
+    Returns:
+        bool: True se sucesso, False caso contrário
+    """
+    try:
+        # Garante que a tabela existe
+        create_administrators_table()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Desativa todos os administradores atuais
+            cursor.execute("""
+                UPDATE administrators
+                SET is_active = 0, last_updated = CURRENT_TIMESTAMP
+            """)
+
+            # Insere ou atualiza administradores atuais
+            for admin in admin_list:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO administrators
+                    (user_id, username, first_name, last_name, status, detected_at, last_updated, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+                """, (
+                    admin['user_id'],
+                    admin.get('username'),
+                    admin.get('first_name'),
+                    admin.get('last_name'),
+                    admin.get('status'),
+                    admin.get('detected_at')
+                ))
+
+            conn.commit()
+            logger.info(f"Lista de administradores atualizada: {len(admin_list)} administradores ativos")
+            return True
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao atualizar administradores: {e}")
+        return False
+
+def get_administrator_ids() -> list:
+    """
+    Retorna apenas os IDs dos administradores ativos.
+
+    Returns:
+        list: Lista de IDs de administradores
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT user_id FROM administrators
+                WHERE is_active = 1
+            """)
+            rows = cursor.fetchall()
+            return [row[0] for row in rows]
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar IDs de administradores: {e}")
+        return []
+
+def is_stored_administrator(user_id: int) -> bool:
+    """
+    Verifica se um usuário é administrador baseado no banco.
+
+    Args:
+        user_id: ID do usuário
+
+    Returns:
+        bool: True se é administrador ativo, False caso contrário
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 1 FROM administrators
+                WHERE user_id = ? AND is_active = 1
+            """, (user_id,))
+            return cursor.fetchone() is not None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao verificar se usuário {user_id} é administrador: {e}")
+        return False
+
+def get_administrator_info(user_id: int) -> dict:
+    """
+    Obtém informações detalhadas de um administrador.
+
+    Args:
+        user_id: ID do administrador
+
+    Returns:
+        dict: Informações do administrador ou None se não encontrado
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT user_id, username, first_name, last_name, status,
+                       detected_at, last_updated, is_active
+                FROM administrators
+                WHERE user_id = ?
+            """, (user_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    except sqlite3.Error as e:
+        logger.error(f"Erro ao buscar informações do administrador {user_id}: {e}")
+        return None
