@@ -1,0 +1,82 @@
+{
+  "export_info": {
+    "timestamp": "2025-09-26T18:15:53.420642",
+    "database_file": "data/database/sentinela.db",
+    "export_version": "1.0",
+    "description": "Export de dados críticos do OnCabito Bot"
+  },
+  "statistics": {
+    "total_users": 1,
+    "users_with_cpf": 1,
+    "active_users": 1,
+    "user_states": 2,
+    "user_rules": 1,
+    "applied_migrations": 2,
+    "support_tickets": 1
+  },
+  "data": {
+    "users": [
+      {
+        "user_id": 1793240003,
+        "username": "user_1793240003",
+        "cpf": "61274037310",
+        "client_name": "GUSTAVO SILVA REIS",
+        "service_name": "IP LINK RESIDENCIAL 300 Mbps (Colaborador) + MAX",
+        "service_status": "Serviço Habilitado",
+        "is_active": true,
+        "created_at": "2025-09-26 16:19:51",
+        "last_verification": "2025-09-26 16:19:51"
+      }
+    ],
+    "user_states": [
+      {
+        "user_id": 1793240003,
+        "has_interacted": true,
+        "last_interaction": "2025-09-24 17:12:10"
+      },
+      {
+        "user_id": 7066158313,
+        "has_interacted": true,
+        "last_interaction": "2025-09-26 16:18:44"
+      }
+    ],
+    "user_rules": [
+      {
+        "user_id": 1793240003,
+        "username": "Gust",
+        "joined_at": "2025-09-26 16:19:58",
+        "rules_accepted": true,
+        "rules_accepted_at": "2025-09-26 16:25:52",
+        "expires_at": "2025-09-27 16:19:58",
+        "status": "accepted"
+      }
+    ],
+    "schema_migrations": [
+      {
+        "version": 1,
+        "filename": "001_create_initial_schema.sql",
+        "applied_at": "2025-09-26 19:45:49",
+        "checksum": "f55449cdecff3510cc7c2fb0309620d0"
+      },
+      {
+        "version": 2,
+        "filename": "002_add_missing_columns.sql",
+        "applied_at": "2025-09-26 19:45:50",
+        "checksum": "b088875b4d2d19cca5e105b7f3caa6bb"
+      }
+    ],
+    "support_tickets_summary": [
+      {
+        "id": 1,
+        "user_id": 1793240003,
+        "username": null,
+        "category": "connectivity",
+        "affected_game": "valorant",
+        "urgency_level": "high",
+        "status": "pending",
+        "created_at": "2025-09-26 16:21:56",
+        "resolved_at": null
+      }
+    ]
+  }
+}

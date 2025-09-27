@@ -148,50 +148,59 @@ class CPFVerificationTester:
             logger.error(f"❌ Erro no teste de estatísticas: {e}")
             return False
 
-    async def test_cpf_processing(self) -> bool:
-        """Testa processamento de CPF (sem chamadas externas)"""
+    async def test_full_valid_cpf_flow(self) -> bool:
+        """Testa o fluxo completo de verificação com um CPF válido."""
         try:
-            logger.info("🔍 Testando processamento de CPF...")
-
+            logger.info("🔍 Testando o fluxo completo com CPF válido...")
+            
+            # --- Configuração do Teste ---
             test_user_id = 999999998
-            test_username = "test_user_2"
+            test_username = "test_user_valid"
+            # IMPORTANTE: Use um CPF que seja válido e tenha contrato no HubSoft para este teste
+            valid_cpf_for_test = "61274037310" # Usando o CPF dos logs
 
-            # Limpa dados anteriores
+            # --- Limpeza ---
             with get_db_connection() as conn:
                 conn.execute("DELETE FROM pending_cpf_verifications WHERE user_id = ?", (test_user_id,))
                 conn.execute("DELETE FROM cpf_verification_history WHERE user_id = ?", (test_user_id,))
+                # Apaga o usuário se ele existir de um teste anterior
+                conn.execute("DELETE FROM users WHERE cpf = ?", (valid_cpf_for_test,))
                 conn.commit()
+                logger.info("Ambiente de teste limpo.")
 
-            # Cria verificação pendente
+            # 1. Cria uma verificação pendente para o nosso usuário de teste
             CPFVerificationService.create_pending_verification(
                 user_id=test_user_id,
                 username=test_username,
                 user_mention=f"@{test_username}",
-                verification_type="support_request",
-                source_action="test_script"
+                verification_type="test_flow"
             )
+            logger.info(f"Verificação pendente criada para user_id {test_user_id}")
 
-            # Testa CPF inválido
+            # 2. Processa a verificação com o CPF válido
+            logger.info(f"Processando verificação para o CPF {valid_cpf_for_test}...")
             result = await CPFVerificationService.process_cpf_verification(
-                test_user_id, test_username, "123"  # CPF inválido
+                test_user_id, test_username, valid_cpf_for_test
             )
 
-            if result['success']:
-                logger.error("❌ CPF inválido foi aceito")
+            # 3. Valida o resultado
+            if not result['success']:
+                logger.error(f"❌ FALHA: Ocorreu um erro ao processar um CPF válido.")
+                logger.error(f"   - Motivo: {result.get('reason')}")
+                logger.error(f"   - Mensagem: {result.get('message')}")
                 return False
-
-            logger.info("✅ CPF inválido rejeitado corretamente")
-
-            # Limpa dados de teste
+            
+            logger.info("✅ SUCESSO: CPF válido processado e usuário salvo no banco.")
+            
+            # --- Limpeza Final ---
             with get_db_connection() as conn:
-                conn.execute("DELETE FROM pending_cpf_verifications WHERE user_id = ?", (test_user_id,))
-                conn.execute("DELETE FROM cpf_verification_history WHERE user_id = ?", (test_user_id,))
+                conn.execute("DELETE FROM users WHERE user_id = ?", (test_user_id,))
                 conn.commit()
 
             return True
 
         except Exception as e:
-            logger.error(f"❌ Erro no teste de processamento: {e}")
+            logger.error(f"❌ ERRO CRÍTICO NO TESTE: {e}", exc_info=True)
             return False
 
     def test_expired_cleanup(self) -> bool:
@@ -243,7 +252,7 @@ class CPFVerificationTester:
             'database_structure': False,
             'verification_creation': False,
             'statistics': False,
-            'cpf_processing': False,
+            'full_valid_cpf_flow': False,
             'expired_cleanup': False
         }
 
@@ -251,7 +260,7 @@ class CPFVerificationTester:
         results['database_structure'] = self.test_database_structure()
         results['verification_creation'] = self.test_verification_creation()
         results['statistics'] = self.test_statistics()
-        results['cpf_processing'] = await self.test_cpf_processing()
+        results['full_valid_cpf_flow'] = await self.test_full_valid_cpf_flow()
         results['expired_cleanup'] = self.test_expired_cleanup()
 
         return results

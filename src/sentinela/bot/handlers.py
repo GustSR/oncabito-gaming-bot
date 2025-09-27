@@ -536,8 +536,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer()  # Confirma o clique
         else:
             await query.answer("Erro ao processar solicitação")
-    elif query.data.startswith("confirm_remap:"):
-        await handle_remap_confirmation(query)
+    elif query.data.startswith("cpf_duplicate_"):
+        await handle_cpf_duplicate_decision(query)
     elif query.data == "cpf_verification_cancel":
         # Cancela verificação de CPF
         await handle_cpf_verification_cancel(query)

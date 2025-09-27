@@ -25,6 +25,7 @@ from src.sentinela.clients.db_client import get_all_active_users, mark_user_inac
 from src.sentinela.integrations.hubsoft.cliente import check_contract_status
 from src.sentinela.services.group_service import is_user_in_group, remove_user_from_group, notify_administrators
 from src.sentinela.services.cpf_verification_service import CPFVerificationService
+from src.sentinela.services.admin_service import admin_service
 from src.sentinela.core.config import TELEGRAM_TOKEN, TELEGRAM_GROUP_ID
 from src.sentinela.core.logging_config import setup_logging
 from telegram import Bot
@@ -151,8 +152,8 @@ async def process_members_without_cpf(members_without_cpf: list) -> dict:
         status = member['status']
 
         try:
-            # Não processa administradores automaticamente
-            if status in ['administrator', 'creator']:
+            # Verifica isenção de administradores usando AdminService
+            if await admin_service.should_exempt_from_verification(user_id):
                 logger.info(f"Pulando administrador {username} (ID: {user_id})")
                 results['skipped_admins'] += 1
                 continue
@@ -196,15 +197,9 @@ async def run_daily_checkup():
     logger.info("=== INICIANDO CHECKUP DIÁRIO COMPLETO ===")
 
     try:
-        # Busca administradores do grupo para isenção
-        bot = Bot(token=TELEGRAM_TOKEN)
-        try:
-            admins = await bot.get_chat_administrators(TELEGRAM_GROUP_ID)
-            admin_ids = {admin.user.id for admin in admins}
-            logger.info(f"Encontrados {len(admin_ids)} administradores. Eles serão isentos da verificação de contrato.")
-        except Exception as e:
-            logger.error(f"Não foi possível buscar a lista de administradores: {e}. Ninguém será isento.")
-            admin_ids = set()
+        # Busca administradores do grupo para isenção usando o novo serviço
+        admin_ids = await admin_service.get_group_administrators()
+        logger.info(f"Encontrados {len(admin_ids)} administradores via AdminService. Eles serão isentos da verificação de contrato.")
 
         # === PARTE 1: VERIFICAÇÃO DE CONTRATOS ATIVOS (ORIGINAL) ===
         logger.info("🔍 FASE 1: Verificando contratos ativos...")
@@ -222,8 +217,8 @@ async def run_daily_checkup():
             user_id = user_data['user_id']
             client_name = user_data['client_name']
 
-            # Pula a verificação para administradores
-            if user_id in admin_ids:
+            # Verifica isenção para administradores usando o serviço
+            if await admin_service.should_exempt_from_verification(user_id):
                 logger.info(f"⏭️  Pulando verificação para o administrador {client_name} (ID: {user_id})")
                 skipped_admins_count += 1
                 verified_count += 1 # Conta como verificado para manter as estatísticas corretas

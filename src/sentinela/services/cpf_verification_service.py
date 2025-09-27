@@ -5,14 +5,20 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 
 from src.sentinela.core.config import TELEGRAM_TOKEN
-from src.sentinela.clients.db_client import get_db_connection, save_user_data, get_user_by_cpf
+from src.sentinela.clients.db_client import get_db_connection, save_user_data
 from src.sentinela.integrations.hubsoft.cliente import get_client_data
 from src.sentinela.services.group_service import remove_user_from_group
+from src.sentinela.services.cpf_validation_service import CPFValidationService
+from src.sentinela.services.duplicate_cpf_handler import duplicate_cpf_handler
 
 logger = logging.getLogger(__name__)
 
 class CPFVerificationService:
-    """Serviço para gerenciar re-verificações de CPF"""
+    """Serviço refatorado para gerenciar re-verificações de CPF
+
+    Este serviço foi refatorado para ser mais focado e usar os novos
+    serviços especializados: CPFValidationService e DuplicateCPFHandler
+    """
 
     @staticmethod
     def create_pending_verification(user_id: int, username: str, user_mention: str,
@@ -223,7 +229,7 @@ class CPFVerificationService:
     @staticmethod
     async def process_cpf_verification(user_id: int, username: str, cpf: str) -> dict:
         """
-        Processa verificação de CPF fornecido
+        Processa verificação de CPF fornecido (versão refatorada)
 
         Args:
             user_id: ID do usuário
@@ -234,7 +240,7 @@ class CPFVerificationService:
             dict: Resultado da verificação
         """
         try:
-            # Busca verificação pendente
+            # 1. Verifica se há verificação pendente
             verification = CPFVerificationService.get_pending_verification(user_id)
             if not verification:
                 return {
@@ -243,21 +249,31 @@ class CPFVerificationService:
                     'message': 'Não há verificação pendente para você.'
                 }
 
-            # Atualiza tentativas
+            # 2. Atualiza tentativas
             CPFVerificationService.update_verification_attempt(user_id)
 
-            # Limpa e valida CPF
-            clean_cpf = "".join(filter(str.isdigit, cpf))
-
-            if len(clean_cpf) != 11:
+            # 3. Valida formato do CPF usando o novo serviço
+            validation_result = CPFValidationService.validate_cpf_format(cpf)
+            if not validation_result.is_valid:
+                error_msg = CPFValidationService.get_user_friendly_error(cpf)
                 return {
                     'success': False,
                     'reason': 'invalid_cpf_format',
-                    'message': 'CPF deve ter exatamente 11 dígitos.'
+                    'message': error_msg
                 }
 
-            # Verifica no HubSoft
-            logger.info(f"Verificando CPF {clean_cpf} no HubSoft para {username}")
+            clean_cpf = validation_result.clean_cpf
+
+            # 4. Verifica duplicidade usando o novo handler
+            existing_user = duplicate_cpf_handler.detect_duplicate_cpf(clean_cpf, user_id)
+            if existing_user:
+                # Retorna resultado do handler de duplicidade
+                return await duplicate_cpf_handler.handle_duplicate_cpf_conflict(
+                    clean_cpf, user_id, username, existing_user
+                )
+
+            # 5. Verifica no HubSoft
+            logger.info(f"Verificando CPF {CPFValidationService.mask_cpf(clean_cpf)} no HubSoft para {username}")
             client_data = get_client_data(clean_cpf)
 
             if not client_data:
@@ -270,19 +286,7 @@ class CPFVerificationService:
                     'message': 'CPF não encontrado em nossa base de clientes ativos.'
                 }
 
-            # VERIFICA DUPLICIDADE DE CPF
-            existing_user = get_user_by_cpf(clean_cpf)
-            if existing_user and existing_user['user_id'] != user_id:
-                logger.warning(f"CPF duplicado detectado. CPF {clean_cpf} já está em uso pelo user_id {existing_user['user_id']}")
-                return {
-                    'success': False,
-                    'reason': 'duplicate_cpf',
-                    'message': 'Este CPF já está sendo usado por outra conta no Telegram.',
-                    'existing_user_id': existing_user['user_id'],
-                    'existing_username': existing_user.get('username', 'N/A')
-                }
-
-            # Salva dados do cliente no banco local
+            # 6. Salva dados do cliente no banco local
             if save_user_data(user_id, username, clean_cpf, client_data):
                 CPFVerificationService.complete_verification(
                     user_id, True, clean_cpf
