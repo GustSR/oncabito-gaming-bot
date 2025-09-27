@@ -53,7 +53,7 @@ def main() -> None:
     register_handlers(application)
 
     # 5. Inicia serviços de background (monitoramento HubSoft)
-    async def startup_services():
+    async def startup_services(application):
         """Inicia serviços de background"""
         try:
             from src.sentinela.services.hubsoft_monitor_service import hubsoft_monitor_service
@@ -76,7 +76,7 @@ def main() -> None:
         except Exception as e:
             logger.error(f"Erro ao iniciar serviços de background: {e}")
 
-    async def shutdown_services():
+    async def shutdown_services(application):
         """Para serviços de background"""
         try:
             from src.sentinela.services.hubsoft_monitor_service import hubsoft_monitor_service
