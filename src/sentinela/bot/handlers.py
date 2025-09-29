@@ -561,9 +561,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         for i, atendimento in enumerate(atendimentos[:5], 1):  # Máximo 5 atendimentos
             atendimento_id = str(atendimento.get('id', ''))
 
-            # Usa protocolo oficial da API ou formata se não houver
-            if HUBSOFT_ENABLED:
-                protocol = atendimento.get('protocolo') or format_protocol(atendimento.get('id'))
+            # Usa protocolo oficial do HubSoft se disponível, senão usa protocolo local
+            hubsoft_protocol = atendimento.get('hubsoft_protocol')
+            if HUBSOFT_ENABLED and hubsoft_protocol:
+                protocol = f"Atendimento - {hubsoft_protocol}"
+            elif HUBSOFT_ENABLED:
+                # Fallback para ID formatado se não tiver protocolo HubSoft
+                protocol = format_protocol(atendimento.get('id'))
             else:
                 protocol = f"LOC{atendimento.get('id', 0):06d}"
             titulo = atendimento.get('titulo') or atendimento.get('tipo_atendimento', 'Suporte Gaming')

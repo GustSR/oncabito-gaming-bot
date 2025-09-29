@@ -999,7 +999,15 @@ async def send_support_blocked_message(user_id: int, permission: dict):
         if reason == 'active_ticket':
             # Busca tickets ativos
             active_tickets = get_active_support_tickets(user_id)
-            ticket_info = f"#{active_tickets[0]['id']:06d}" if active_tickets else "#ATD000000"
+            if active_tickets:
+                ticket = active_tickets[0]
+                hubsoft_protocol = ticket.get('hubsoft_protocol')
+                if hubsoft_protocol:
+                    ticket_info = f"Atendimento - {hubsoft_protocol}"
+                else:
+                    ticket_info = f"#{ticket['id']:06d}"
+            else:
+                ticket_info = "#ATD000000"
 
             message = (
                 f"🎮 <b>Olá!</b> Vejo que você já tem um atendimento em andamento ({ticket_info}).\n\n"
