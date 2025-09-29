@@ -407,17 +407,40 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-        # Busca IDs dos atendimentos criados pelo bot para este usuário
-        from src.sentinela.clients.db_client import get_user_bot_created_hubsoft_ids
-        bot_created_ids = get_user_bot_created_hubsoft_ids(user.id)
+        # Primeiro verifica se há tickets ativos locais (mesma lógica do /suporte)
+        from src.sentinela.clients.db_client import get_active_support_tickets
+        local_active_tickets = get_active_support_tickets(user.id)
 
-        if not bot_created_ids:
+        # Logs detalhados para debugging
+        logger.info(f"DEBUG: /status para user {user.id} ({user.username}) - chamando get_active_support_tickets")
+        logger.info(f"DEBUG: /status resultado get_active_support_tickets: {local_active_tickets}")
+        logger.info(f"DEBUG: /status tipo do resultado: {type(local_active_tickets)}")
+        logger.info(f"DEBUG: /status tickets ativos encontrados: {len(local_active_tickets) if local_active_tickets else 0}")
+
+        # Verificação adicional de tipo e conteúdo
+        if local_active_tickets is None:
+            logger.warning(f"DEBUG: /status - local_active_tickets é None para user {user.id}")
+        elif isinstance(local_active_tickets, list) and len(local_active_tickets) == 0:
+            logger.warning(f"DEBUG: /status - local_active_tickets é lista vazia para user {user.id}")
+        elif local_active_tickets:
+            logger.info(f"DEBUG: /status - local_active_tickets contém {len(local_active_tickets)} ticket(s)")
+            for idx, ticket in enumerate(local_active_tickets):
+                logger.info(f"DEBUG: /status - ticket {idx}: ID={ticket.get('id')}, status={ticket.get('status')}, cpf={ticket.get('cpf', '')[:3]}***")
+
+        if not local_active_tickets:
+            logger.info(f"DEBUG: /status para user {user.id} - nenhum ticket ativo detectado, enviando mensagem de 'nenhum atendimento'")
             await send_status_message(
-                "✅ <b>Nenhum atendimento em aberto</b>\n\n"
-                "🎮 Você não possui atendimentos em aberto no momento.\n\n"
+                "✅ <b>Atendimentos finalizados</b>\n\n"
+                "🎮 Seus atendimentos já foram finalizados ou não estão mais pendentes.\n\n"
                 "📞 Use /suporte para abrir um novo chamado quando precisar."
             )
             return
+        else:
+            logger.info(f"DEBUG: /status para user {user.id} - {len(local_active_tickets)} ticket(s) ativo(s) detectado(s), continuando processamento")
+
+        # Busca IDs dos atendimentos criados pelo bot para este usuário (para sincronização com HubSoft)
+        from src.sentinela.clients.db_client import get_user_bot_created_hubsoft_ids
+        bot_created_ids = get_user_bot_created_hubsoft_ids(user.id)
 
         # === NOVA LÓGICA COM SINCRONIZAÇÃO ===
 
@@ -480,29 +503,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
         elif HUBSOFT_ENABLED and not hubsoft_online:
-            # HubSoft habilitado mas offline - mostra dados locais com indicação
-            from src.sentinela.clients.db_client import get_all_active_tickets_with_hubsoft_id
-            local_tickets = get_all_active_tickets_with_hubsoft_id()
-
-            offline_count = 0
-            for ticket in local_tickets:
-                if ticket['user_id'] == user.id:
-                    offline_count += 1
-                    sync_indicators[str(ticket['id'])] = {
-                        'is_synced': False,
-                        'source': 'local_offline',
-                        'last_attempt': ticket.get('last_sync_attempt', 'Nunca')
-                    }
-
-            await send_status_message(
-                f"🔄 <b>Verificando seus atendimentos...</b>\n\n"
-                f"🎮 Você possui {offline_count} atendimento(s) em acompanhamento.\n\n"
-                f"📶 <b>Status do sistema:</b> Atualização temporariamente indisponível\n\n"
-                f"✅ <b>Seus dados estão seguros!</b> Estamos trabalhando para manter "
-                f"tudo atualizado automaticamente.\n\n"
-                f"📞 Para abrir um novo chamado, use o comando /suporte."
-            )
-            return
+            # HubSoft habilitado mas offline - continua para mostrar dados locais detalhados
+            logger.info(f"DEBUG: /status para user {user.id} - HubSoft offline, continuando para exibir dados locais detalhados")
         else:
             # HubSoft desabilitado - mostra apenas info local
             await send_status_message(
@@ -513,7 +515,31 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
+        # Se não encontrou atendimentos no HubSoft, mas tem tickets locais ativos, mostra dados locais
+        if not atendimentos and local_active_tickets:
+            logger.info(f"DEBUG: /status para user {user.id} - nenhum atendimento no HubSoft, mas {len(local_active_tickets)} tickets locais. Mostrando dados locais.")
+            # Converte tickets locais para formato de atendimentos
+            for ticket in local_active_tickets:
+                atendimento_local = {
+                    'id': ticket.get('id'),
+                    'protocolo': f"LOC{ticket.get('id', 0):06d}",
+                    'titulo': ticket.get('description', 'Suporte Gaming'),
+                    'data_cadastro': ticket.get('created_at'),
+                    'status_display': {
+                        'emoji': '🔄',
+                        'name': 'Aguardando Sincronização',
+                        'message': 'Seu ticket está sendo processado'
+                    }
+                }
+                atendimentos.append(atendimento_local)
+                sync_indicators[str(ticket.get('id'))] = {
+                    'is_synced': False,
+                    'source': 'local_only',
+                    'message': 'Aguardando sincronização com sistema'
+                }
+
         if not atendimentos:
+            logger.info(f"DEBUG: /status para user {user.id} - nenhum atendimento encontrado (nem HubSoft nem local)")
             await send_status_message(
                 "✅ <b>Atendimentos finalizados</b>\n\n"
                 "🎮 Seus atendimentos já foram finalizados ou não estão mais pendentes.\n\n"
