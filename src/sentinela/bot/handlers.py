@@ -435,8 +435,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "📞 Use /suporte para abrir um novo chamado quando precisar."
             )
             return
-        else:
-            logger.info(f"DEBUG: /status para user {user.id} - {len(local_active_tickets)} ticket(s) ativo(s) detectado(s), continuando processamento")
+
+        logger.info(f"DEBUG: /status para user {user.id} - {len(local_active_tickets)} ticket(s) ativo(s) detectado(s), continuando processamento")
 
         # Busca IDs dos atendimentos criados pelo bot para este usuário (para sincronização com HubSoft)
         from src.sentinela.clients.db_client import get_user_bot_created_hubsoft_ids
@@ -484,24 +484,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             except Exception as e:
                 logger.error(f"Erro ao consultar HubSoft: {e}")
-                # Fallback para dados locais quando HubSoft falha
-                from src.sentinela.clients.db_client import get_all_active_tickets_with_hubsoft_id
-                local_tickets = get_all_active_tickets_with_hubsoft_id()
-                for ticket in local_tickets:
-                    if ticket['user_id'] == user.id:
-                        sync_indicators[str(ticket['id'])] = {
-                            'is_synced': False,
-                            'source': 'local_fallback',
-                            'error': 'HubSoft temporariamente indisponível'
-                        }
-
-                await send_status_message(
-                    "⚠️ <b>Sistema temporariamente indisponível</b>\n\n"
-                    "🎮 Seus atendimentos existem e estão seguros!\n\n"
-                    "🔄 Tente novamente em alguns minutos.\n\n"
-                    "💡 <b>Não se preocupe:</b> Tudo será atualizado automaticamente quando o sistema voltar."
-                )
-                return
+                logger.info(f"DEBUG: /status para user {user.id} - HubSoft falhou, continuando para mostrar dados locais")
+                # Não faz return aqui - continua para mostrar dados locais
         elif HUBSOFT_ENABLED and not hubsoft_online:
             # HubSoft habilitado mas offline - continua para mostrar dados locais detalhados
             logger.info(f"DEBUG: /status para user {user.id} - HubSoft offline, continuando para exibir dados locais detalhados")
@@ -635,6 +619,21 @@ async def suporte_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     message_thread_id = getattr(update.message, 'message_thread_id', None)
 
     logger.info(f"Comando /suporte recebido de {user.username} (ID: {user.id}) no chat {chat_id}")
+
+    # Executa sincronização automática antes de verificar tickets ativos
+    from src.sentinela.core.config import HUBSOFT_ENABLED
+    if HUBSOFT_ENABLED:
+        try:
+            from src.sentinela.services.hubsoft_sync_service import hubsoft_sync_service
+            hubsoft_online = await hubsoft_sync_service.check_hubsoft_health()
+            if hubsoft_online:
+                # Se HubSoft está online, tenta sincronizar status dos tickets do usuário
+                await hubsoft_sync_service.sync_all_active_tickets_status()
+                logger.info(f"Sincronização automática de status executada para /suporte de {user.username}")
+            else:
+                logger.warning("HubSoft offline durante comando /suporte")
+        except Exception as e:
+            logger.error(f"Erro durante sincronização automática no /suporte: {e}")
 
     # Se for no grupo, verifica se é no tópico de suporte
     if str(chat_id) == str(TELEGRAM_GROUP_ID):
