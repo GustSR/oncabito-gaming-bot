@@ -1,0 +1,1 @@
+"""Queries - operações de consulta que não modificam estado"""

@@ -1,0 +1,1 @@
+"""Clientes para serviços externos - HubSoft, Telegram API, etc."""

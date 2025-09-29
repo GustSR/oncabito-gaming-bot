@@ -1,0 +1,1 @@
+"""Value Objects - objetos imutáveis definidos pelos seus atributos"""

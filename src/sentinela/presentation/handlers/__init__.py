@@ -1,0 +1,1 @@
+"""Telegram Bot Handlers - apenas roteamento e formatação de resposta"""

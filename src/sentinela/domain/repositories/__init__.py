@@ -1,0 +1,1 @@
+"""Interfaces de Repository - contratos para persistência de dados"""

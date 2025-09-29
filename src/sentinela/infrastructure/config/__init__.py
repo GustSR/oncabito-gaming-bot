@@ -1,0 +1,1 @@
+"""Configuração da infraestrutura - database, logging, etc."""

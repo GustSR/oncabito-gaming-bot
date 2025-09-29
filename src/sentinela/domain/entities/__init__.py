@@ -1,0 +1,1 @@
+"""Entidades de domínio - objetos com identidade e ciclo de vida"""

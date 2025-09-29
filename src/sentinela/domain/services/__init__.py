@@ -1,0 +1,1 @@
+"""Domain Services - lógica de negócio que não pertence a uma entidade específica"""
