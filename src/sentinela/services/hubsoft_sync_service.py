@@ -182,6 +182,44 @@ class HubSoftSyncService:
                 try:
                     ticket_id = ticket['id']
 
+                    # Verifica se já existe um ticket similar no HubSoft para evitar duplicação
+                    existing_ticket = await self._find_existing_hubsoft_ticket(
+                        client_cpf=ticket['cpf'],
+                        ticket_description=ticket['description'],
+                        created_at=ticket['created_at']
+                    )
+
+                    if existing_ticket:
+                        # Associa o ticket local com o existente no HubSoft
+                        logger.info(f"Ticket local {ticket_id} correlacionado com ticket HubSoft existente {existing_ticket['id']}")
+
+                        update_data = {
+                            'hubsoft_atendimento_id': existing_ticket['id'],
+                            'hubsoft_protocol': existing_ticket.get('protocolo'),
+                            'sync_status': 'correlated',
+                            'synced_at': datetime.now().isoformat()
+                        }
+
+                        success = update_ticket_with_hubsoft_data(ticket_id, update_data)
+
+                        if success:
+                            # Adiciona nota no HubSoft sobre a correlação
+                            await hubsoft_atendimento_client.add_message_to_atendimento(
+                                str(existing_ticket['id']),
+                                f"🔗 CORRELAÇÃO AUTOMÁTICA:\n\n"
+                                f"Este atendimento foi correlacionado com ticket local criado offline.\n\n"
+                                f"• Protocolo local: LOC{ticket_id:06d}\n"
+                                f"• Criado offline em: {ticket['created_at']}\n"
+                                f"• Correlacionado em: {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
+                                f"📋 Dados do ticket local preservados."
+                            )
+
+                            results["success_count"] += 1
+                        else:
+                            results["failed_count"] += 1
+                            results["errors"].append(f"Ticket {ticket_id}: Erro ao correlacionar com HubSoft")
+                        continue
+
                     # Reconstrói dados do ticket para HubSoft
                     ticket_data = {
                         'user_id': ticket['user_id'],
@@ -353,6 +391,75 @@ class HubSoftSyncService:
         except Exception as e:
             logger.error(f"Erro ao forçar sincronização do ticket {ticket_id}: {e}")
             return {"status": "error", "message": str(e)}
+
+    async def _find_existing_hubsoft_ticket(self, client_cpf: str, ticket_description: str, created_at: str) -> Optional[Dict]:
+        """
+        Procura um ticket existente no HubSoft que possa corresponder ao ticket local.
+
+        Args:
+            client_cpf: CPF do cliente
+            ticket_description: Descrição do ticket local
+            created_at: Data de criação do ticket local
+
+        Returns:
+            Dict com dados do ticket HubSoft se encontrado, None caso contrário
+        """
+        try:
+            from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
+            from datetime import datetime, timedelta
+
+            # Busca atendimentos do cliente no HubSoft (últimos 7 dias)
+            hubsoft_tickets = await hubsoft_atendimento_client.get_client_atendimentos(
+                client_cpf=client_cpf,
+                apenas_pendente=True
+            )
+
+            if not hubsoft_tickets:
+                return None
+
+            # Converte data de criação do ticket local para comparação
+            try:
+                local_created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                local_created = datetime.now()
+
+            # Extrai palavras-chave da descrição para comparação
+            local_keywords = set(ticket_description.lower().split())
+
+            for hubsoft_ticket in hubsoft_tickets:
+                try:
+                    # Verifica se o ticket HubSoft foi criado em horário próximo (±24 horas)
+                    hubsoft_created_str = hubsoft_ticket.get('data_cadastro', '')
+                    if hubsoft_created_str:
+                        hubsoft_created = datetime.fromisoformat(hubsoft_created_str.replace('Z', '+00:00'))
+                        time_diff = abs((local_created - hubsoft_created).total_seconds())
+
+                        # Se foram criados com mais de 24 horas de diferença, pula
+                        if time_diff > 86400:  # 24 horas em segundos
+                            continue
+
+                    # Verifica similaridade do conteúdo
+                    hubsoft_description = hubsoft_ticket.get('titulo', '') + ' ' + hubsoft_ticket.get('descricao', '')
+                    hubsoft_keywords = set(hubsoft_description.lower().split())
+
+                    # Calcula similaridade simples (palavras em comum)
+                    common_keywords = local_keywords.intersection(hubsoft_keywords)
+                    similarity = len(common_keywords) / max(len(local_keywords), 1)
+
+                    # Se similaridade > 30% e criados no mesmo período, considera como correlação
+                    if similarity > 0.3:
+                        logger.info(f"Ticket correlacionado encontrado: HubSoft ID {hubsoft_ticket['id']}, similaridade: {similarity:.2%}")
+                        return hubsoft_ticket
+
+                except Exception as e:
+                    logger.warning(f"Erro ao processar ticket HubSoft {hubsoft_ticket.get('id')}: {e}")
+                    continue
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Erro ao procurar ticket existente no HubSoft: {e}")
+            return None
 
 # Instância global do serviço
 hubsoft_sync_service = HubSoftSyncService()

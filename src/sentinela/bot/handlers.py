@@ -504,22 +504,39 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.info(f"DEBUG: /status para user {user.id} - nenhum atendimento no HubSoft, mas {len(local_active_tickets)} tickets locais. Mostrando dados locais.")
             # Converte tickets locais para formato de atendimentos
             for ticket in local_active_tickets:
-                atendimento_local = {
-                    'id': ticket.get('id'),
-                    'protocolo': f"LOC{ticket.get('id', 0):06d}",
-                    'titulo': ticket.get('description', 'Suporte Gaming'),
-                    'data_cadastro': ticket.get('created_at'),
-                    'status_display': {
+                # Prioriza protocolo HubSoft se disponível, senão usa protocolo local
+                hubsoft_protocol = ticket.get('hubsoft_protocol')
+                local_protocol = f"LOC{ticket.get('id', 0):06d}"
+                display_protocol = hubsoft_protocol if hubsoft_protocol else local_protocol
+
+                # Determina status baseado na sincronização
+                if hubsoft_protocol:
+                    status_display = {
+                        'emoji': '✅',
+                        'name': 'Sincronizado',
+                        'message': 'Atendimento ativo no sistema HubSoft'
+                    }
+                    is_synced = True
+                else:
+                    status_display = {
                         'emoji': '🔄',
                         'name': 'Aguardando Sincronização',
                         'message': 'Seu ticket está sendo processado'
                     }
+                    is_synced = False
+
+                atendimento_local = {
+                    'id': ticket.get('id'),
+                    'protocolo': display_protocol,
+                    'titulo': ticket.get('description', 'Suporte Gaming'),
+                    'data_cadastro': ticket.get('created_at'),
+                    'status_display': status_display
                 }
                 atendimentos.append(atendimento_local)
                 sync_indicators[str(ticket.get('id'))] = {
-                    'is_synced': False,
-                    'source': 'local_only',
-                    'message': 'Aguardando sincronização com sistema'
+                    'is_synced': is_synced,
+                    'source': 'hubsoft' if hubsoft_protocol else 'local_only',
+                    'message': 'Sincronizado com HubSoft' if hubsoft_protocol else 'Aguardando sincronização com sistema'
                 }
 
         if not atendimentos:
