@@ -66,9 +66,9 @@ fi
 echo "📦 Criando backup..."
 if [ "$CONTAINER_RUNNING" = true ]; then
     # Tenta backup via sqlite3 no container, se falhar usa cópia direta
-    if docker exec oncabito-bot sqlite3 /app/data/database/sentinela.db ".backup /app/data/database/backup_temp.db" 2>/dev/null; then
-        docker cp oncabito-bot:/app/data/database/backup_temp.db "$DEST_DIR/$BACKUP_NAME"
-        docker exec oncabito-bot rm -f /app/data/database/backup_temp.db
+    if docker exec oncabo-gaming-bot sqlite3 /app/data/database/sentinela.db ".backup /app/data/database/backup_temp.db" 2>/dev/null; then
+        docker cp oncabo-gaming-bot:/app/data/database/backup_temp.db "$DEST_DIR/$BACKUP_NAME"
+        docker exec oncabo-gaming-bot rm -f /app/data/database/backup_temp.db
         echo "   Backup via SQLite3 no container"
     else
         # Fallback: cópia direta do arquivo

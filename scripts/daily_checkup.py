@@ -56,8 +56,9 @@ async def verify_user_access(user_data: dict) -> bool:
             logger.info(f"Usuário {user_id} não está mais no grupo")
             return False
 
-        # 2. Verifica se contrato ainda está ativo
-        has_active_contract = check_contract_status(cpf)
+        # 2. Verifica se contrato ainda está ativo (usa cache inteligente)
+        from src.sentinela.integrations.hubsoft.cliente import get_client_info
+        has_active_contract = get_client_info(cpf, full_data=False)
         if not has_active_contract:
             logger.warning(f"Contrato inativo para {client_name} (ID: {user_id})")
 

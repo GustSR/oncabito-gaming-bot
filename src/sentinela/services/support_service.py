@@ -798,6 +798,51 @@ async def process_confirmation(user_id: int, action: str, form_data: dict, usern
     except Exception as e:
         logger.error(f"Erro ao processar confirmação para {username}: {e}")
 
+async def get_enriched_user_data(user_id: int) -> dict | None:
+    """
+    Busca dados enriquecidos do usuário (local + HubSoft)
+    Inclui data de habilitação real do HubSoft
+    """
+    try:
+        from src.sentinela.core.config import HUBSOFT_ENABLED
+
+        # Busca dados básicos do banco local
+        user_data = get_user_data(user_id)
+        if not user_data:
+            return None
+
+        # Se HubSoft habilitado, busca dados completos
+        if HUBSOFT_ENABLED and user_data.get('cpf'):
+            try:
+                from src.sentinela.integrations.hubsoft.cliente import get_client_data
+
+                hubsoft_data = get_client_data(user_data['cpf'])
+                if hubsoft_data and hubsoft_data.get('servicos'):
+                    servico = hubsoft_data['servicos'][0]
+
+                    # Enriquece com data de habilitação do HubSoft
+                    if 'data_habilitacao_br' in servico:
+                        user_data['data_habilitacao'] = servico['data_habilitacao_br']
+
+                    # Atualiza outros dados importantes
+                    if 'nome_razaosocial' in hubsoft_data:
+                        user_data['client_name'] = hubsoft_data['nome_razaosocial']
+
+                    if 'nome' in servico:
+                        user_data['service_name'] = servico['nome']
+
+                    logger.info(f"Dados do usuário {user_id} enriquecidos com HubSoft")
+
+            except Exception as e:
+                logger.warning(f"Erro ao enriquecer dados do usuário {user_id} com HubSoft: {e}")
+                # Continua com dados locais apenas
+
+        return user_data
+
+    except Exception as e:
+        logger.error(f"Erro ao buscar dados enriquecidos do usuário {user_id}: {e}")
+        return None
+
 async def create_support_ticket(user_id: int, form_data: dict, username: str):
     """Cria ticket de suporte final"""
     try:
@@ -809,8 +854,8 @@ async def create_support_ticket(user_id: int, form_data: dict, username: str):
             from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
             from src.sentinela.integrations.hubsoft.config import format_protocol
 
-        # Busca dados do cliente
-        user_data = get_user_data(user_id)
+        # Busca dados do cliente (local + HubSoft)
+        user_data = await get_enriched_user_data(user_id)
         if not user_data:
             await send_error_message(user_id, "Erro: dados do cliente não encontrados")
             return
@@ -1010,13 +1055,15 @@ async def send_support_blocked_message(user_id: int, permission: dict):
                 ticket_info = "#ATD000000"
 
             message = (
-                f"🎮 <b>Olá!</b> Vejo que você já tem um atendimento em andamento ({ticket_info}).\n\n"
-                f"📞 Nossa equipe está trabalhando no seu caso!\n\n"
-                f"💡 <b>Para agilizar, você pode:</b>\n"
-                f"• Aguardar retorno da equipe técnica\n"
-                f"• Adicionar informações ao chamado existente\n"
-                f"• Verificar status pelo número do protocolo\n\n"
-                f"⏰ <b>Tempo médio de resposta:</b> 2-4 horas úteis"
+                f"🎮 <b>Atendimento em Andamento</b>\n\n"
+                f"📋 <b>Protocolo:</b> {ticket_info}\n"
+                f"🔄 <b>Status:</b> Em análise pela equipe técnica\n\n"
+                f"🚀 <b>Próximos passos:</b>\n"
+                f"• 📱 Use <code>/status</code> para acompanhar o progresso\n"
+                f"• ⏰ Aguarde contato da nossa equipe técnica\n"
+                f"• 📞 Nossa equipe entrará em contato pelo Telegram\n\n"
+                f"⚡ <b>Tempo médio de resposta:</b> 2-4 horas úteis\n"
+                f"✅ <b>Seu chamado está sendo processado!</b>"
             )
         elif reason == 'daily_limit':
             message = (

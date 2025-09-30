@@ -48,29 +48,37 @@ fi
 
 echo "✅ Ambiente validado"
 
-# Para container se estiver rodando
+# Para TODOS os containers relacionados
 echo ""
-echo "⏹️ Parando serviços..."
-if [ "$(docker ps -q -f name=oncabito-bot)" ]; then
-    echo "📦 Parando container existente..."
-    docker stop oncabito-bot
-    docker rm oncabito-bot
-    echo "✅ Container parado"
-else
-    echo "ℹ️ Nenhum container rodando"
-fi
+echo "⏹️ Parando todos os serviços..."
+echo "📦 Parando containers via docker-compose..."
+COMPOSE_PROJECT_NAME=oncabito-bot docker-compose down --remove-orphans
+docker-compose down --remove-orphans  # Limpa também com nome padrão
 
-# Remove imagem antiga se existir
-if [ "$(docker images -q oncabito-bot)" ]; then
-    echo "🗑️ Removendo imagem antiga..."
-    docker rmi oncabito-bot
-    echo "✅ Imagem antiga removida"
-fi
+# Limpa containers antigos manualmente se existirem
+echo "🧹 Limpando containers antigos..."
+for container in oncabo-gaming-bot oncabito-bot sentinela-oncabito-bot-1 sentinela-oncabo-gaming-bot-1; do
+    if [ "$(docker ps -aq -f name=$container)" ]; then
+        echo "🗑️ Removendo container: $container"
+        docker rm -f $container 2>/dev/null || true
+    fi
+done
 
-# Build nova imagem
+# Remove imagens antigas se existirem
+echo "🗑️ Removendo imagens antigas..."
+for image in sentinela-oncabo-gaming-bot sentinela-oncabito-bot oncabito-bot oncabo-gaming-bot; do
+    if [ "$(docker images -q $image)" ]; then
+        echo "🗑️ Removendo imagem: $image"
+        docker rmi $image 2>/dev/null || true
+    fi
+done
+
+echo "✅ Limpeza concluída"
+
+# Build nova imagem usando docker-compose
 echo ""
 echo "🔨 Buildando nova imagem..."
-docker build -t oncabito-bot .
+COMPOSE_PROJECT_NAME=oncabito-bot docker-compose build --no-cache
 echo "✅ Imagem criada com sucesso"
 
 # Cria diretórios necessários
@@ -80,15 +88,10 @@ mkdir -p data/database
 mkdir -p logs
 echo "✅ Diretórios preparados"
 
-# Inicia novo container
+# Inicia novo container usando docker-compose
 echo ""
 echo "▶️ Iniciando OnCabito Bot..."
-docker run -d --name oncabito-bot \
-  --restart unless-stopped \
-  --env-file .env \
-  -v "$PROJECT_DIR/data:/app/data" \
-  -v "$PROJECT_DIR/logs:/app/logs" \
-  oncabito-bot
+COMPOSE_PROJECT_NAME=oncabito-bot docker-compose up -d
 
 # Aguarda inicialização
 echo "⏳ Aguardando inicialização..."
@@ -99,23 +102,23 @@ echo ""
 echo "📊 STATUS DO DEPLOY:"
 echo "===================="
 
-if [ "$(docker ps -q -f name=oncabito-bot)" ]; then
+if [ "$(docker ps -q -f name=oncabo-gaming-bot)" ]; then
     echo "✅ Container: ONLINE"
-    echo "📦 Status: $(docker ps --format "table {{.Status}}" --filter name=oncabito-bot | tail -n1)"
+    echo "📦 Status: $(docker ps --format "table {{.Status}}" --filter name=oncabo-gaming-bot | tail -n1)"
 
     # Verifica logs iniciais
     echo ""
     echo "📋 Logs iniciais:"
     echo "----------------"
-    docker logs oncabito-bot --tail 10
+    docker logs oncabo-gaming-bot --tail 10
 
     echo ""
     echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
     echo ""
     echo "📊 INFORMAÇÕES ÚTEIS:"
-    echo "• Container: oncabito-bot"
-    echo "• Logs em tempo real: docker logs -f oncabito-bot"
-    echo "• Status: docker ps | grep oncabito-bot"
+    echo "• Container: oncabo-gaming-bot"
+    echo "• Logs em tempo real: docker logs -f oncabo-gaming-bot"
+    echo "• Status: docker ps | grep oncabo-gaming-bot"
     echo "• Checkup manual: $PROJECT_DIR/deployment/run_checkup.sh"
     echo "• Documentação: $PROJECT_DIR/docs/"
 
@@ -123,7 +126,7 @@ else
     echo "❌ ERRO: Container não iniciou corretamente"
     echo ""
     echo "🔍 LOGS DE ERRO:"
-    docker logs oncabito-bot 2>/dev/null || echo "Sem logs disponíveis"
+    docker logs oncabo-gaming-bot 2>/dev/null || echo "Sem logs disponíveis"
     echo ""
     echo "💡 POSSÍVEIS SOLUÇÕES:"
     echo "• Verifique as credenciais no .env"

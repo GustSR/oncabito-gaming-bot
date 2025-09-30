@@ -29,6 +29,12 @@ class DomainEvent:
             return False
         return self.event_id == other.event_id
 
+    def __post_init__(self):
+        """Para compatibilidade com dataclasses."""
+        if not hasattr(self, 'occurred_at'):
+            object.__setattr__(self, 'occurred_at', datetime.now())
+            object.__setattr__(self, 'event_id', f"{self.__class__.__name__}_{int(self.occurred_at.timestamp()*1000)}")
+
     def __hash__(self) -> int:
         return hash(self.event_id)
 
@@ -120,3 +126,22 @@ class AggregateRoot(Entity[EntityId]):
         """Incrementa a versão do agregado."""
         self._version += 1
         self._touch()
+
+    def add_domain_event(self, event: DomainEvent) -> None:
+        """
+        Adiciona um evento de domínio ao agregado.
+
+        Args:
+            event: Evento de domínio a ser adicionado
+        """
+        self._add_event(event)
+        self._increment_version()
+
+    def get_domain_events(self) -> List[DomainEvent]:
+        """
+        Retorna lista de eventos de domínio.
+
+        Returns:
+            List[DomainEvent]: Eventos gerados pelo agregado
+        """
+        return self.events

@@ -1,0 +1,19 @@
+# docker-compose.prod.yml
+# Arquivo para produção usando imagem do registry
+# Use com: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  oncabo-gaming-bot:
+    # Para produção: usa imagem do registry
+    image: ghcr.io/gustsr/oncabo-gaming-bot:latest
+
+    # Remove build para forçar uso da imagem
+    build: null
+
+    # Restart policy mais rigoroso para produção
+    restart: unless-stopped
+
+    # Pull policy para sempre pegar a versão mais recente
+    pull_policy: always

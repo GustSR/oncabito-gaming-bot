@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  oncabito-bot:
-    image: ghcr.io/gustsr/oncabito-gaming-bot:latest
-    container_name: oncabito-bot
+  oncabo-gaming-bot:
+    build: .
+    container_name: oncabo-gaming-bot
     restart: unless-stopped
     env_file:
       - .env
@@ -22,7 +22,7 @@ services:
   # Opcional: Backup automático
   backup:
     image: alpine:latest
-    container_name: oncabito-backup
+    container_name: oncabo-backup
     restart: "no"
     volumes:
       - ./data:/data:ro
@@ -30,7 +30,7 @@ services:
     command: |
       sh -c "
         mkdir -p /backups
-        tar -czf /backups/oncabito-backup-$(date +%Y%m%d_%H%M%S).tar.gz -C / data
+        tar -czf /backups/oncabo-backup-$(date +%Y%m%d_%H%M%S).tar.gz -C / data
         find /backups -name '*.tar.gz' -mtime +7 -delete
         echo 'Backup completed'
       "

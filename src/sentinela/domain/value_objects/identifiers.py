@@ -48,6 +48,19 @@ class TicketId(ValueObject):
     def __int__(self) -> int:
         return self.value
 
+    @classmethod
+    def generate(cls) -> 'TicketId':
+        """
+        Gera um novo TicketId.
+
+        Returns:
+            TicketId: Novo ID gerado
+        """
+        import time
+        # Por simplicidade, usa timestamp como ID
+        # Em produção, usar UUID ou auto-increment do banco
+        return cls(int(time.time() * 1000) % 2147483647)
+
 
 @dataclass(frozen=True)
 class HubSoftId(ValueObject):
@@ -142,3 +155,30 @@ class Protocol(ValueObject):
 
     def __str__(self) -> str:
         return self.display()
+
+
+@dataclass(frozen=True)
+class ConversationId(ValueObject):
+    """
+    Identificador único de conversa de suporte.
+
+    Attributes:
+        value: Valor numérico do ID
+    """
+    value: int
+
+    def __post_init__(self):
+        if not isinstance(self.value, int) or self.value <= 0:
+            raise ValidationError("ConversationId deve ser um número inteiro positivo")
+
+    def __int__(self) -> int:
+        return self.value
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    @classmethod
+    def generate(cls) -> 'ConversationId':
+        """Gera um novo ConversationId."""
+        import time
+        return cls(int(time.time() * 1000) % 2147483647)

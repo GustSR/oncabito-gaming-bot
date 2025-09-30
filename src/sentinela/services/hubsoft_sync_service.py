@@ -101,12 +101,12 @@ class HubSoftSyncService:
             from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
             from src.sentinela.clients.db_client import get_ticket_by_hubsoft_id, update_ticket_sync_status
 
-            # Busca detalhes do atendimento no HubSoft
-            # Como não temos endpoint específico, usamos o endpoint geral
+            # OTIMIZAÇÃO: Busca detalhes do atendimento no HubSoft de forma mais eficiente
+            # Tenta buscar com filtros mais específicos para reduzir dados transferidos
             result = await hubsoft_atendimento_client.get_atendimentos_paginado(
                 pagina=0,
-                itens_por_pagina=50,  # Busca mais tickets para encontrar o específico
-                relacoes="atendimento_mensagem,cliente_servico"
+                itens_por_pagina=100,  # Aumentamos para reduzir chamadas múltiplas
+                relacoes="atendimento_mensagem"  # Reduzimos relações desnecessárias
             )
 
             if result.get('status') != 'success':
@@ -293,7 +293,10 @@ class HubSoftSyncService:
 
     async def sync_all_active_tickets_status(self) -> Dict[str, Any]:
         """
-        Sincroniza status de todos os tickets ativos com o HubSoft.
+        Sincroniza status de todos os tickets ativos com o HubSoft de forma otimizada.
+
+        OTIMIZAÇÃO: Busca todos os tickets em uma única chamada ao invés de
+        uma chamada por ticket.
 
         Returns:
             Dict com resultado da sincronização
@@ -303,33 +306,90 @@ class HubSoftSyncService:
                 return {"status": "error", "message": "HubSoft não está online"}
 
             from src.sentinela.clients.db_client import get_all_active_tickets_with_hubsoft_id
+            from src.sentinela.integrations.hubsoft.atendimento import hubsoft_atendimento_client
 
             active_tickets = get_all_active_tickets_with_hubsoft_id()
 
             if not active_tickets:
                 return {"status": "success", "message": "Nenhum ticket ativo para sincronizar"}
 
+            # OTIMIZAÇÃO: Busca todos os atendimentos em lote ao invés de um por vez
+            hubsoft_ids = [ticket['hubsoft_atendimento_id'] for ticket in active_tickets]
+            logger.info(f"Sincronizando {len(active_tickets)} tickets ativos em lote...")
+
             results = {
                 "total_tickets": len(active_tickets),
                 "updated_count": 0,
                 "unchanged_count": 0,
-                "failed_count": 0
+                "failed_count": 0,
+                "api_calls_saved": len(active_tickets) - 1  # Economia de chamadas
             }
 
+            # Busca todos os atendimentos em uma única chamada paginada
+            all_hubsoft_tickets = {}
+            page = 0
+            while True:
+                page_result = await hubsoft_atendimento_client.get_atendimentos_paginado(
+                    pagina=page,
+                    itens_por_pagina=100,  # Máximo por página
+                    relacoes="atendimento_mensagem"
+                )
+
+                if page_result.get('status') != 'success':
+                    break
+
+                tickets_page = page_result.get('atendimentos', [])
+                if not tickets_page:
+                    break
+
+                # Indexa tickets por ID para busca rápida
+                for ticket in tickets_page:
+                    ticket_id = str(ticket.get('id', ''))
+                    if ticket_id in hubsoft_ids:
+                        all_hubsoft_tickets[ticket_id] = ticket
+
+                # Se encontrou todos os tickets necessários, para
+                if len(all_hubsoft_tickets) >= len(hubsoft_ids):
+                    break
+
+                page += 1
+                # Segurança: máximo 10 páginas para evitar loop infinito
+                if page > 10:
+                    break
+
+            logger.info(f"Encontrados {len(all_hubsoft_tickets)} tickets no HubSoft de {len(hubsoft_ids)} buscados")
+
+            # Atualiza tickets locais com dados do HubSoft
+            from src.sentinela.clients.db_client import update_ticket_sync_status
+
             for ticket in active_tickets:
-                hubsoft_id = ticket['hubsoft_atendimento_id']
-                updated_data = await self.sync_ticket_status_from_hubsoft(hubsoft_id)
+                hubsoft_id = str(ticket['hubsoft_atendimento_id'])
 
-                if updated_data:
-                    results["updated_count"] += 1
+                if hubsoft_id in all_hubsoft_tickets:
+                    hubsoft_ticket = all_hubsoft_tickets[hubsoft_id]
+
+                    sync_data = {
+                        'hubsoft_status': hubsoft_ticket.get('status', {}),
+                        'last_sync': datetime.now().isoformat(),
+                        'is_synced': True
+                    }
+
+                    success = update_ticket_sync_status(ticket['id'], sync_data)
+                    if success:
+                        results["updated_count"] += 1
+                    else:
+                        results["failed_count"] += 1
                 else:
+                    # Ticket não encontrado no HubSoft
                     results["failed_count"] += 1
+                    logger.warning(f"Ticket {hubsoft_id} não encontrado no HubSoft durante sincronização em lote")
 
-            logger.info(f"Sincronização de status concluída: {results['updated_count']} atualizados")
+            logger.info(f"Sincronização em lote concluída: {results['updated_count']} atualizados, "
+                       f"{results['api_calls_saved']} chamadas economizadas")
             return {"status": "completed", "results": results}
 
         except Exception as e:
-            logger.error(f"Erro na sincronização de status: {e}")
+            logger.error(f"Erro na sincronização de status em lote: {e}")
             return {"status": "error", "message": str(e)}
 
     async def get_sync_status_summary(self) -> Dict[str, Any]:

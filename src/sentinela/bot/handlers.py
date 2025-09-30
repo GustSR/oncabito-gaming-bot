@@ -333,7 +333,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """
     from src.sentinela.core.config import TELEGRAM_GROUP_ID, SUPPORT_TOPIC_ID, HUBSOFT_ENABLED
     from src.sentinela.clients.db_client import get_user_data
-    from src.sentinela.services.hubsoft_sync_service import hubsoft_sync_service
     from datetime import datetime
 
     # Importa HubSoft apenas se habilitado
@@ -442,65 +441,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         from src.sentinela.clients.db_client import get_user_bot_created_hubsoft_ids
         bot_created_ids = get_user_bot_created_hubsoft_ids(user.id)
 
-        # === NOVA LÓGICA COM SINCRONIZAÇÃO ===
-
-        # 1. Primeiro verifica se HubSoft está online e faz health check
-        hubsoft_online = False
-        if HUBSOFT_ENABLED:
-            try:
-                hubsoft_online = await hubsoft_sync_service.check_hubsoft_health()
-                if hubsoft_online:
-                    # Se HubSoft está online, tenta sincronizar status dos tickets do usuário
-                    await hubsoft_sync_service.sync_all_active_tickets_status()
-                    logger.info(f"Sincronização automática de status executada para consulta de {user.username}")
-                else:
-                    logger.warning("HubSoft offline durante consulta de status")
-            except Exception as e:
-                logger.error(f"Erro durante verificação de health/sincronização: {e}")
-                hubsoft_online = False
-
-        # 2. Busca atendimentos com dados locais atualizados
+        # Converte tickets locais para formato de atendimentos para exibição
         atendimentos = []
-        sync_indicators = {}  # Para indicadores visuais de sincronização
+        hubsoft_online = True  # Assumir online para mostrar status correto
 
-        if HUBSOFT_ENABLED and hubsoft_online:
-            try:
-                # Busca todos os atendimentos no HubSoft e filtra apenas os criados pelo bot
-                all_atendimentos = await hubsoft_atendimento_client.get_client_atendimentos(
-                    client_cpf=client_cpf,
-                    apenas_pendente=True  # Apenas atendimentos ativos
-                )
-
-                # Filtra apenas atendimentos criados pelo bot e adiciona indicadores
-                for atendimento in all_atendimentos:
-                    atendimento_id = str(atendimento.get('id', ''))
-                    if atendimento_id in bot_created_ids:
-                        atendimentos.append(atendimento)
-                        sync_indicators[atendimento_id] = {
-                            'is_synced': True,
-                            'source': 'hubsoft',
-                            'last_sync': datetime.now().strftime("%H:%M")
-                        }
-
-            except Exception as e:
-                logger.error(f"Erro ao consultar HubSoft: {e}")
-                logger.info(f"DEBUG: /status para user {user.id} - HubSoft falhou, continuando para mostrar dados locais")
-                # Não faz return aqui - continua para mostrar dados locais
-        elif HUBSOFT_ENABLED and not hubsoft_online:
-            # HubSoft habilitado mas offline - continua para mostrar dados locais detalhados
-            logger.info(f"DEBUG: /status para user {user.id} - HubSoft offline, continuando para exibir dados locais detalhados")
-        else:
-            # HubSoft desabilitado - mostra apenas info local
-            await send_status_message(
-                "ℹ️ <b>Consultando seus atendimentos...</b>\n\n"
-                f"🎮 Você possui {len(bot_created_ids)} atendimento(s) registrado(s).\n\n"
-                "💡 <b>Observação:</b> Seus tickets estão salvos e sendo acompanhados.\n\n"
-                "📞 Para abrir um novo chamado, use o comando /suporte."
-            )
-            return
-
-        # Se não encontrou atendimentos no HubSoft, mas tem tickets locais ativos, mostra dados locais
-        if not atendimentos and local_active_tickets:
+        if local_active_tickets:
             logger.info(f"DEBUG: /status para user {user.id} - nenhum atendimento no HubSoft, mas {len(local_active_tickets)} tickets locais. Mostrando dados locais.")
             # Converte tickets locais para formato de atendimentos
             for ticket in local_active_tickets:
@@ -516,28 +461,22 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         'name': 'Sincronizado',
                         'message': 'Atendimento ativo no sistema HubSoft'
                     }
-                    is_synced = True
                 else:
                     status_display = {
                         'emoji': '🔄',
                         'name': 'Aguardando Sincronização',
                         'message': 'Seu ticket está sendo processado'
                     }
-                    is_synced = False
 
                 atendimento_local = {
                     'id': ticket.get('id'),
                     'protocolo': display_protocol,
                     'titulo': ticket.get('description', 'Suporte Gaming'),
                     'data_cadastro': ticket.get('created_at'),
-                    'status_display': status_display
+                    'status_display': status_display,
+                    'hubsoft_protocol': hubsoft_protocol
                 }
                 atendimentos.append(atendimento_local)
-                sync_indicators[str(ticket.get('id'))] = {
-                    'is_synced': is_synced,
-                    'source': 'hubsoft' if hubsoft_protocol else 'local_only',
-                    'message': 'Sincronizado com HubSoft' if hubsoft_protocol else 'Aguardando sincronização com sistema'
-                }
 
         if not atendimentos:
             logger.info(f"DEBUG: /status para user {user.id} - nenhum atendimento encontrado (nem HubSoft nem local)")
@@ -589,9 +528,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             status_name = status_info.get('name', 'Status Desconhecido')
             status_message = status_info.get('message', 'Sem informações')
 
-            # Indicador simples de status
-            sync_info = sync_indicators.get(atendimento_id, {})
-            if sync_info.get('is_synced', False):
+            # Usa protocolo HubSoft se disponível
+            if atendimento.get('hubsoft_protocol'):
                 sync_badge = "✅"
             else:
                 sync_badge = "🔄"

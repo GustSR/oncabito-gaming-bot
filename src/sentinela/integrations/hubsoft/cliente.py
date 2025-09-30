@@ -1,76 +1,67 @@
 import logging
-import time
 import requests
 from typing import Optional, Dict, Any
 from urllib.parse import urljoin
 
 from .config import (
     HUBSOFT_HOST,
-    HUBSOFT_CLIENT_ID,
-    HUBSOFT_CLIENT_SECRET,
-    HUBSOFT_USER,
-    HUBSOFT_PASSWORD,
-    HUBSOFT_ENDPOINT_TOKEN,
     HUBSOFT_ENDPOINT_CLIENTE
+)
+from .token_manager import get_hubsoft_token
+from .cache_manager import (
+    cache_client_data,
+    get_cached_client_data,
+    cache_contract_status,
+    get_cached_contract_status
 )
 
 logger = logging.getLogger(__name__)
 
-# Variáveis para cache do token em memória
-_access_token = None
-_token_expires_at = 0
-
 def _get_access_token() -> Optional[str]:
     """
-    Busca um token de acesso da API Hubsoft, usando cache em memória.
+    DEPRECATED: Use token_manager.get_hubsoft_token() directly.
+
+    Mantido para compatibilidade com código existente.
+    Redireciona para o gerenciador centralizado de tokens.
     """
-    global _access_token, _token_expires_at
+    return get_hubsoft_token()
 
-    if _access_token and time.time() < _token_expires_at - 60:
-        logger.info("Usando token de acesso da API Hubsoft em cache.")
-        return _access_token
-
-    logger.info("Token de acesso expirado ou inexistente. Solicitando um novo...")
-    token_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_TOKEN.lstrip('/'))
-
-    payload = {
-        "grant_type": "password",
-        "client_id": HUBSOFT_CLIENT_ID,
-        "client_secret": HUBSOFT_CLIENT_SECRET,
-        "username": HUBSOFT_USER,
-        "password": HUBSOFT_PASSWORD,
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
-    try:
-        response = requests.post(token_endpoint, data=payload, headers=headers, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        _access_token = data.get("access_token")
-        expires_in = data.get("expires_in", 3600)
-        _token_expires_at = time.time() + expires_in
-        logger.info("Novo token de acesso obtido e armazenado em cache.")
-        return _access_token
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Erro ao solicitar token de acesso da API Hubsoft: {e}")
-        return None
-
-def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
+def get_client_info(cpf: str, full_data: bool = True) -> Optional[Dict[str, Any]]:
     """
-    Busca dados completos do cliente com serviço habilitado.
+    Busca dados do cliente com serviço habilitado de forma otimizada.
+
+    Esta função substitui get_client_data() e check_contract_status() para evitar
+    requisições duplicadas à API do HubSoft.
 
     Args:
         cpf: CPF do cliente (formatado ou não)
+        full_data: Se True retorna dados completos, se False apenas verifica existência
 
     Returns:
         dict: Dados do cliente se encontrado, None caso contrário
+        bool: Se full_data=False, retorna apenas True/False para compatibilidade
     """
+    formatted_cpf = "".join(filter(str.isdigit, cpf))
+
+    # Tenta buscar no cache primeiro
+    if full_data:
+        cached_data = get_cached_client_data(formatted_cpf)
+        if cached_data is not None:
+            logger.debug(f"Dados do cliente {formatted_cpf[:3]}*** encontrados no cache")
+            return cached_data
+    else:
+        cached_status = get_cached_contract_status(formatted_cpf)
+        if cached_status is not None:
+            logger.debug(f"Status do contrato {formatted_cpf[:3]}*** encontrado no cache: {cached_status}")
+            return cached_status
+
+    # Cache miss - busca na API
     token = _get_access_token()
     if not token:
-        logger.error("Não foi possível buscar dados do cliente pois não há token de acesso.")
-        return None
+        error_msg = "Não foi possível buscar dados do cliente pois não há token de acesso."
+        logger.error(error_msg)
+        return False if not full_data else None
 
-    formatted_cpf = "".join(filter(str.isdigit, cpf))
     api_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_CLIENTE.lstrip('/'))
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -81,7 +72,8 @@ def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
         "limit": 1
     }
 
-    logger.info("Buscando dados completos do cliente na API Hubsoft...")
+    log_msg = "Verificando cliente na API Hubsoft" if not full_data else "Buscando dados completos do cliente na API Hubsoft"
+    logger.info(f"{log_msg} (cache miss)...")
 
     try:
         response = requests.get(api_endpoint, headers=headers, params=params, timeout=15)
@@ -96,6 +88,14 @@ def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
             clientes = data
 
         if clientes and len(clientes) > 0:
+            # Se só queremos verificar existência, cache o status e retorna True
+            if not full_data:
+                logger.info("Cliente com serviço habilitado encontrado para o CPF.")
+                # Cache o status positivo
+                cache_contract_status(formatted_cpf, True)
+                return True
+
+            # Retorna dados completos
             client_data = clientes[0]
             logger.info("Dados do cliente encontrados com sucesso.")
 
@@ -106,21 +106,49 @@ def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
                 client_data['servico_nome'] = servico.get('nome', '')
                 client_data['servico_status'] = servico.get('status', '')
 
+            # Cache os dados completos
+            cache_client_data(formatted_cpf, client_data)
+            # Cache também o status positivo
+            cache_contract_status(formatted_cpf, True)
+
             return client_data
 
-        logger.warning("Nenhum cliente encontrado para o CPF.")
-        return None
+        # Nenhum cliente encontrado
+        warning_msg = "Nenhum cliente com serviço habilitado encontrado para o CPF." if not full_data else "Nenhum cliente encontrado para o CPF."
+        logger.warning(warning_msg)
+
+        # Cache o resultado negativo (TTL menor para casos negativos)
+        if not full_data:
+            cache_contract_status(formatted_cpf, False, ttl_override=30 * 60)  # 30 min para casos negativos
+
+        return False if not full_data else None
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Erro ao buscar dados do cliente: {e}")
-        return None
+        logger.error(f"Erro ao consultar a API de integração do Hubsoft: {e}")
+        return False if not full_data else None
     except Exception as e:
-        logger.error(f"Erro inesperado ao processar dados do cliente: {e}")
-        return None
+        error_msg = f"Erro inesperado ao processar resposta da API Hubsoft: {e}" if not full_data else f"Erro inesperado ao processar dados do cliente: {e}"
+        logger.error(error_msg)
+        return False if not full_data else None
+
+# Funções de compatibilidade - mantém API existente e redireciona para função otimizada
+
+def get_client_data(cpf: str) -> Optional[Dict[str, Any]]:
+    """
+    DEPRECATED: Use get_client_info(cpf, full_data=True) instead.
+
+    Mantido para compatibilidade com código existente.
+    Esta função será removida em versões futuras.
+    """
+    logger.warning("get_client_data() is deprecated. Use get_client_info(cpf, full_data=True) instead.")
+    return get_client_info(cpf, full_data=True)
 
 def check_contract_status(cpf: str) -> bool:
     """
+    DEPRECATED: Use get_client_info(cpf, full_data=False) instead.
+
     Verifica se o cliente com o CPF informado possui qualquer serviço habilitado.
+    Esta função foi otimizada e agora reutiliza a mesma requisição da get_client_info().
 
     Args:
         cpf: CPF do cliente (formatado ou não)
@@ -128,62 +156,5 @@ def check_contract_status(cpf: str) -> bool:
     Returns:
         bool: True se cliente tem serviço ativo, False caso contrário
     """
-    token = _get_access_token()
-    if not token:
-        logger.error("Não foi possível verificar o contrato pois não há token de acesso.")
-        return False
-
-    formatted_cpf = "".join(filter(str.isdigit, cpf))
-    api_endpoint = urljoin(HUBSOFT_HOST, HUBSOFT_ENDPOINT_CLIENTE.lstrip('/'))
-
-    headers = {"Authorization": f"Bearer {token}"}
-    params = {
-        "busca": "cpf_cnpj",
-        "termo_busca": formatted_cpf,
-        "servico_status": "servico_habilitado",
-        "limit": 1  # Só precisamos saber se existe pelo menos 1
-    }
-
-    logger.info("Consultando API Hubsoft por cliente com serviço habilitado para o CPF.")
-    logger.debug(f"URL: {api_endpoint}")
-    logger.debug(f"Parâmetros: {params}")
-
-    try:
-        response = requests.get(api_endpoint, headers=headers, params=params, timeout=15)
-        logger.info(f"Status da resposta: {response.status_code}")
-        response.raise_for_status()
-        data = response.json()
-
-        logger.debug(f"Resposta completa da API Hubsoft: {data}")
-        logger.debug(f"Tipo da resposta: {type(data)}")
-
-        if isinstance(data, list):
-            logger.debug(f"Quantidade de resultados: {len(data)}")
-        elif isinstance(data, dict):
-            logger.debug(f"Chaves da resposta: {list(data.keys())}")
-
-        # Verifica o formato da resposta e extrai os clientes
-        clientes = []
-        if isinstance(data, dict) and "clientes" in data:
-            # Formato: {"status": "success", "clientes": [...]}
-            clientes = data.get("clientes", [])
-            logger.info(f"Formato de resposta com wrapper detectado. {len(clientes)} cliente(s) encontrado(s).")
-        elif isinstance(data, list):
-            # Formato direto: [...]
-            clientes = data
-            logger.info(f"Formato de resposta direto detectado. {len(clientes)} cliente(s) encontrado(s).")
-
-        # Se encontrou pelo menos um cliente, consideramos válido
-        if clientes and len(clientes) > 0:
-            logger.info("Cliente com serviço habilitado encontrado para o CPF.")
-            return True
-
-        logger.warning("Nenhum cliente com serviço habilitado encontrado para o CPF.")
-        return False
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Erro ao consultar a API de integração do Hubsoft: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Erro inesperado ao processar resposta da API Hubsoft: {e}")
-        return False
+    logger.warning("check_contract_status() is deprecated. Use get_client_info(cpf, full_data=False) instead.")
+    return get_client_info(cpf, full_data=False)

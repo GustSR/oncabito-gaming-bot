@@ -44,51 +44,52 @@ async def send_critical_notification(ticket_data: dict, user_data: dict, protoco
         affected_game = ticket_data.get('affected_game', 'Não especificado')
         category_name = get_category_display_name(ticket_data.get('category'))
 
-        # Calcula tempo como cliente
-        time_as_client = calculate_client_time(user_data.get('created_at'))
+        # Calcula tempo como cliente (usando data de habilitação se disponível)
+        time_as_client = calculate_client_time(user_data)
 
         # Informações enriquecidas da integração HubSoft
         hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
-        origem_sistema = "🤖 Bot Telegram (HubSoft Integrado)" if hubsoft_id else "🤖 Bot Telegram (Local)"
-        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
+        hubsoft_protocol = ticket_data.get('hubsoft_protocol')
+        origem_sistema = "🔄 HubSoft Integrado" if hubsoft_id else "📱 Sistema Local"
+
+        # Usa protocolo HubSoft se disponível, senão usa o protocolo local
+        if hubsoft_protocol:
+            protocolo_display = f"Atendimento - {hubsoft_protocol}"
+        else:
+            protocolo_display = f"ATD{protocol.zfill(6)}" if protocol.isdigit() else protocol
 
         # Status da integração
         integracao_status = ""
-        if hubsoft_id:
-            integracao_status = f"✅ <b>Sincronizado com HubSoft</b> (ID: {hubsoft_id})\n"
+        if hubsoft_protocol:
+            integracao_status = f"✅ <b>Sincronizado HubSoft</b>\n"
         else:
-            integracao_status = f"⚠️ <b>Aguardando sincronização HubSoft</b>\n"
+            integracao_status = f"⚠️ <b>Pendente sincronização</b>\n"
 
         message = (
-            f"🚨⚡️ <b>CHAMADO CRÍTICO - {category_name.upper()}</b>\n\n"
-            f"📋 <b>Protocolo:</b> {protocolo_display}\n"
-            f"🔗 <b>Sistema:</b> {origem_sistema}\n"
+            f"🚨 <b>NOVO CHAMADO CRÍTICO</b> 🚨\n\n"
+            f"📋 <b>Protocolo:</b> <code>{protocolo_display}</code>\n"
+            f"🔗 <b>Status:</b> {origem_sistema}\n"
             f"{integracao_status}"
-            f"🕒 <b>Horário:</b> {current_time}\n\n"
-            f"👤 <b>CLIENTE:</b>\n"
-            f"• Nome: <b>{client_name}</b>\n"
-            f"• CPF: {mask_cpf(user_data.get('cpf', ''))}\n"
-            f"• Contrato: {user_data.get('service_name', 'Plano OnCabo')}\n"
-            f"• Cliente desde: {time_as_client}\n"
-            f"• User ID: #{ticket_data.get('user_id', 'N/A')}\n\n"
-            f"🎮 <b>PROBLEMA RELATADO:</b>\n"
-            f"• Categoria: <b>{category_name}</b>\n"
-            f"• Jogo afetado: <b>{affected_game}</b>\n"
-            f"• Iniciado: {get_timing_display_name(ticket_data.get('problem_started'))}\n"
-            f"• Prioridade: 🚨 <b>ALTA</b>\n"
-            f"• Origem: Via formulário conversacional\n\n"
-            f"📝 <b>Descrição completa:</b>\n"
-            f"<i>\"{truncate_text(ticket_data.get('description', ''), 200)}\"</i>\n\n"
-            f"🔧 <b>AÇÕES RECOMENDADAS:</b>\n"
+            f"🕒 <b>Abertura:</b> {current_time}\n\n"
+            f"👤 <b>DADOS DO CLIENTE</b>\n"
+            f"• <b>Nome:</b> {client_name}\n"
+            f"• <b>CPF:</b> <code>{mask_cpf(user_data.get('cpf', ''))}</code>\n"
+            f"• <b>Plano:</b> {user_data.get('service_name', 'OnCabo Gaming')}\n"
+            f"• <b>Histórico:</b> {time_as_client}\n"
+            f"• <b>TG ID:</b> <code>{ticket_data.get('user_id', 'N/A')}</code>\n\n"
+            f"⚡ <b>DETALHES DO PROBLEMA</b>\n"
+            f"• <b>Categoria:</b> {category_name}\n"
+            f"• <b>Jogo/Serviço:</b> {affected_game}\n"
+            f"• <b>Quando começou:</b> {get_timing_display_name(ticket_data.get('problem_started'))}\n"
+            f"• <b>Urgência:</b> 🚨 ALTA PRIORIDADE\n"
+            f"{get_attachments_info(ticket_data, admin_format=True)}\n\n"
+            f"📝 <b>RELATO DO CLIENTE:</b>\n"
+            f"<blockquote>{truncate_text(ticket_data.get('description', ''), 180)}</blockquote>\n\n"
+            f"🔧 <b>SUGESTÕES TÉCNICAS:</b>\n"
             f"{get_recommended_actions(ticket_data.get('category'), affected_game)}\n\n"
-            f"🎯 <b>CONTEXTO TÉCNICO:</b>\n"
-            f"• Coletado via bot inteligente\n"
-            f"• Dados validados automaticamente\n"
-            f"• Cliente guiado no diagnóstico\n"
-            f"• Categorização automática de prioridade\n"
-            f"{get_attachments_info(ticket_data)}\n\n"
-            f"───────────────────────────────────\n"
-            f"📞 Responder no tópico 🆘 Suporte Gamer mencionando {protocolo_display}"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 <b>AÇÃO NECESSÁRIA:</b> Atender no 🆘 Suporte Gamer usando <code>{protocolo_display}</code>\n"
+            f"⏰ <b>SLA:</b> Resposta em até 15 minutos para chamados críticos"
         )
 
         await send_to_tech_channel(message)
@@ -106,8 +107,15 @@ async def send_medium_notification(ticket_data: dict, user_data: dict, protocol:
 
         # Informações da integração
         hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
-        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
-        sync_status = "🔄 HubSoft" if hubsoft_id else "📱 Local"
+        hubsoft_protocol = ticket_data.get('hubsoft_protocol')
+
+        # Usa protocolo HubSoft se disponível, senão usa o protocolo local
+        if hubsoft_protocol:
+            protocolo_display = f"Atendimento - {hubsoft_protocol}"
+        else:
+            protocolo_display = f"ATD{protocol.zfill(6)}" if protocol.isdigit() else protocol
+
+        sync_status = "🔄 HubSoft" if hubsoft_protocol else "📱 Local"
 
         message = (
             f"🔧 <b>NOVO CHAMADO - {category_name.upper()}</b>\n\n"
@@ -137,8 +145,15 @@ async def send_normal_notification(ticket_data: dict, user_data: dict, protocol:
 
         # Status de sincronização simplificado para notificação normal
         hubsoft_id = ticket_data.get('hubsoft_atendimento_id')
-        protocolo_display = f"#{protocol}" if protocol.isdigit() else protocol
-        integration_emoji = "🔄" if hubsoft_id else "📱"
+        hubsoft_protocol = ticket_data.get('hubsoft_protocol')
+
+        # Usa protocolo HubSoft se disponível, senão usa o protocolo local
+        if hubsoft_protocol:
+            protocolo_display = f"Atendimento - {hubsoft_protocol}"
+        else:
+            protocolo_display = f"ATD{protocol.zfill(6)}" if protocol.isdigit() else protocol
+
+        integration_emoji = "🔄" if hubsoft_protocol else "📱"
 
         # Info compacta sobre anexos
         attachments_compact = get_attachments_info(ticket_data, compact=True, emoji_only=True)
@@ -227,29 +242,61 @@ def get_recommended_actions(category: str, game: str) -> str:
     category_actions = actions.get(category, ["• Análise técnica personalizada"])
     return "\n".join(category_actions)
 
-def calculate_client_time(created_at: str) -> str:
-    """Calcula tempo como cliente de forma amigável"""
-    if not created_at:
+def calculate_client_time(user_data: dict) -> str:
+    """
+    Calcula tempo como cliente usando data de habilitação quando disponível
+
+    Args:
+        user_data: Dados do usuário (deve conter data_habilitacao ou created_at)
+
+    Returns:
+        str: Tempo como cliente formatado
+    """
+    # Prioriza data de habilitação do HubSoft
+    date_field = user_data.get('data_habilitacao') or user_data.get('created_at')
+
+    if not date_field:
         return "Cliente OnCabo"
 
     try:
         # Tenta parsear diferentes formatos de data
-        try:
-            created_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-        except:
-            created_date = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+        reference_date = None
 
-        days_diff = (datetime.now() - created_date).days
+        # Formato brasileiro dd/mm/yyyy (do HubSoft)
+        if '/' in str(date_field):
+            try:
+                reference_date = datetime.strptime(str(date_field), "%d/%m/%Y")
+            except:
+                pass
 
-        if days_diff < 7:
+        # Formato ISO (do banco local)
+        if not reference_date:
+            try:
+                reference_date = datetime.fromisoformat(str(date_field).replace('Z', '+00:00'))
+            except:
+                try:
+                    reference_date = datetime.strptime(str(date_field), "%Y-%m-%d %H:%M:%S")
+                except:
+                    pass
+
+        if not reference_date:
+            logger.warning(f"Não foi possível parsear data: {date_field}")
+            return "Cliente OnCabo"
+
+        days_diff = (datetime.now() - reference_date).days
+
+        if days_diff < 0:
+            return "Cliente OnCabo"
+        elif days_diff < 7:
             return f"Cliente há {days_diff} dias"
         elif days_diff < 30:
-            return f"Cliente há {days_diff//7} semanas"
+            weeks = max(1, days_diff // 7)
+            return f"Cliente há {weeks} {'semana' if weeks == 1 else 'semanas'}"
         elif days_diff < 365:
-            months = days_diff // 30
+            months = max(1, days_diff // 30)
             return f"Cliente há {months} {'mês' if months == 1 else 'meses'}"
         else:
-            years = days_diff // 365
+            years = max(1, days_diff // 365)
             return f"Cliente há {years} {'ano' if years == 1 else 'anos'}"
 
     except Exception as e:
@@ -328,7 +375,7 @@ async def send_daily_summary():
     except Exception as e:
         logger.error(f"Erro ao enviar resumo diário: {e}")
 
-def get_attachments_info(ticket_data: dict, compact: bool = False, emoji_only: bool = False) -> str:
+def get_attachments_info(ticket_data: dict, compact: bool = False, emoji_only: bool = False, admin_format: bool = False) -> str:
     """
     Retorna informações sobre anexos formatadas para notificações
 
@@ -336,6 +383,7 @@ def get_attachments_info(ticket_data: dict, compact: bool = False, emoji_only: b
         ticket_data: Dados do ticket
         compact: Se True, formato compacto
         emoji_only: Se True, apenas emoji (para linha única)
+        admin_format: Se True, formato específico para admins
 
     Returns:
         String formatada com info dos anexos
@@ -346,12 +394,17 @@ def get_attachments_info(ticket_data: dict, compact: bool = False, emoji_only: b
         if not attachments:
             if emoji_only:
                 return ""
+            if admin_format:
+                return "• <b>Anexos:</b> Nenhum"
             return "• Anexos: Nenhum" if compact else "• Sem anexos enviados"
 
         count = len(attachments)
 
         if emoji_only:
             return f"📎{count}"
+
+        if admin_format:
+            return f"• <b>Anexos:</b> 📎 {count} arquivo(s) {'📷 imagem' if count == 1 else '📷 imagens'}"
 
         if compact:
             return f"📎 {count} anexo(s)"

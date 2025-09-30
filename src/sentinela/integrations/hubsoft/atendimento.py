@@ -15,7 +15,8 @@ from .config import (
     HUBSOFT_STATUS_ATENDIMENTO_ABERTO,
     get_status_display
 )
-from .cliente import _get_access_token, get_client_data
+from .token_manager import get_hubsoft_token
+from .cliente import get_client_info
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class HubSoftAtendimentoClient:
         """Faz requisição assíncrona autenticada para API"""
         try:
             # Usa função síncrona existente para obter token
-            token = _get_access_token()
+            token = get_hubsoft_token()
             if not token:
                 raise Exception("Não foi possível obter token de acesso")
 
@@ -103,7 +104,7 @@ class HubSoftAtendimentoClient:
         """
         try:
             # Busca dados do cliente
-            client_data = get_client_data(client_cpf)
+            client_data = get_client_info(client_cpf, full_data=True)
             if not client_data:
                 raise Exception("Cliente não encontrado ou sem serviço ativo")
 
