@@ -598,3 +598,40 @@ class AdminOperationsUseCase(UseCase):
         except Exception as e:
             logger.error(f"Erro ao calcular estatísticas adicionais: {e}")
             return {"error": "Erro no cálculo de estatísticas"}
+
+    async def get_system_stats(self, command: GetSystemStatsCommand) -> AdminOperationResult:
+        """
+        Obtém estatísticas do sistema.
+
+        Args:
+            command: Comando com parâmetros da consulta
+
+        Returns:
+            AdminOperationResult: Resultado com estatísticas
+        """
+        try:
+            logger.info(f"Admin {command.admin_user_id} solicitando estatísticas do sistema")
+
+            result = await self.stats_handler.handle(command)
+
+            if result.success:
+                return AdminOperationResult(
+                    success=True,
+                    message="Estatísticas obtidas com sucesso",
+                    data=result.data,
+                    affected_items=1
+                )
+            else:
+                return AdminOperationResult(
+                    success=False,
+                    message=result.message or "Erro ao obter estatísticas",
+                    error_code="stats_error"
+                )
+
+        except Exception as e:
+            logger.error(f"Erro ao obter estatísticas do sistema: {e}")
+            return AdminOperationResult(
+                success=False,
+                message="Erro interno ao obter estatísticas",
+                error_code="internal_error"
+            )

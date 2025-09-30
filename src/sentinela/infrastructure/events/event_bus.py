@@ -83,10 +83,12 @@ class InMemoryEventBus(EventBus):
     Para produção, considerar usar Redis, RabbitMQ ou AWS EventBridge.
     """
 
-    def __init__(self):
+    def __init__(self, max_concurrent_handlers: int = 10, handler_timeout: int = 30):
         self._handlers: Dict[Type[DomainEvent], List[EventHandler]] = defaultdict(list)
         self._global_handlers: List[EventHandler] = []
         self._processing_events = False
+        self._max_concurrent_handlers = max_concurrent_handlers
+        self._handler_timeout = handler_timeout
 
     async def publish(self, event: DomainEvent) -> None:
         """
@@ -249,6 +251,15 @@ class InMemoryEventBus(EventBus):
         self._handlers.clear()
         self._global_handlers.clear()
         logger.debug("Cleared all event handlers")
+
+
+    async def shutdown(self) -> None:
+        """Encerra o event bus e limpa recursos."""
+        logger.info("Event bus sendo encerrado...")
+        self._handlers.clear()
+        self._global_handlers.clear()
+        self._processing_events = False
+        logger.info("Event bus encerrado com sucesso")
 
 
 class EventBusDecorator:

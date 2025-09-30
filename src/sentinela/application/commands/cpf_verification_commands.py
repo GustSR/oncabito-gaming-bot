@@ -124,3 +124,14 @@ class GetVerificationStatsCommand(Command):
     """
     admin_user_id: int
     include_details: bool = False
+
+
+@dataclass(frozen=True)
+class ProcessExpiredVerificationsCommand(Command):
+    """
+    Comando para processar verificações expiradas.
+
+    Attributes:
+        cleanup_days_old: Dias para considerar verificações muito antigas para limpeza
+    """
+    cleanup_days_old: int = 30

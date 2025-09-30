@@ -6,11 +6,11 @@ Define o contrato para persistência de usuários.
 
 from abc import abstractmethod
 from typing import List, Optional
+from datetime import datetime
 
 from .base import Repository
 from ..entities.user import User
 from ..value_objects.identifiers import UserId
-from ..value_objects.cpf import CPF
 
 
 class UserRepository(Repository[User, UserId]):
@@ -21,15 +21,15 @@ class UserRepository(Repository[User, UserId]):
     """
 
     @abstractmethod
-    async def find_by_cpf(self, cpf: CPF) -> Optional[User]:
+    async def find_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """
-        Busca usuário por CPF.
+        Busca usuário por ID do Telegram.
 
         Args:
-            cpf: CPF do usuário
+            telegram_id: ID do usuário no Telegram
 
         Returns:
-            User: Usuário encontrado ou None
+            Optional[User]: Usuário encontrado ou None
         """
         pass
 
@@ -39,10 +39,10 @@ class UserRepository(Repository[User, UserId]):
         Busca usuário por username.
 
         Args:
-            username: Username do Telegram
+            username: Username do usuário
 
         Returns:
-            User: Usuário encontrado ou None
+            Optional[User]: Usuário encontrado ou None
         """
         pass
 
@@ -57,22 +57,12 @@ class UserRepository(Repository[User, UserId]):
         pass
 
     @abstractmethod
-    async def find_pending_verification(self) -> List[User]:
+    async def find_banned_users(self) -> List[User]:
         """
-        Busca usuários pendentes de verificação.
+        Busca usuários banidos.
 
         Returns:
-            List[User]: Lista de usuários pendentes
-        """
-        pass
-
-    @abstractmethod
-    async def find_admins(self) -> List[User]:
-        """
-        Busca usuários administradores.
-
-        Returns:
-            List[User]: Lista de administradores
+            List[User]: Lista de usuários banidos
         """
         pass
 
@@ -87,42 +77,67 @@ class UserRepository(Repository[User, UserId]):
         pass
 
     @abstractmethod
-    async def exists_by_cpf(self, cpf: CPF) -> bool:
+    async def find_users_by_role(self, role: str) -> List[User]:
         """
-        Verifica se existe usuário com o CPF.
+        Busca usuários por role.
 
         Args:
-            cpf: CPF a verificar
+            role: Role a buscar
 
         Returns:
-            bool: True se existe
+            List[User]: Lista de usuários com o role
         """
         pass
 
     @abstractmethod
-    async def mark_user_inactive(self, user_id: UserId) -> bool:
+    async def ban_user(self, user_id: UserId, reason: str) -> bool:
         """
-        Marca usuário como inativo.
+        Bane um usuário.
+
+        Args:
+            user_id: ID do usuário
+            reason: Motivo do banimento
+
+        Returns:
+            bool: True se baniu com sucesso
+        """
+        pass
+
+    @abstractmethod
+    async def unban_user(self, user_id: UserId) -> bool:
+        """
+        Remove ban de um usuário.
 
         Args:
             user_id: ID do usuário
 
         Returns:
-            bool: True se marcou com sucesso
+            bool: True se removeu ban com sucesso
         """
         pass
 
     @abstractmethod
-    async def update_user_id_for_cpf(self, cpf: CPF, new_user_id: UserId, new_username: str) -> bool:
+    async def update_last_activity(self, user_id: UserId) -> bool:
         """
-        Atualiza o user_id para um registro baseado no CPF.
+        Atualiza última atividade do usuário.
 
         Args:
-            cpf: CPF do registro a atualizar
-            new_user_id: Novo ID do usuário
-            new_username: Novo username
+            user_id: ID do usuário
 
         Returns:
             bool: True se atualizou com sucesso
+        """
+        pass
+
+    @abstractmethod
+    async def get_user_statistics(self, user_id: UserId) -> dict:
+        """
+        Obtém estatísticas de um usuário.
+
+        Args:
+            user_id: ID do usuário
+
+        Returns:
+            dict: Estatísticas do usuário
         """
         pass

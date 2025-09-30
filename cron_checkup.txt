@@ -1,3 +1,0 @@
-# Checkup diário do Sentinela - executa às 6:00 da manhã todos os dias
-# Logs são salvos no diretório do projeto
-0 6 * * * /home/gust/Repositorios\ Github/Sentinela/run_checkup.sh >> /home/gust/Repositorios\ Github/Sentinela/logs/checkup.log 2>&1

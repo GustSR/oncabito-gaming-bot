@@ -154,3 +154,22 @@ class TicketUrgencyElevated(DomainEvent):
     old_urgency: str
     new_urgency: str
     reason: str
+
+
+@dataclass(frozen=True)
+class TechNotificationRequiredEvent(DomainEvent):
+    """
+    Evento disparado quando notificação técnica é necessária.
+
+    Attributes:
+        ticket_protocol: Protocolo do ticket relacionado
+        priority: Prioridade da notificação
+        message: Mensagem formatada para envio
+        channel_id: ID do canal de destino
+        created_at: Data/hora da criação
+    """
+    ticket_protocol: str
+    priority: 'NotificationPriority'  # Forward reference
+    message: str
+    channel_id: int
+    created_at: datetime

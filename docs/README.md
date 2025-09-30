@@ -1,229 +1,77 @@
-# 📚 Documentação Completa - OnCabito Bot
+# 📚 Documentação - Sentinela Bot
 
-Bem-vindo à documentação técnica completa do OnCabito Gaming Bot. Este é o centro de conhecimento para desenvolvedores, administradores e operadores do sistema.
+Bem-vindo à documentação do **Sentinela Bot** - Sistema de gerenciamento de comunidade gaming OnCabo.
 
----
+## 📖 Índice
 
-## 🎯 **VISÃO GERAL**
+### 🚀 Início Rápido
+- [Guia de Instalação](./guides/INSTALLATION.md) - Como instalar e configurar
+- [Primeiros Passos](./guides/GETTING_STARTED.md) - Uso básico do bot
+- [Comandos Disponíveis](./guides/COMMANDS.md) - Lista completa de comandos
 
-O **OnCabito Bot** é um sistema completo de automação para comunidades gamers no Telegram, integrado com APIs ERP para verificação automática de usuários e gestão inteligente de grupos.
+### 🏗️ Arquitetura
+- [Visão Geral da Arquitetura](./architecture/OVERVIEW.md) - Clean Architecture + DDD
+- [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md) - Organização de diretórios
+- [Fluxo de Dados](./architecture/DATA_FLOW.md) - Como os dados fluem no sistema
+- [Padrões Implementados](./architecture/PATTERNS.md) - Design patterns utilizados
 
-### ✨ **Características Principais:**
-- 🔐 **Verificação automática** via CPF contra API HubSoft
-- 🎮 **Gestão de comunidades** com tópicos restritos
-- ⏰ **Automação completa** com checkups diários
-- 🛡️ **Segurança enterprise** com compliance LGPD
-- 🚀 **Deploy automático** via GitHub Actions + Docker
+### 🔌 API & Integrações
+- [API HubSoft](./api/HUBSOFT_API.md) - Integração com ERP HubSoft
+- [Telegram Bot API](./api/TELEGRAM_BOT.md) - Handlers e comandos
+- [Event Bus](./api/EVENT_BUS.md) - Sistema de eventos
 
----
+### 📝 Guias
+- [Deploy em Produção](./guides/DEPLOYMENT.md) - Como fazer deploy
+- [Configuração .env](./guides/CONFIGURATION.md) - Variáveis de ambiente
+- [Troubleshooting](./guides/TROUBLESHOOTING.md) - Resolução de problemas comuns
+- [Contribuindo](./guides/CONTRIBUTING.md) - Como contribuir com o projeto
 
-## 📖 **ÍNDICE DA DOCUMENTAÇÃO**
+### 🔄 Migração
+- [Relatório de Migração](./migration/MIGRATION_REPORT.md) - Histórico da migração
+- [Comparação Antes/Depois](./migration/COMPARISON.md) - Mudanças na arquitetura
 
-### 🚀 **INÍCIO RÁPIDO**
+## 🎯 Para Desenvolvedores
 
-| Documento | Descrição | Tempo | Público |
-|-----------|-----------|-------|---------|
-| **[README Principal](../README.md)** | Visão geral e setup básico | 10 min | Todos |
-| **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** | Deploy simplificado e confiável | 15 min | Administradores |
-| **[Quick Reference](QUICK_REFERENCE.md)** | Comandos e troubleshooting rápidos | 5 min | Operadores |
+Se você é desenvolvedor e vai trabalhar no projeto:
 
-### 🏗️ **ARQUITETURA E DESENVOLVIMENTO**
+1. Leia [Visão Geral da Arquitetura](./architecture/OVERVIEW.md)
+2. Entenda a [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md)
+3. Configure seu ambiente com [Guia de Instalação](./guides/INSTALLATION.md)
+4. Familiarize-se com os [Padrões Implementados](./architecture/PATTERNS.md)
 
-| Documento | Descrição | Complexidade | Público |
-|-----------|-----------|--------------|---------|
-| **[Arquitetura Completa](ARQUITETURA_COMPLETA.md)** | Documentação técnica detalhada | ⭐⭐⭐⭐⭐ | Arquitetos/Desenvolvedores |
+## 🚀 Para Administradores
 
-### 🔧 **CONFIGURAÇÃO E SETUP**
+Se você vai fazer deploy ou administrar o bot:
 
-| Documento | Descrição | Tempo | Quando Usar |
-|-----------|-----------|-------|-------------|
-| **[Topics Setup Guide](TOPICS_SETUP_GUIDE.md)** | Configuração de tópicos Telegram | 20 min | Setup inicial |
-| **[Topics Discovery Guide](TOPICS_DISCOVERY_GUIDE.md)** | Auto-descoberta de IDs | 10 min | Configuração |
-| **[Restricted Topics Guide](RESTRICTED_TOPICS_GUIDE.md)** | Sistema de permissões | 30 min | Configuração avançada |
-| **[Messages Templates](MENSAGENS_TOPICOS.md)** | Templates para tópicos | 15 min | Personalização |
-| **[Notifications Setup](NOTIFICATIONS_SETUP.md)** | Configuração de alertas | 25 min | Monitoramento |
+1. Configure o ambiente seguindo [Configuração .env](./guides/CONFIGURATION.md)
+2. Faça deploy com [Deploy em Produção](./guides/DEPLOYMENT.md)
+3. Consulte [Comandos Disponíveis](./guides/COMMANDS.md) para operação
+4. Use [Troubleshooting](./guides/TROUBLESHOOTING.md) para problemas
 
-### 🛡️ **SEGURANÇA E COMPLIANCE**
+## 🎮 Para Usuários Finais
 
-| Documento | Descrição | Importância | Público |
-|-----------|-----------|-------------|---------|
-| **[Segurança e Boas Práticas](SEGURANCA_E_BOAS_PRATICAS.md)** | Guia completo de segurança | 🔴 Crítico | Administradores |
-| **[Troubleshooting Completo](TROUBLESHOOTING_COMPLETO.md)** | Resolução de problemas | 🟡 Alto | Suporte Técnico |
-| **[Operações e Manutenção](OPERACOES_E_MANUTENCAO.md)** | Operações diárias | 🟡 Alto | Operadores |
+Se você é usuário da comunidade gaming:
 
----
+1. Veja [Primeiros Passos](./guides/GETTING_STARTED.md)
+2. Consulte [Comandos Disponíveis](./guides/COMMANDS.md)
 
-## 🎭 **PÚBLICO-ALVO**
+## 📊 Status do Projeto
 
-### 👨‍💻 **Desenvolvedores**
-```
-📚 Documentação Recomendada:
-├── Arquitetura Completa ⭐⭐⭐⭐⭐
-├── HubSoft API ⭐⭐⭐⭐
-├── Troubleshooting ⭐⭐⭐
-└── Segurança ⭐⭐
-```
+- ✅ **Arquitetura:** Clean Architecture + DDD completa
+- ✅ **Migração:** 100% concluída
+- ✅ **Testes:** Em desenvolvimento
+- ✅ **Documentação:** Em atualização
 
-### 🔧 **Administradores de Sistema**
-```
-📚 Documentação Recomendada:
-├── Deploy Manual Guide ⭐⭐⭐⭐⭐
-├── Segurança ⭐⭐⭐⭐⭐
-├── Operações ⭐⭐⭐⭐
-└── Troubleshooting ⭐⭐⭐⭐
-```
+## 🔗 Links Úteis
 
-### 👥 **Operadores/Suporte**
-```
-📚 Documentação Recomendada:
-├── Troubleshooting ⭐⭐⭐⭐⭐
-├── Operações ⭐⭐⭐⭐⭐
-├── Topics Setup ⭐⭐⭐
-└── Messages Templates ⭐⭐
-```
+- [Repositório GitHub](https://github.com/seu-usuario/sentinela)
+- [Issues](https://github.com/seu-usuario/sentinela/issues)
+- [Changelog](../CHANGELOG.md)
 
-### 🏢 **Gestores/Coordenadores**
-```
-📚 Documentação Recomendada:
-├── README Principal ⭐⭐⭐⭐⭐
-├── Deploy Manual Guide ⭐⭐⭐
-├── Operações (visão geral) ⭐⭐
-└── Segurança (compliance) ⭐⭐⭐
-```
+## 📄 Licença
+
+Este projeto está sob licença proprietária OnCabo Gaming.
 
 ---
 
-## 🗂️ **ORGANIZAÇÃO POR CASO DE USO**
-
-### 🆕 **Primeira Instalação**
-1. **[README Principal](../README.md)** - Entender o sistema
-2. **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** - Deploy simplificado
-3. **[Topics Setup Guide](TOPICS_SETUP_GUIDE.md)** - Configurar tópicos
-4. **[Operações](OPERACOES_E_MANUTENCAO.md)** - Configurar monitoramento
-
-### 🔄 **Deploy e Automação**
-1. **[Deploy Manual Guide](DEPLOY_MANUAL_GUIDE.md)** - Método atual
-2. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Hardening e compliance
-
-### 🐛 **Resolução de Problemas**
-1. **[Troubleshooting](TROUBLESHOOTING_COMPLETO.md)** - Guia completo
-2. **[Operações](OPERACOES_E_MANUTENCAO.md)** - Checklists diários
-3. **[Arquitetura](ARQUITETURA_COMPLETA.md)** - Debug profundo
-
-### 🔧 **Desenvolvimento**
-1. **[Arquitetura](ARQUITETURA_COMPLETA.md)** - Entender sistema
-2. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - Boas práticas
-
-### 🛡️ **Auditoria/Compliance**
-1. **[Segurança](SEGURANCA_E_BOAS_PRATICAS.md)** - LGPD e segurança
-2. **[Operações](OPERACOES_E_MANUTENCAO.md)** - Logs e métricas
-3. **[Arquitetura](ARQUITETURA_COMPLETA.md)** - Fluxo de dados
-
----
-
-## 📊 **NÍVEIS DE COMPLEXIDADE**
-
-### ⭐ **Básico (15-30 min)**
-- README Principal
-- Deploy Manual Guide
-- Topics Setup Guide
-- Messages Templates
-
-### ⭐⭐ **Intermediário (30-60 min)**
-- Topics Discovery Guide
-- Notifications Setup
-- Operações (visão geral)
-
-### ⭐⭐⭐ **Avançado (1-2 horas)**
-- HubSoft API
-- Restricted Topics Guide
-- CI/CD Setup Guide
-- Troubleshooting
-
-### ⭐⭐⭐⭐ **Expert (2-4 horas)**
-- Segurança completa
-- Operações completas
-- Deployment avançado
-
-### ⭐⭐⭐⭐⭐ **Arquiteto (4+ horas)**
-- Arquitetura Completa
-- Todo o sistema
-
----
-
-## 🔍 **BUSCA RÁPIDA**
-
-### 🚨 **Problemas Comuns**
-
-| Problema | Documento | Seção |
-|----------|-----------|-------|
-| Bot não responde | [Troubleshooting](TROUBLESHOOTING_COMPLETO.md) | P0: Bot Offline |
-| Deploy falha | [CI/CD Guide](CICD_SETUP_GUIDE.md) | Troubleshooting |
-| APIs não conectam | [Troubleshooting](TROUBLESHOOTING_COMPLETO.md) | Conectividade |
-| Tópicos não funcionam | [Topics Setup](TOPICS_SETUP_GUIDE.md) | Debug |
-| Usuário não verifica | [HubSoft API](hubsoft-api.md) | Troubleshooting |
-
-### 🔧 **Configurações Específicas**
-
-| Configuração | Documento | Tempo |
-|--------------|-----------|-------|
-| Configurar CI/CD | [CI/CD Setup](CICD_SETUP_GUIDE.md) | 30 min |
-| Descobrir tópicos | [Topics Discovery](TOPICS_DISCOVERY_GUIDE.md) | 10 min |
-| Setup de segurança | [Segurança](SEGURANCA_E_BOAS_PRATICAS.md) | 2 horas |
-| Monitoramento | [Operações](OPERACOES_E_MANUTENCAO.md) | 1 hora |
-
-### 📋 **Checklists**
-
-| Checklist | Documento | Uso |
-|-----------|-----------|-----|
-| Pre-deploy | [Segurança](SEGURANCA_E_BOAS_PRATICAS.md) | Antes de produção |
-| Checklist matinal | [Operações](OPERACOES_E_MANUTENCAO.md) | Diário |
-| Auditoria | [Segurança](SEGURANCA_E_BOAS_PRATICAS.md) | Mensal |
-| Manutenção | [Operações](OPERACOES_E_MANUTENCAO.md) | Semanal |
-
----
-
-## 🛠️ **FERRAMENTAS E RECURSOS**
-
-### 📋 **Scripts Úteis**
-```bash
-# Localização dos scripts principais
-├── 📁 scripts/
-│   ├── easy_setup.sh           # Setup automático
-│   ├── server_setup.sh         # Configuração servidor
-│   └── validate_checkup.py     # Validação sistema
-├── 📁 deployment/
-│   ├── deploy.sh               # Deploy manual
-│   ├── install.sh              # Instalação completa
-│   └── run_checkup.sh          # Checkup manual
-└── 📁 tools/
-    ├── test_config_final.sh    # Teste configuração
-    └── test_cron.sh            # Teste automação
-```
-
-### 🔗 **Links Importantes**
-- **GitHub:** https://github.com/GustSR/oncabito-gaming-bot
-- **Container Registry:** ghcr.io/gustsr/oncabito-gaming-bot
-- **Issues:** https://github.com/GustSR/oncabito-gaming-bot/issues
-- **OnCabo:** https://oncabo.com.br
-
-### 📞 **Suporte**
-- **GitHub Issues:** Para bugs e melhorias
-- **Telegram:** @oncabito_support (futuro)
-- **Email:** gaming@oncabo.com.br
-
----
-
-## 🎯 **CONCLUSÃO**
-
-Esta documentação foi criada para ser o **centro de conhecimento completo** do OnCabito Bot. Seja você um desenvolvedor implementando novas funcionalidades, um administrador configurando o sistema, ou um operador mantendo tudo funcionando - há um guia específico para suas necessidades.
-
-**💡 Dica:** Comece sempre pelo **[README Principal](../README.md)** e depois navegue para o documento específico da sua necessidade usando este índice.
-
-**🚀 Para começar agora:** Acesse o **[Easy Deploy Guide](EASY_DEPLOY_GUIDE.md)** e tenha o bot funcionando em 15 minutos!
-
----
-
-*Índice da documentação criado em 23/09/2025 - OnCabito Gaming Bot v2.0*
-
-**🤖 Sistema desenvolvido com ❤️ para a OnCabo Gaming Community**
+**Última atualização:** 30/09/2025

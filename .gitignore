@@ -133,6 +133,16 @@ local_config.py
 docs/draft/
 *.draft.md
 
+# === ARQUIVOS DE MIGRAÇÃO/TESTE ===
+# Arquivos temporários de teste e migração
+test_*.py
+*_test.py
+demo_*.py
+migration_*.py
+complete_migration.py
+fix_*.py
+cleanup_*.py
+
 # === GITHUB ===
 # GitHub Actions secrets (se houver)
 .github/secrets/

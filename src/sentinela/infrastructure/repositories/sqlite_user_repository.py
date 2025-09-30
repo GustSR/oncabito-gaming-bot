@@ -1,362 +1,372 @@
 """
-SQLite implementation of UserRepository.
+SQLite User Repository Implementation.
 
-Implementação concreta do UserRepository usando SQLite.
+Implementa persistência de usuários usando SQLite.
 """
 
-import sqlite3
 import logging
+import sqlite3
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 
+from ...domain.entities.user import User, UserId
 from ...domain.repositories.user_repository import UserRepository
-from ...domain.repositories.base import RepositoryError, EntityNotFoundError
-from ...domain.entities.user import User, UserStatus, ServiceInfo
-from ...domain.value_objects.identifiers import UserId
-from ...domain.value_objects.cpf import CPF
 
 logger = logging.getLogger(__name__)
 
 
 class SQLiteUserRepository(UserRepository):
-    """
-    Implementação SQLite do UserRepository.
-
-    Mapeia objetos de domínio User para/do banco SQLite.
-    """
+    """Implementação SQLite do repositório de usuários."""
 
     def __init__(self, db_path: str):
-        self._db_path = db_path
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """
-        Cria conexão com banco SQLite.
+    async def _init_database(self):
+        """Inicializa as tabelas do banco de dados."""
+        import aiosqlite
 
-        Returns:
-            sqlite3.Connection: Conexão com o banco
-        """
-        try:
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
-            return conn
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao conectar ao banco: {e}", e)
-
-    def _map_row_to_user(self, row: sqlite3.Row) -> User:
-        """
-        Mapeia row do banco para entidade User.
-
-        Args:
-            row: Row do SQLite
-
-        Returns:
-            User: Entidade User
-        """
-        try:
-            user_id = UserId(row['user_id'])
-            cpf = CPF(row['cpf'])
-
-            # Mapeia service info se disponível
-            service_info = None
-            if row['service_name']:
-                service_info = ServiceInfo(
-                    name=row['service_name'],
-                    status=row['service_status'] or 'unknown',
-                    service_id=row.get('service_id')
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    telegram_user_id INTEGER UNIQUE NOT NULL,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    is_banned BOOLEAN DEFAULT FALSE,
+                    ban_reason TEXT,
+                    roles TEXT DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_activity_at TEXT,
+                    metadata TEXT DEFAULT '{}'
                 )
+            """)
 
-            # Cria usuário
-            user = User(
-                user_id=user_id,
-                username=row['username'],
-                cpf=cpf,
-                client_name=row['client_name'],
-                service_info=service_info
-            )
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_telegram_id
+                ON users(telegram_user_id)
+            """)
 
-            # Atualiza status
-            status_str = row.get('status', 'pending_verification')
-            if hasattr(UserStatus, status_str.upper()):
-                user._status = UserStatus(status_str)
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_username
+                ON users(username)
+            """)
 
-            # Atualiza timestamps
-            if row['last_verification']:
-                user._last_verification = datetime.fromisoformat(row['last_verification'])
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_banned
+                ON users(is_banned)
+            """)
 
-            if row['created_at']:
-                user._created_at = datetime.fromisoformat(row['created_at'])
-
-            if row['updated_at']:
-                user._updated_at = datetime.fromisoformat(row['updated_at'])
-
-            # Admin flag
-            user._is_admin = bool(row.get('is_admin', 0))
-
-            # Limpa eventos (são do banco, não novos)
-            user.clear_events()
-
-            return user
-
-        except Exception as e:
-            raise RepositoryError(f"Erro ao mapear row para User: {e}", e)
-
-    def _map_user_to_dict(self, user: User) -> Dict[str, Any]:
-        """
-        Mapeia entidade User para dict do banco.
-
-        Args:
-            user: Entidade User
-
-        Returns:
-            Dict: Dados para inserção/atualização
-        """
-        data = {
-            'user_id': int(user.id),
-            'username': user.username,
-            'cpf': user.cpf.value,
-            'client_name': user.client_name,
-            'status': user.status.value,
-            'is_admin': 1 if user.is_admin else 0,
-            'last_verification': user.last_verification.isoformat() if user.last_verification else None,
-            'created_at': user.created_at.isoformat(),
-            'updated_at': user.updated_at.isoformat(),
-        }
-
-        # Service info
-        if user.service_info:
-            data['service_name'] = user.service_info.name
-            data['service_status'] = user.service_info.status
-            data['service_id'] = user.service_info.service_id
-        else:
-            data['service_name'] = None
-            data['service_status'] = None
-            data['service_id'] = None
-
-        return data
+            await db.commit()
 
     async def save(self, user: User) -> None:
-        """Salva usuário no banco."""
-        try:
-            with self._get_connection() as conn:
-                data = self._map_user_to_dict(user)
+        """Salva um usuário."""
+        import aiosqlite
+        import json
 
-                # Verifica se já existe
-                existing = await self.exists(user.id)
+        await self._init_database()
 
-                if existing:
-                    # Update
-                    placeholders = ', '.join(f"{key} = ?" for key in data.keys() if key != 'user_id')
-                    values = [v for k, v in data.items() if k != 'user_id']
-                    values.append(int(user.id))
+        async with aiosqlite.connect(self.db_path) as db:
+            # Verifica se existe
+            cursor = await db.execute("""
+                SELECT 1 FROM users WHERE id = ? LIMIT 1
+            """, (user.id.value,))
 
-                    conn.execute(
-                        f"UPDATE users SET {placeholders} WHERE user_id = ?",
-                        values
-                    )
-                else:
-                    # Insert
-                    placeholders = ', '.join('?' * len(data))
-                    columns = ', '.join(data.keys())
+            exists = await cursor.fetchone()
 
-                    conn.execute(
-                        f"INSERT INTO users ({columns}) VALUES ({placeholders})",
-                        list(data.values())
-                    )
+            if exists:
+                # Update
+                await db.execute("""
+                    UPDATE users SET
+                        telegram_user_id = ?,
+                        username = ?,
+                        first_name = ?,
+                        last_name = ?,
+                        is_banned = ?,
+                        ban_reason = ?,
+                        roles = ?,
+                        updated_at = ?,
+                        last_activity_at = ?,
+                        metadata = ?
+                    WHERE id = ?
+                """, (
+                    user.telegram_user_id,
+                    user.username,
+                    user.first_name,
+                    user.last_name,
+                    user.is_banned,
+                    user.ban_reason,
+                    json.dumps(user.roles),
+                    datetime.now().isoformat(),
+                    user.last_activity_at.isoformat() if user.last_activity_at else None,
+                    self._serialize_metadata(user.metadata),
+                    user.id.value
+                ))
+            else:
+                # Insert
+                await db.execute("""
+                    INSERT INTO users (
+                        id, telegram_user_id, username, first_name, last_name,
+                        is_banned, ban_reason, roles, created_at, updated_at,
+                        last_activity_at, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user.id.value,
+                    user.telegram_user_id,
+                    user.username,
+                    user.first_name,
+                    user.last_name,
+                    user.is_banned,
+                    user.ban_reason,
+                    json.dumps(user.roles),
+                    user.created_at.isoformat(),
+                    datetime.now().isoformat(),
+                    user.last_activity_at.isoformat() if user.last_activity_at else None,
+                    self._serialize_metadata(user.metadata)
+                ))
 
-                conn.commit()
-                logger.debug(f"User {user.id} saved successfully")
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao salvar usuário {user.id}: {e}", e)
+            await db.commit()
 
     async def find_by_id(self, user_id: UserId) -> Optional[User]:
         """Busca usuário por ID."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE user_id = ?",
-                    (int(user_id),)
-                )
-                row = cursor.fetchone()
+        import aiosqlite
 
-                if row:
-                    return self._map_row_to_user(row)
-                return None
+        await self._init_database()
 
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar usuário {user_id}: {e}", e)
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE id = ? LIMIT 1
+            """, (user_id.value,))
 
-    async def find_by_cpf(self, cpf: CPF) -> Optional[User]:
-        """Busca usuário por CPF."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE cpf = ?",
-                    (cpf.value,)
-                )
-                row = cursor.fetchone()
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user(row)
+            return None
 
-                if row:
-                    return self._map_row_to_user(row)
-                return None
+    async def find_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+        """Busca usuário por ID do Telegram."""
+        import aiosqlite
 
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar usuário por CPF: {e}", e)
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE telegram_user_id = ? LIMIT 1
+            """, (telegram_id,))
+
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user(row)
+            return None
 
     async def find_by_username(self, username: str) -> Optional[User]:
         """Busca usuário por username."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE username = ?",
-                    (username,)
-                )
-                row = cursor.fetchone()
+        import aiosqlite
 
-                if row:
-                    return self._map_row_to_user(row)
-                return None
+        await self._init_database()
 
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar usuário por username: {e}", e)
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE username = ? LIMIT 1
+            """, (username,))
+
+            row = await cursor.fetchone()
+            if row:
+                return self._row_to_user(row)
+            return None
 
     async def find_active_users(self) -> List[User]:
         """Busca todos os usuários ativos."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE status = ? ORDER BY created_at",
-                    ('active',)
-                )
-                rows = cursor.fetchall()
+        import aiosqlite
 
-                return [self._map_row_to_user(row) for row in rows]
+        await self._init_database()
 
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar usuários ativos: {e}", e)
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE is_banned = FALSE
+                ORDER BY created_at DESC
+            """)
 
-    async def find_pending_verification(self) -> List[User]:
-        """Busca usuários pendentes de verificação."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE status = ? ORDER BY created_at",
-                    ('pending_verification',)
-                )
-                rows = cursor.fetchall()
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
 
-                return [self._map_row_to_user(row) for row in rows]
+    async def find_banned_users(self) -> List[User]:
+        """Busca usuários banidos."""
+        import aiosqlite
 
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar usuários pendentes: {e}", e)
+        await self._init_database()
 
-    async def find_admins(self) -> List[User]:
-        """Busca usuários administradores."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM users WHERE is_admin = 1 ORDER BY created_at"
-                )
-                rows = cursor.fetchall()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE is_banned = TRUE
+                ORDER BY updated_at DESC
+            """)
 
-                return [self._map_row_to_user(row) for row in rows]
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao buscar administradores: {e}", e)
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
 
     async def count_active_users(self) -> int:
         """Conta usuários ativos."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT COUNT(*) FROM users WHERE is_banned = FALSE
+            """)
+
+            result = await cursor.fetchone()
+            return result[0] if result else 0
+
+    async def find_users_by_role(self, role: str) -> List[User]:
+        """Busca usuários por role."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE roles LIKE ?
+                ORDER BY created_at DESC
+            """, (f'%"{role}"%',))
+
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
+
+    async def ban_user(self, user_id: UserId, reason: str) -> bool:
+        """Bane um usuário."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE users SET
+                    is_banned = TRUE,
+                    ban_reason = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (reason, datetime.now().isoformat(), user_id.value))
+
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def unban_user(self, user_id: UserId) -> bool:
+        """Remove ban de um usuário."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE users SET
+                    is_banned = FALSE,
+                    ban_reason = NULL,
+                    updated_at = ?
+                WHERE id = ?
+            """, (datetime.now().isoformat(), user_id.value))
+
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def update_last_activity(self, user_id: UserId) -> bool:
+        """Atualiza última atividade do usuário."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE users SET
+                    last_activity_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (datetime.now().isoformat(), datetime.now().isoformat(), user_id.value))
+
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_user_statistics(self, user_id: UserId) -> dict:
+        """Obtém estatísticas de um usuário."""
+        import aiosqlite
+
+        await self._init_database()
+
+        # Por agora retorna estatísticas básicas, pode ser expandido
+        user = await self.find_by_id(user_id)
+        if not user:
+            return {}
+
+        return {
+            "user_id": user.id.value,
+            "telegram_id": user.telegram_user_id,
+            "username": user.username,
+            "is_banned": user.is_banned,
+            "roles_count": len(user.roles),
+            "created_at": user.created_at.isoformat(),
+            "last_activity": user.last_activity_at.isoformat() if user.last_activity_at else None
+        }
+
+    async def delete(self, entity_id: UserId) -> bool:
+        """Remove um usuário."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                DELETE FROM users WHERE id = ?
+            """, (entity_id.value,))
+
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def exists(self, entity_id: UserId) -> bool:
+        """Verifica se um usuário existe."""
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT 1 FROM users WHERE id = ? LIMIT 1
+            """, (entity_id.value,))
+
+            result = await cursor.fetchone()
+            return result is not None
+
+    def _row_to_user(self, row) -> User:
+        """Converte linha do banco para User."""
+        import json
+        from datetime import datetime
+
+        return User(
+            id=UserId(row[0]),
+            telegram_user_id=row[1],
+            username=row[2],
+            first_name=row[3],
+            last_name=row[4],
+            is_banned=bool(row[5]),
+            ban_reason=row[6],
+            roles=json.loads(row[7]) if row[7] else [],
+            created_at=datetime.fromisoformat(row[8]),
+            last_activity_at=datetime.fromisoformat(row[10]) if row[10] else None,
+            metadata=self._deserialize_metadata(row[11])
+        )
+
+    def _serialize_metadata(self, metadata: Dict[str, Any]) -> str:
+        """Serializa metadados para JSON."""
+        import json
+        return json.dumps(metadata) if metadata else "{}"
+
+    def _deserialize_metadata(self, metadata_str: str) -> Dict[str, Any]:
+        """Deserializa metadados do JSON."""
+        import json
         try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE status = ?",
-                    ('active',)
-                )
-                return cursor.fetchone()[0]
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao contar usuários ativos: {e}", e)
-
-    async def exists(self, user_id: UserId) -> bool:
-        """Verifica se usuário existe."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT 1 FROM users WHERE user_id = ?",
-                    (int(user_id),)
-                )
-                return cursor.fetchone() is not None
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao verificar existência do usuário {user_id}: {e}", e)
-
-    async def exists_by_cpf(self, cpf: CPF) -> bool:
-        """Verifica se existe usuário com o CPF."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT 1 FROM users WHERE cpf = ?",
-                    (cpf.value,)
-                )
-                return cursor.fetchone() is not None
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao verificar CPF: {e}", e)
-
-    async def delete(self, user_id: UserId) -> bool:
-        """Remove usuário."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "DELETE FROM users WHERE user_id = ?",
-                    (int(user_id),)
-                )
-                conn.commit()
-                return cursor.rowcount > 0
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao remover usuário {user_id}: {e}", e)
-
-    async def mark_user_inactive(self, user_id: UserId) -> bool:
-        """Marca usuário como inativo."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    """UPDATE users
-                       SET status = ?, updated_at = ?
-                       WHERE user_id = ?""",
-                    ('inactive', datetime.now().isoformat(), int(user_id))
-                )
-                conn.commit()
-                success = cursor.rowcount > 0
-
-                if success:
-                    logger.info(f"Usuário {user_id} marcado como inativo")
-
-                return success
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao marcar usuário {user_id} como inativo: {e}", e)
-
-    async def update_user_id_for_cpf(self, cpf: CPF, new_user_id: UserId, new_username: str) -> bool:
-        """Atualiza o user_id para um registro baseado no CPF."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    """UPDATE users
-                       SET user_id = ?, username = ?, updated_at = ?
-                       WHERE cpf = ?""",
-                    (int(new_user_id), new_username, datetime.now().isoformat(), cpf.value)
-                )
-                conn.commit()
-                success = cursor.rowcount > 0
-
-                if success:
-                    logger.info(f"Registro de CPF {cpf.masked()} remapeado para usuário {new_user_id}")
-                else:
-                    logger.warning(f"Nenhum usuário encontrado com CPF {cpf.masked()}")
-
-                return success
-
-        except sqlite3.Error as e:
-            raise RepositoryError(f"Erro ao remapear CPF para usuário {new_user_id}: {e}", e)
+            return json.loads(metadata_str) if metadata_str else {}
+        except:
+            return {}
