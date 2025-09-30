@@ -3,9 +3,8 @@ import os
 import asyncio
 
 from src.sentinela.core.logging_config import setup_logging
-from src.sentinela.bot.bot_instance import application
 from src.sentinela.infrastructure.config.dependency_injection import configure_dependencies
-from src.sentinela.presentation.telegram_bot_new import register_handlers
+from src.sentinela.presentation.telegram_bot_new import application, register_handlers
 
 def run_migrations():
     """Executa migrations se disponíveis."""
