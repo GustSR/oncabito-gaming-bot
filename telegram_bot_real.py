@@ -234,7 +234,7 @@ class OnCaboTelegramBot:
                         status_info = get_status_display(status_id)
 
                         ticket_list_user += (
-                            f"\n{i}. **Atendimento:** `{protocol}`\n"
+                            f"\n{i}. **Atendimento - {protocol}**\n"
                             f"   **Status:** {status_info['emoji']} {status_info['name']}\n"
                             f"   **Assunto:** {subject}\n"
                             f"   **Aberto em:** {created_at}\n"
@@ -264,46 +264,137 @@ class OnCaboTelegramBot:
                 logger.warning(f"Erro ao buscar tickets no HubSoft: {e}")
                 active_tickets = []
 
-            # 3. NÃO tem ticket aberto - PERMITE criar novo
-            protocol = f"ONB-{datetime.now().strftime('%Y%m%d')}-{user.id}"
-
-            # Mensagem de sucesso para o usuário
-            success_text = (
-                "🎫 **Ticket de Suporte Criado!**\n\n"
-                f"📋 **Protocolo:** `{protocol}`\n"
-                f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
-                "✅ **Seu ticket foi registrado!**\n"
-                "📞 **Nossa equipe entrará em contato em breve**\n\n"
-                "💡 **Protocolo salvo** - use-o para acompanhar seu atendimento!"
+            # 3. NÃO tem ticket aberto - CRIA NO HUBSOFT
+            await update.message.reply_text(
+                "🎫 **Criando Ticket de Suporte...**\n\n"
+                "⏳ Registrando no sistema HubSoft...",
+                parse_mode='Markdown'
             )
 
-            await update.message.reply_text(success_text, parse_mode='Markdown')
+            try:
+                # Cria atendimento direto no HubSoft
+                from sentinela.integrations.hubsoft.atendimento import HubSoftAtendimentoClient
+                hubsoft_atendimento = HubSoftAtendimentoClient()
 
-            # Notificação APENAS para canal de admins
-            if self.tech_channel_id:
-                tech_notification = (
-                    f"🚨 **Novo Ticket de Suporte**\n\n"
-                    f"📋 **Protocolo:** `{protocol}`\n"
-                    f"👤 **Usuário:** {user.first_name} (@{user.username or 'sem username'})\n"
-                    f"🆔 **ID Telegram:** `{user.id}`\n"
-                    f"📋 **CPF:** {cpf[:3]}***{cpf[-2:]}\n"
-                    f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
-                    f"✅ **HubSoft:** Cliente sem chamados anteriores em aberto\n\n"
-                    f"🔗 **Sistema:** Clean Architecture + HubSoft API\n"
-                    f"⚡ **Status:** Aguardando atribuição"
+                # Dados do ticket (básico para /suporte rápido)
+                ticket_data = {
+                    'assunto': 'Solicitação de Suporte via Telegram',
+                    'descricao': f'Ticket criado via comando /suporte pelo usuário {user.first_name} (@{user.username or "sem username"})',
+                    'categoria': 'suporte_geral',
+                    'prioridade': 'normal',
+                    'origem': 'telegram',
+                    'telegram_user_id': user.id,
+                    'telegram_username': user.username or user.first_name
+                }
+
+                # CRIA no HubSoft e recebe protocolo REAL
+                hubsoft_response = await hubsoft_atendimento.create_atendimento(cpf, ticket_data)
+
+                # Extrai protocolo REAL do HubSoft
+                protocol = hubsoft_response.get('protocolo', 'N/A')
+                atendimento_id = hubsoft_response.get('id_atendimento')
+                data_cadastro = hubsoft_response.get('data_cadastro', datetime.now().strftime('%d/%m/%Y às %H:%M'))
+
+                logger.info(f"✅ Ticket HubSoft criado - ID: {atendimento_id}, Protocolo: {protocol}")
+
+                # Salva ticket LOCAL com protocolo do HubSoft
+                try:
+                    from sentinela.domain.entities.ticket import Ticket, TicketStatus, UrgencyLevel
+                    from sentinela.domain.entities.user import User
+                    from sentinela.domain.value_objects.identifiers import Protocol, HubSoftId
+                    from sentinela.domain.value_objects.ticket_category import TicketCategory
+                    from sentinela.domain.value_objects.game_title import GameTitle
+                    from sentinela.domain.value_objects.problem_timing import ProblemTiming
+
+                    # Busca usuário completo
+                    user_entity = await user_repo.find_by_id(user_id_vo)
+
+                    # Cria entidade de ticket local
+                    ticket_local = Ticket(
+                        ticket_id=None,  # Auto-increment
+                        user=user_entity,
+                        category=TicketCategory.from_string('suporte_geral'),
+                        game=GameTitle.from_string('outros', 'Telegram /suporte'),
+                        timing=ProblemTiming.from_string('agora'),
+                        description=ticket_data['descricao'],
+                        urgency=UrgencyLevel.MEDIUM
+                    )
+
+                    # Define protocolo do HubSoft
+                    ticket_local.protocol_hubsoft = Protocol.from_hubsoft_protocol(protocol)
+                    ticket_local.hubsoft_id = HubSoftId(atendimento_id) if atendimento_id else None
+                    ticket_local.status = TicketStatus.OPEN
+                    ticket_local.hubsoft_synced = True
+                    ticket_local.hubsoft_sync_at = datetime.now()
+
+                    # Salva no banco local
+                    ticket_repo = self.container.get("ticket_repository")
+                    await ticket_repo.save(ticket_local)
+
+                    logger.info(f"✅ Ticket salvo localmente - ID local: {ticket_local.id}, Protocolo HubSoft: {protocol}")
+
+                except Exception as save_error:
+                    logger.warning(f"⚠️ Ticket criado no HubSoft mas falhou ao salvar localmente: {save_error}")
+                    # Não bloqueia o fluxo - ticket já está no HubSoft
+
+                # Mensagem de sucesso com protocolo REAL
+                success_text = (
+                    "🎉 **Ticket Criado no HubSoft com Sucesso!**\n\n"
+                    f"📋 **Atendimento - {protocol}**\n"
+                    f"📅 **Data:** {data_cadastro}\n"
+                    f"🆔 **ID HubSoft:** `{atendimento_id}`\n\n"
+                    "✅ **Seu chamado foi registrado no sistema oficial!**\n"
+                    "📞 **Nossa equipe técnica entrará em contato em breve**\n\n"
+                    "💡 **Guarde este protocolo** - use-o para acompanhar seu atendimento!"
                 )
 
-                try:
-                    await context.bot.send_message(
-                        chat_id=self.tech_channel_id,
-                        text=tech_notification,
-                        parse_mode='Markdown'
-                    )
-                    logger.info(f"Notificação enviada ao canal de admins para ticket {protocol}")
-                except Exception as e:
-                    logger.warning(f"Erro ao enviar notificação técnica: {e}")
+                await update.message.reply_text(success_text, parse_mode='Markdown')
 
-            logger.info(f"Ticket {protocol} criado para usuário {user.id} - Sem tickets ativos no HubSoft")
+                # Notificação APENAS para canal de admins
+                if self.tech_channel_id:
+                    tech_notification = (
+                        f"🚨 **Novo Ticket HubSoft Criado**\n\n"
+                        f"📋 **Atendimento - {protocol}**\n"
+                        f"🆔 **ID HubSoft:** `{atendimento_id}`\n"
+                        f"👤 **Usuário:** {user.first_name} (@{user.username or 'sem username'})\n"
+                        f"🆔 **ID Telegram:** `{user.id}`\n"
+                        f"📋 **CPF:** {cpf[:3]}***{cpf[-2:]}\n"
+                        f"📅 **Data:** {data_cadastro}\n\n"
+                        f"✅ **Status:** Criado no HubSoft com sucesso\n"
+                        f"🔗 **Origem:** Telegram (/suporte)\n"
+                        f"⚡ **Ação:** Aguardando atribuição de técnico"
+                    )
+
+                    try:
+                        await context.bot.send_message(
+                            chat_id=self.tech_channel_id,
+                            text=tech_notification,
+                            parse_mode='Markdown'
+                        )
+                        logger.info(f"Notificação enviada ao canal de admins para ticket {protocol}")
+                    except Exception as e:
+                        logger.warning(f"Erro ao enviar notificação técnica: {e}")
+
+                logger.info(f"Ticket {protocol} (ID {atendimento_id}) criado no HubSoft para usuário {user.id}")
+
+            except Exception as hubsoft_error:
+                # Falha ao criar no HubSoft - notifica usuário
+                logger.error(f"❌ Erro ao criar ticket no HubSoft: {hubsoft_error}")
+                await update.message.reply_text(
+                    "❌ **Erro ao Criar Ticket no HubSoft**\n\n"
+                    "Não foi possível registrar seu chamado no sistema oficial.\n\n"
+                    "🔄 **Possíveis causas:**\n"
+                    "• Instabilidade temporária na API HubSoft\n"
+                    "• CPF não encontrado no sistema\n"
+                    "• Serviço inativo\n\n"
+                    "📞 **Ações:**\n"
+                    "1. Tente novamente em alguns minutos\n"
+                    "2. Se persistir, entre em contato pelo grupo\n"
+                    "3. Ligue para nosso suporte direto\n\n"
+                    f"🛠️ **Detalhes técnicos:** {str(hubsoft_error)[:100]}",
+                    parse_mode='Markdown'
+                )
+                return
 
         except Exception as e:
             logger.error(f"Erro ao criar ticket de suporte: {e}")
