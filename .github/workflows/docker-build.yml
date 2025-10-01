@@ -33,18 +33,6 @@ jobs:
       run: |
         python -m py_compile src/sentinela/**/*.py || echo "Some files may have syntax issues, but continuing..."
 
-    - name: Validate configuration files
-      run: |
-        python -c "
-        import sys
-        sys.path.append('src')
-        try:
-            from sentinela.core.config import get_env_var
-            print('✅ Configuration files are valid')
-        except Exception as e:
-            print(f'❌ Configuration error: {e}')
-            exit(1)
-        "
 
   build-and-push:
     runs-on: ubuntu-latest

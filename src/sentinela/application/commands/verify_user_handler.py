@@ -8,7 +8,7 @@ from typing import Optional
 from .verify_user_command import VerifyUserCommand
 from ...domain.repositories.user_repository import UserRepository
 from ...domain.value_objects.cpf import CPF
-from ...domain.value_objects.user_id import UserId
+from ...domain.value_objects.identifiers import UserId
 from ...domain.entities.user import User
 from ...infrastructure.external_services.hubsoft_client import HubSoftClient
 from ...infrastructure.external_services.group_client import GroupClient
