@@ -157,10 +157,11 @@ class TelegramBotHandler:
                         chat_id=int(TELEGRAM_GROUP_ID),
                         message_thread_id=int(SUPPORT_TOPIC_ID),
                         text=(
-                            f"✅ @{user.username or user.first_name}, recebi seu pedido de suporte!\n\n"
-                            f"Vou te chamar no privado agora para coletar as informações do seu problema "
-                            f"de forma organizada.\n\n"
-                            f"Por favor, verifique suas mensagens diretas comigo! 👆"
+                            f"👋 Olá @{user.username or user.first_name}!\n\n"
+                            f"Recebi seu pedido de suporte! Vou te atender no **privado** para "
+                            f"entender melhor seu problema e te ajudar da melhor forma possível. 😊\n\n"
+                            f"📱 Por favor, confira suas **mensagens diretas** comigo!\n\n"
+                            f"💬 Te vejo lá! Já estou te aguardando..."
                         ),
                         parse_mode='Markdown'
                     )
@@ -195,9 +196,10 @@ class TelegramBotHandler:
             progress = get_progress_bar(1)
             message = (
                 f"🎮 **SUPORTE GAMER ONCABO**\n\n"
-                f"Vamos criar seu chamado de suporte de forma rápida e organizada!\n\n"
-                f"{progress} - Categoria do Problema\n\n"
-                f"Selecione a categoria que melhor descreve seu problema:"
+                f"Olá! Fico feliz em te ajudar! 😊\n\n"
+                f"Vou te guiar passo a passo para resolver seu problema da melhor forma.\n\n"
+                f"{progress} - **Tipo do Problema**\n\n"
+                f"Primeiro, me conta: qual dessas opções descreve melhor o que está acontecendo?"
             )
 
             # SEMPRE responde no privado do usuário
@@ -514,8 +516,12 @@ class TelegramBotHandler:
                     # Valida descrição mínima
                     if len(text.strip()) < 10:
                         await update.message.reply_text(
-                            "❌ A descrição precisa ter pelo menos 10 caracteres.\n\n"
-                            "Por favor, descreva o problema com mais detalhes.",
+                            "❌ **Ops! Descrição muito curta...**\n\n"
+                            "Preciso que você escreva pelo menos **10 caracteres** para "
+                            "entender melhor seu problema. 😊\n\n"
+                            "💡 **Dica:** Tenta me explicar o que está acontecendo com mais detalhes. "
+                            "Quanto mais informações, melhor!\n\n"
+                            "Pode tentar de novo? Estou aguardando! 👂",
                             parse_mode='Markdown'
                         )
                         return
@@ -611,9 +617,11 @@ class TelegramBotHandler:
             attachments_count = len(attachments)
 
             # Mensagem de confirmação
+            remaining = 3 - attachments_count
             await update.message.reply_text(
-                f"✅ **Anexo {attachments_count}/3 adicionado com sucesso!**\n\n"
-                f"📸 Você pode enviar mais {3 - attachments_count} foto(s) ou clicar em **Continuar**.",
+                f"✅ **Anexo {attachments_count}/3 recebido com sucesso!**\n\n"
+                f"📸 Perfeito! Você ainda pode enviar mais **{remaining} foto(s)** se quiser, "
+                f"ou clicar em **Continuar** para finalizar! 😊",
                 parse_mode='Markdown'
             )
 
@@ -800,8 +808,8 @@ class TelegramBotHandler:
         message = (
             f"🎮 **SUPORTE GAMER ONCABO**\n\n"
             f"✅ Categoria: {state['category_name']}\n\n"
-            f"{progress} - Jogo Afetado\n\n"
-            f"Qual jogo está com problema?"
+            f"{progress} - **Jogo Afetado**\n\n"
+            f"Ótimo! Agora me conta: qual desses jogos está te dando dor de cabeça? 🎮"
         )
 
         await query.edit_message_text(
@@ -901,8 +909,10 @@ class TelegramBotHandler:
             f"🎮 **SUPORTE GAMER ONCABO**\n\n"
             f"✅ Categoria: {state['category_name']}\n"
             f"✅ Jogo: {state['game_name']}\n\n"
-            f"{progress} - Quando Começou?\n\n"
-            f"Quando você percebeu esse problema pela primeira vez?"
+            f"{progress} - **Quando Começou?**\n\n"
+            f"Beleza! Agora me ajuda com uma informação importante: 🤔\n\n"
+            f"Quando você notou esse problema pela primeira vez?\n"
+            f"_(Isso me ajuda a entender melhor a situação!)_"
         )
 
         await query.edit_message_text(
@@ -942,15 +952,16 @@ class TelegramBotHandler:
             f"✅ Categoria: {state['category_name']}\n"
             f"✅ Jogo: {state['game_name']}\n"
             f"✅ Quando começou: {state['timing_name']}\n\n"
-            f"{progress} - Detalhes do Problema\n\n"
-            f"📝 Agora me conte com detalhes sobre o problema:\n\n"
-            f"💡 **Dicas do que incluir:**\n"
-            f"• O que exatamente está acontecendo?\n"
-            f"• Qual é o sintoma (lag, ping alto, desconexões)?\n"
+            f"{progress} - **Detalhes do Problema**\n\n"
+            f"📝 Perfeito! Agora preciso que você me conte o que está acontecendo.\n\n"
+            f"Quanto mais detalhes você me der, mais rápido conseguirei te ajudar! 💪\n\n"
+            f"🔍 **Conta pra mim:**\n"
+            f"• O que exatamente você está sentindo/vendo?\n"
+            f"• É lag? Ping alto? Desconexões? Travamentos?\n"
             f"• Em qual servidor/região você joga?\n"
-            f"• Já tentou reiniciar o roteador?\n"
-            f"• Outros dispositivos têm o mesmo problema?\n\n"
-            f"✍️ **Digite sua mensagem** explicando o problema em detalhes:"
+            f"• Já tentou reiniciar o roteador? Funcionou?\n"
+            f"• Outros jogos ou dispositivos têm o mesmo problema?\n\n"
+            f"✍️ Pode digitar sua mensagem agora, **sem pressa**! Estou aqui para te ouvir."
         )
 
         await query.edit_message_text(
@@ -982,13 +993,15 @@ class TelegramBotHandler:
             f"✅ Jogo: {state['game_name']}\n"
             f"✅ Quando começou: {state['timing_name']}\n"
             f"✅ Descrição: \"{state['description'][:50]}...\"\n\n"
-            f"{progress} - Anexos (Opcional)\n\n"
-            f"📎 **Você pode enviar até 3 imagens:**\n"
-            f"• Screenshot do ping in-game\n"
-            f"• Foto do resultado de teste de velocidade\n"
-            f"• Print de tela com erro\n\n"
+            f"{progress} - **Anexos (Opcional)**\n\n"
+            f"📸 **Quer enviar prints pra me ajudar a visualizar?**\n\n"
+            f"Você pode enviar até **3 imagens** (totalmente opcional!):\n"
+            f"• Screenshot do ping in-game 🎯\n"
+            f"• Foto do teste de velocidade 📊\n"
+            f"• Print de tela com erro/problema 🖼️\n\n"
             f"Anexos enviados: **{attachments_count}/3**\n\n"
-            f"📷 Envie suas fotos agora ou clique em **Pular Anexos** para continuar."
+            f"💡 Isso ajuda MUITO no diagnóstico, mas se não tiver, sem problemas!\n"
+            f"Pode pular e continuar. 😊"
         )
 
         # Verifica se é query ou message
@@ -1038,14 +1051,17 @@ class TelegramBotHandler:
 
         message = (
             f"🎮 **SUPORTE GAMER ONCABO**\n\n"
-            f"{progress} - Confirmação\n\n"
-            f"📋 **RESUMO DO SEU CHAMADO:**\n\n"
+            f"{progress} - **Confirmação Final**\n\n"
+            f"🎯 **Pronto! Vamos revisar juntos antes de finalizar?**\n\n"
+            f"📋 **Resumo do seu chamado:**\n\n"
             f"🔸 **Categoria:** {state['category_name']}\n"
             f"🔸 **Jogo:** {state['game_name']}\n"
             f"🔸 **Quando começou:** {state['timing_name']}\n"
             f"🔸 **Anexos:** {attachments_count} arquivo(s)\n\n"
             f"📝 **Descrição:**\n{desc_preview}\n\n"
-            f"✅ Está tudo correto? **Confirma a criação do chamado?**"
+            f"💡 Dá uma olhada se está tudo certo. Se quiser mudar algo, é só clicar em \"Editar\"!\n\n"
+            f"✅ **Tudo certo?** Então pode confirmar! Vou encaminhar para nossa equipe técnica "
+            f"imediatamente e você terá retorno em até **24h úteis!** 🚀"
         )
 
         await query.edit_message_text(
@@ -1134,17 +1150,20 @@ class TelegramBotHandler:
 
             # Mensagem de sucesso
             success_message = (
-                f"🎉 **CHAMADO CRIADO COM SUCESSO!**\n\n"
+                f"🎉 **PRONTO! SEU CHAMADO FOI CRIADO COM SUCESSO!**\n\n"
                 f"📋 **Protocolo:** `{protocol}`\n"
                 f"📅 **Criado em:** {now.strftime('%d/%m/%Y às %H:%M')}\n"
                 f"📊 **Status:** Aguardando Atendimento\n\n"
-                f"✅ **Seu chamado foi registrado e nossa equipe técnica já foi notificada!**\n\n"
-                f"📞 **Próximos passos:**\n"
-                f"• Você receberá atualizações aqui no Telegram\n"
-                f"• Tempo de resposta: até 24h úteis\n"
-                f"• Mantenha o protocolo para acompanhamento\n\n"
-                f"🔍 **Protocolo para consulta:** `{protocol}`\n\n"
-                f"💬 Acompanhe as respostas no grupo, tópico **Suporte Gamer**!"
+                f"✅ Nossa equipe técnica já recebeu todas as informações e vai começar a "
+                f"trabalhar no seu caso o quanto antes! 💪\n\n"
+                f"📱 **Fique tranquilo:**\n"
+                f"• Você receberá todas as atualizações aqui mesmo pelo Telegram\n"
+                f"• Tempo médio de resposta: **até 24h úteis**\n"
+                f"• Nossa meta: resolver seu problema o mais rápido possível!\n\n"
+                f"💬 Enquanto isso, se lembrar de mais algum detalhe importante, pode me "
+                f"mandar que eu adiciono ao seu chamado! 😊\n\n"
+                f"🔍 **Seu protocolo:** `{protocol}` _(guarde para consultas)_\n\n"
+                f"📣 Acompanhe as respostas no grupo, tópico **Suporte Gamer**!"
             )
 
             await query.edit_message_text(
@@ -1155,12 +1174,15 @@ class TelegramBotHandler:
             # Envia notificação ao tópico do grupo
             try:
                 notification = (
-                    f"🎫 **NOVO CHAMADO ABERTO**\n\n"
+                    f"🎫 **NOVO CHAMADO - Atenção Equipe!**\n\n"
                     f"📋 **Protocolo:** `{protocol}`\n"
                     f"👤 **Cliente:** @{user.username or user.first_name}\n"
-                    f"🔸 **Categoria:** {state['category_name']}\n"
-                    f"🎮 **Jogo:** {state['game_name']}\n\n"
-                    f"Nossa equipe técnica já está analisando! 🔧"
+                    f"🎯 **Categoria:** {state['category_name']}\n"
+                    f"🎮 **Jogo:** {state['game_name']}\n"
+                    f"⏰ **Quando começou:** {state['timing_name']}\n"
+                    f"📎 **Anexos:** {len(state.get('attachments', []))} arquivo(s)\n\n"
+                    f"✅ Cliente já foi informado - aguardando nossa análise!\n"
+                    f"🔔 **Prazo de resposta:** 24h úteis"
                 )
 
                 await context.bot.send_message(
