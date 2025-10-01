@@ -37,8 +37,11 @@ def register_handlers(app: Application) -> None:
     # Callbacks de botões
     app.add_handler(CallbackQueryHandler(handler.handle_callback_query))
 
-    # Mensagens de texto (para CPF, etc.)
+    # Mensagens de texto (para CPF, descrição de suporte, etc.)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler.handle_text_message))
+
+    # Mensagens de foto (para anexos de suporte)
+    app.add_handler(MessageHandler(filters.PHOTO, handler.handle_photo_message))
 
     # Handler de erros
     app.add_error_handler(handler.handle_error)
