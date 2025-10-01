@@ -766,6 +766,13 @@ class OnCaboTelegramBot:
 
                     logger.info(f"Conta nova (ID: {new_user_id}) removida do grupo")
 
+                    # Envia notificação de remoção
+                    await self._notify_user_removal(
+                        user_id=new_user_id,
+                        removal_type="account_choice",
+                        chosen_account=f"@{old_username}"
+                    )
+
                 except Exception as remove_error:
                     logger.error(f"Erro ao remover conta nova do grupo: {remove_error}")
 
@@ -808,6 +815,13 @@ class OnCaboTelegramBot:
                     )
 
                     logger.info(f"Conta antiga (ID: {old_user_id}) removida do grupo")
+
+                    # Envia notificação de remoção para conta antiga
+                    await self._notify_user_removal(
+                        user_id=old_user_id,
+                        removal_type="account_choice",
+                        chosen_account=f"@{new_username}"
+                    )
 
                 except Exception as remove_error:
                     logger.error(f"Erro ao remover conta antiga do grupo: {remove_error}")
@@ -1208,6 +1222,48 @@ class OnCaboTelegramBot:
                 "🙏 **Pedimos desculpas pelo inconveniente.**",
                 parse_mode='Markdown'
             )
+
+    async def _notify_user_removal(
+        self,
+        user_id: int,
+        removal_type: str = "no_cpf",
+        client_name: str = "Cliente",
+        chosen_account: str = ""
+    ):
+        """
+        Envia notificação privada para usuário removido do grupo.
+
+        Args:
+            user_id: ID do usuário a ser notificado
+            removal_type: Tipo de remoção (no_cpf, no_gaming_plan, account_choice)
+            client_name: Nome do cliente (para mensagem personalizada)
+            chosen_account: Conta escolhida (quando removal_type = account_choice)
+        """
+        try:
+            member_verification = self.container.get("member_verification_use_case")
+
+            # Seleciona mensagem conforme tipo de remoção
+            if removal_type == "no_cpf":
+                message = await member_verification.get_removal_no_cpf_message()
+            elif removal_type == "no_gaming_plan":
+                message = await member_verification.get_removal_no_gaming_plan_message(client_name)
+            elif removal_type == "account_choice":
+                message = await member_verification.get_removal_account_choice_message(chosen_account)
+            else:
+                # Mensagem genérica
+                message = await member_verification.get_removal_message(removal_type)
+
+            # Envia mensagem privada
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+
+            logger.info(f"✅ Notificação de remoção enviada para {user_id} (tipo: {removal_type})")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Não foi possível enviar notificação de remoção para {user_id}: {e}")
 
     async def _check_scheduled_tasks_loop(self):
         """

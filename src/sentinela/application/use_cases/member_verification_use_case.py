@@ -205,3 +205,103 @@ class MemberVerificationUseCase(UseCase):
             "🌐 Site: https://oncabo.net.br\n"
             "💬 WhatsApp: https://wa.me/5511999999999"
         )
+
+    async def get_removal_no_cpf_message(self) -> str:
+        """
+        Retorna mensagem de remoção por não ter CPF vinculado.
+
+        Returns:
+            str: Mensagem formatada
+        """
+        return (
+            "⚠️ **Você foi removido do Grupo Gaming OnCabo**\n\n"
+            "🔒 **Motivo:** CPF não vinculado à sua conta\n\n"
+            "Identificamos que você não possui CPF vinculado ao seu Telegram ID "
+            "no sistema OnCabo Gaming.\n\n"
+            "❓ **Por que isso aconteceu?**\n"
+            "• O grupo Gaming é exclusivo para clientes verificados\n"
+            "• Todos os membros devem ter CPF vinculado para segurança\n"
+            "• Você não respondeu à nossa solicitação de CPF em 24 horas\n\n"
+            "🔄 **Como retornar ao grupo:**\n\n"
+            "1. Entre em contato comigo com /start\n"
+            "2. Envie seu CPF (11 dígitos)\n"
+            "3. Aguarde validação do plano Gaming OnCabo\n"
+            "4. Receba link de acesso temporário (30 min)\n\n"
+            "⚠️ **Requisitos:**\n"
+            "• Possuir plano **Gaming OnCabo** ativo\n"
+            "• CPF válido e cadastrado no HubSoft\n\n"
+            "📞 **Precisa de ajuda?**\n"
+            "🌐 Site: https://oncabo.net.br\n"
+            "💬 WhatsApp: https://wa.me/5511999999999\n"
+            "📧 Email: contato@oncabo.net.br\n\n"
+            "🙏 **Agradecemos a compreensão!**"
+        )
+
+    async def get_removal_no_gaming_plan_message(self, client_name: str = "Cliente") -> str:
+        """
+        Retorna mensagem de remoção por não ter plano Gaming ativo.
+
+        Args:
+            client_name: Nome do cliente
+
+        Returns:
+            str: Mensagem formatada
+        """
+        return (
+            f"⚠️ **Você foi removido do Grupo Gaming OnCabo**\n\n"
+            f"Olá, {client_name}!\n\n"
+            "🔒 **Motivo:** Plano Gaming não está ativo\n\n"
+            "Identificamos que você não possui mais o **Plano Gaming OnCabo** ativo "
+            "em seu contrato.\n\n"
+            "❓ **Por que isso aconteceu?**\n"
+            "• O grupo Gaming é exclusivo para clientes com plano Gaming ativo\n"
+            "• Nosso sistema verifica periodicamente os contratos no HubSoft\n"
+            "• Seu plano Gaming foi cancelado ou migrado para outro plano\n\n"
+            "💡 **Quer voltar ao grupo?**\n\n"
+            "Para retornar, você precisa contratar novamente o **Plano Gaming OnCabo**.\n\n"
+            "🎮 **Benefícios do Plano Gaming:**\n"
+            "✅ Latência ultra-baixa para jogos online\n"
+            "✅ Prioridade de tráfego para gaming\n"
+            "✅ Suporte técnico especializado 24/7\n"
+            "✅ Acesso ao grupo exclusivo de gamers\n"
+            "✅ Otimização de rota para servidores\n\n"
+            "📞 **Entre em contato:**\n"
+            "🌐 Site: https://oncabo.net.br\n"
+            "💬 WhatsApp: https://wa.me/5511999999999\n"
+            "📧 Email: contato@oncabo.net.br\n\n"
+            "💼 **Nossa equipe comercial terá prazer em te ajudar!**\n\n"
+            "🙏 **Obrigado por ter feito parte do grupo Gaming OnCabo!**"
+        )
+
+    async def get_removal_account_choice_message(self, chosen_account: str) -> str:
+        """
+        Retorna mensagem de remoção devido à escolha de outra conta.
+
+        Args:
+            chosen_account: Conta escolhida pelo usuário
+
+        Returns:
+            str: Mensagem formatada
+        """
+        return (
+            "⚠️ **Você foi removido do Grupo Gaming OnCabo**\n\n"
+            "🔒 **Motivo:** CPF vinculado a outra conta Telegram\n\n"
+            "Identificamos que seu CPF está vinculado a múltiplas contas Telegram.\n\n"
+            "❓ **O que aconteceu?**\n"
+            f"• Você escolheu manter a conta: **{chosen_account}**\n"
+            "• Por segurança, apenas 1 conta pode ter acesso ao grupo\n"
+            "• Esta conta foi automaticamente removida\n\n"
+            "🔄 **Como retornar ao grupo:**\n\n"
+            f"**Use a conta escolhida:** {chosen_account}\n\n"
+            "1. Entre em contato comigo com /start\n"
+            "2. Seu CPF já está vinculado\n"
+            "3. Receberá link de acesso automaticamente\n\n"
+            "⚠️ **IMPORTANTE:**\n"
+            "• Apenas 1 conta Telegram por CPF é permitida\n"
+            "• Se precisar trocar de conta, entre em contato novamente\n"
+            "• O sistema verificará e permitirá a escolha\n\n"
+            "📞 **Precisa de ajuda?**\n"
+            "🌐 Site: https://oncabo.net.br\n"
+            "💬 WhatsApp: https://wa.me/5511999999999\n\n"
+            "🙏 **Agradecemos a compreensão!**"
+        )
