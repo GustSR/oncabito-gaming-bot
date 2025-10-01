@@ -221,20 +221,20 @@ class OnCaboTelegramBot:
                 if active_tickets:
                     # JÁ TEM TICKET ABERTO - BLOQUEIA criação de novo ticket
                     # Importa mapeamento de status do HubSoft
-                    from sentinela.integrations.hubsoft.config import get_status_display, format_protocol
+                    from sentinela.integrations.hubsoft.config import get_status_display
 
                     ticket_list_user = ""
                     for i, ticket in enumerate(active_tickets[:5], 1):  # Máximo 5
-                        ticket_id = ticket.get('id', 'N/A')
+                        # Pega protocolo REAL do HubSoft (já vem formatado da API)
+                        protocol = ticket.get('protocolo', 'N/A')
                         status_id = str(ticket.get('status', ''))
                         subject = ticket.get('assunto', 'Sem assunto')
                         created_at = ticket.get('data_abertura', '')
 
                         status_info = get_status_display(status_id)
-                        protocol = format_protocol(ticket_id)
 
                         ticket_list_user += (
-                            f"\n{i}. **Protocolo:** `{protocol}`\n"
+                            f"\n{i}. **Atendimento:** `{protocol}`\n"
                             f"   **Status:** {status_info['emoji']} {status_info['name']}\n"
                             f"   **Assunto:** {subject}\n"
                             f"   **Aberto em:** {created_at}\n"
