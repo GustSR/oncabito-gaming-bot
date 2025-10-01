@@ -77,8 +77,23 @@ class TelegramBotHandler:
             await self._ensure_initialized()
 
             user = update.effective_user
+            chat_id = update.effective_chat.id
+            is_group = chat_id != user.id
+
             if not user:
                 return
+
+            # Se foi enviado no grupo, deleta o comando e avisa que respondeu no privado
+            if is_group:
+                try:
+                    await update.message.delete()
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ @{user.username or user.first_name}, respondi seu comando /suporte no **privado**!",
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Não foi possível deletar comando do grupo: {e}")
 
             # Cria teclado de categorias
             keyboard = [
@@ -101,8 +116,10 @@ class TelegramBotHandler:
                 "Selecione a categoria que melhor descreve seu problema:"
             )
 
-            await update.message.reply_text(
-                message,
+            # SEMPRE responde no privado do usuário
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=message,
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
@@ -111,8 +128,10 @@ class TelegramBotHandler:
 
         except Exception as e:
             logger.error(f"Erro no comando /suporte: {e}")
-            await update.message.reply_text(
-                "❌ Erro ao iniciar suporte. Tente novamente."
+            # Erro também vai para privado
+            await context.bot.send_message(
+                chat_id=user.id,
+                text="❌ Erro ao iniciar suporte. Tente novamente."
             )
 
     async def handle_status_command(
