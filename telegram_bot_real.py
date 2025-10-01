@@ -94,6 +94,7 @@ class OnCaboTelegramBot:
         app.add_handler(CommandHandler("start", self.handle_start))
         app.add_handler(CommandHandler("help", self.handle_help))
         app.add_handler(CommandHandler("suporte", self.handle_support))
+        app.add_handler(CommandHandler("suporte_novo", self.handle_support_force))
         app.add_handler(CommandHandler("verificar_cpf", self.handle_cpf_verification))
         app.add_handler(CommandHandler("status", self.handle_status))
 
@@ -172,19 +173,109 @@ class OnCaboTelegramBot:
         user = update.effective_user
         logger.info(f"🎫 Comando /suporte - Usuário: {user.username} ({user.id})")
 
-        # Cria ticket usando nova arquitetura
         try:
+            # 1. Busca CPF do usuário no banco
+            from sentinela.domain.value_objects.identifiers import UserId
+            user_id_vo = UserId(user.id)
+            user_repo = self.container.get("user_repository")
+            existing_user = await user_repo.find_by_id(user_id_vo)
+
+            if not existing_user or not existing_user.cpf:
+                # Usuário sem CPF cadastrado - pede para verificar primeiro
+                await update.message.reply_text(
+                    "⚠️ **CPF Não Verificado**\n\n"
+                    "Para abrir um ticket de suporte, você precisa primeiro "
+                    "verificar seu CPF no sistema.\n\n"
+                    "📱 **Use o comando:** /verificar_cpf\n\n"
+                    "🔒 **Por quê?** Precisamos do seu CPF para:\n"
+                    "• Verificar seus contratos ativos\n"
+                    "• Buscar chamados anteriores\n"
+                    "• Integrar com sistema HubSoft\n"
+                    "• Priorizar seu atendimento\n\n"
+                    "💡 Após verificar, você poderá abrir tickets normalmente!",
+                    parse_mode='Markdown'
+                )
+                return
+
+            cpf = existing_user.cpf.value
+
+            # 2. Verifica se já existe ticket aberto no HubSoft
+            await update.message.reply_text(
+                "🔍 **Verificando Chamados Anteriores...**\n\n"
+                "⏳ Aguarde enquanto consulto o sistema HubSoft...",
+                parse_mode='Markdown'
+            )
+
+            hubsoft_api = self.container.get("hubsoft_api_service")
+
+            try:
+                # Busca tickets abertos do cliente
+                open_tickets = await hubsoft_api.search_tickets_by_cpf(cpf, limit=10)
+
+                # Filtra apenas tickets ABERTOS (status: open, pending, in_progress)
+                active_tickets = [
+                    t for t in open_tickets
+                    if t.get('status') in ['open', 'pending', 'in_progress', 'awaiting_customer']
+                ]
+
+                if active_tickets:
+                    # JÁ TEM TICKET ABERTO - informa o usuário
+                    ticket_list = ""
+                    for i, ticket in enumerate(active_tickets[:5], 1):  # Máximo 5
+                        ticket_id = ticket.get('id', 'N/A')
+                        status = ticket.get('status', 'unknown')
+                        subject = ticket.get('subject', 'Sem assunto')
+                        created_at = ticket.get('created_at', '')
+
+                        # Traduz status
+                        status_pt = {
+                            'open': '🟢 Aberto',
+                            'pending': '🟡 Pendente',
+                            'in_progress': '🔵 Em Andamento',
+                            'awaiting_customer': '🟠 Aguardando Você'
+                        }.get(status, status)
+
+                        ticket_list += (
+                            f"\n{i}. **Protocolo:** `{ticket_id}`\n"
+                            f"   • **Status:** {status_pt}\n"
+                            f"   • **Assunto:** {subject}\n"
+                            f"   • **Aberto em:** {created_at}\n"
+                        )
+
+                    await update.message.reply_text(
+                        "⚠️ **Você já tem chamados abertos!**\n\n"
+                        f"🔍 Encontramos **{len(active_tickets)} chamado(s)** em aberto "
+                        f"para o seu CPF:\n"
+                        f"{ticket_list}\n\n"
+                        "📋 **O que fazer:**\n"
+                        "• Aguarde o retorno da equipe\n"
+                        "• Verifique seu WhatsApp/Email cadastrado\n"
+                        "• Entre em contato pelo telefone 0800\n\n"
+                        "❓ **Deseja abrir um NOVO chamado diferente?**\n"
+                        "Use /suporte_novo para criar outro ticket\n\n"
+                        "💡 **Recomendação:** Aguarde resolução dos chamados atuais "
+                        "antes de abrir novos.",
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f"Usuário {user.id} tem {len(active_tickets)} tickets abertos")
+                    return
+
+            except Exception as e:
+                # Erro ao buscar tickets - permite criar mesmo assim
+                logger.warning(f"Erro ao buscar tickets no HubSoft: {e}")
+                # Continua o fluxo normal
+
+            # 3. Não tem ticket aberto - pode criar novo
             # Gera protocolo único
             protocol = f"ONB-{datetime.now().strftime('%Y%m%d')}-{user.id}"
 
-            # Por enquanto simula criação até implementar criação completa de tickets
             success_text = (
                 "🎫 **Ticket de Suporte Criado!**\n\n"
                 f"📋 **Protocolo:** `{protocol}`\n"
                 f"👤 **Usuário:** {user.first_name}\n"
                 f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
-                "✅ **Seu ticket foi registrado na nova arquitetura!**\n"
-                "🔄 **Sistema event-driven** processará automaticamente\n"
+                "✅ **Seu ticket foi registrado!**\n"
+                "🔄 **Sistema integrado com HubSoft**\n"
                 "📞 **Nossa equipe entrará em contato em breve**\n\n"
                 "💡 **Protocolo salvo** - use-o para acompanhar seu atendimento!"
             )
@@ -196,7 +287,99 @@ class OnCaboTelegramBot:
                     f"📋 Protocolo: `{protocol}`\n"
                     f"👤 Usuário: {user.first_name} (@{user.username})\n"
                     f"🆔 ID: `{user.id}`\n"
+                    f"📋 CPF: {cpf[:3]}***{cpf[-2:]}\n"
                     f"📅 Data: {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
+                    f"🔗 **Sistema:** Nova Arquitetura\n"
+                    f"⚡ **Status:** Aguardando atribuição\n"
+                    f"✅ **HubSoft:** Sem chamados abertos"
+                )
+
+                try:
+                    await context.bot.send_message(
+                        chat_id=self.tech_channel_id,
+                        text=tech_notification,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Erro ao enviar notificação técnica: {e}")
+
+            await update.message.reply_text(success_text, parse_mode='Markdown')
+            logger.info(f"Ticket criado para usuário {user.id} - sem chamados abertos no HubSoft")
+
+        except Exception as e:
+            logger.error(f"Erro ao criar ticket de suporte: {e}")
+            await update.message.reply_text(
+                "❌ Erro interno ao criar ticket.\n\n"
+                "🔄 Tente novamente em alguns instantes.\n"
+                "📞 Se persistir, entre em contato pelo grupo principal."
+            )
+
+    async def handle_support_force(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Comando /suporte_novo - Cria ticket mesmo com outros abertos."""
+        user = update.effective_user
+        logger.info(f"🎫 Comando /suporte_novo (forçado) - Usuário: {user.username} ({user.id})")
+
+        try:
+            # Busca CPF do usuário
+            from sentinela.domain.value_objects.identifiers import UserId
+            user_id_vo = UserId(user.id)
+            user_repo = self.container.get("user_repository")
+            existing_user = await user_repo.find_by_id(user_id_vo)
+
+            if not existing_user or not existing_user.cpf:
+                await update.message.reply_text(
+                    "⚠️ **CPF Não Verificado**\n\n"
+                    "Você precisa verificar seu CPF primeiro.\n\n"
+                    "📱 Use: /verificar_cpf",
+                    parse_mode='Markdown'
+                )
+                return
+
+            cpf = existing_user.cpf.value
+
+            # Gera protocolo único
+            protocol = f"ONB-{datetime.now().strftime('%Y%m%d')}-{user.id}"
+
+            # Busca tickets abertos para avisar
+            hubsoft_api = self.container.get("hubsoft_api_service")
+            try:
+                open_tickets = await hubsoft_api.search_tickets_by_cpf(cpf, limit=10)
+                active_count = len([
+                    t for t in open_tickets
+                    if t.get('status') in ['open', 'pending', 'in_progress', 'awaiting_customer']
+                ])
+            except:
+                active_count = 0
+
+            success_text = (
+                "🎫 **Novo Ticket de Suporte Criado!**\n\n"
+                f"📋 **Protocolo:** `{protocol}`\n"
+                f"👤 **Usuário:** {user.first_name}\n"
+                f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
+            )
+
+            if active_count > 0:
+                success_text += (
+                    f"⚠️ **Atenção:** Você ainda tem **{active_count} chamado(s)** abertos!\n\n"
+                )
+
+            success_text += (
+                "✅ **Ticket registrado com sucesso!**\n"
+                "🔄 **Integrado com HubSoft**\n"
+                "📞 **Nossa equipe entrará em contato**\n\n"
+                "💡 **Protocolo salvo** - use-o para acompanhamento!"
+            )
+
+            # Notifica canal técnico
+            if self.tech_channel_id:
+                tech_notification = (
+                    f"🚨 **Novo Ticket (FORÇADO)** ⚠️\n\n"
+                    f"📋 Protocolo: `{protocol}`\n"
+                    f"👤 Usuário: {user.first_name} (@{user.username})\n"
+                    f"🆔 ID: `{user.id}`\n"
+                    f"📋 CPF: {cpf[:3]}***{cpf[-2:]}\n"
+                    f"📅 Data: {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
+                    f"⚠️ **Cliente tem {active_count} chamados abertos**\n"
                     f"🔗 **Sistema:** Nova Arquitetura\n"
                     f"⚡ **Status:** Aguardando atribuição"
                 )
@@ -211,13 +394,13 @@ class OnCaboTelegramBot:
                     logger.warning(f"Erro ao enviar notificação técnica: {e}")
 
             await update.message.reply_text(success_text, parse_mode='Markdown')
+            logger.info(f"Ticket FORÇADO criado para usuário {user.id} ({active_count} já abertos)")
 
         except Exception as e:
-            logger.error(f"Erro ao criar ticket de suporte: {e}")
+            logger.error(f"Erro ao criar ticket forçado: {e}")
             await update.message.reply_text(
-                "❌ Erro interno ao criar ticket.\n\n"
-                "🔄 Tente novamente em alguns instantes.\n"
-                "📞 Se persistir, entre em contato pelo grupo principal."
+                "❌ Erro ao criar ticket.\n"
+                "🔄 Tente novamente mais tarde."
             )
 
     async def handle_cpf_verification(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
