@@ -184,7 +184,22 @@ class OnCaboTelegramBot:
     async def handle_support(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Comando /suporte."""
         user = update.effective_user
-        logger.info(f"🎫 Comando /suporte - Usuário: {user.username} ({user.id})")
+        chat_id = update.effective_chat.id
+        is_group = chat_id != user.id
+
+        logger.info(f"🎫 Comando /suporte - Usuário: {user.username} ({user.id}) - Chat: {'GRUPO' if is_group else 'PRIVADO'}")
+
+        # Se foi enviado no grupo, deleta o comando e avisa que respondeu no privado
+        if is_group:
+            try:
+                await update.message.delete()
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ @{user.username or user.first_name}, respondi seu comando /suporte no **privado**!",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.warning(f"Não foi possível deletar comando do grupo: {e}")
 
         try:
             # 1. Busca CPF do usuário no banco
@@ -195,17 +210,20 @@ class OnCaboTelegramBot:
 
             if not existing_user or not existing_user.cpf:
                 # Usuário sem CPF cadastrado - pede para verificar primeiro
-                await update.message.reply_text(
-                    "⚠️ **CPF Não Verificado**\n\n"
-                    "Para abrir um ticket de suporte, você precisa primeiro "
-                    "verificar seu CPF no sistema.\n\n"
-                    "📱 **Use o comando:** /verificar_cpf\n\n"
-                    "🔒 **Por quê?** Precisamos do seu CPF para:\n"
-                    "• Verificar seus contratos ativos\n"
-                    "• Buscar chamados anteriores\n"
-                    "• Integrar com sistema HubSoft\n"
-                    "• Priorizar seu atendimento\n\n"
-                    "💡 Após verificar, você poderá abrir tickets normalmente!",
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=(
+                        "⚠️ **CPF Não Verificado**\n\n"
+                        "Para abrir um ticket de suporte, você precisa primeiro "
+                        "verificar seu CPF no sistema.\n\n"
+                        "📱 **Use o comando:** /verificar_cpf\n\n"
+                        "🔒 **Por quê?** Precisamos do seu CPF para:\n"
+                        "• Verificar seus contratos ativos\n"
+                        "• Buscar chamados anteriores\n"
+                        "• Integrar com sistema HubSoft\n"
+                        "• Priorizar seu atendimento\n\n"
+                        "💡 Após verificar, você poderá abrir tickets normalmente!"
+                    ),
                     parse_mode='Markdown'
                 )
                 return
@@ -213,9 +231,12 @@ class OnCaboTelegramBot:
             cpf = existing_user.cpf.value
 
             # 2. Verifica se já existe ticket aberto no HubSoft
-            await update.message.reply_text(
-                "🔍 **Verificando Chamados Anteriores...**\n\n"
-                "⏳ Aguarde enquanto consulto o sistema HubSoft...",
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    "🔍 **Verificando Chamados Anteriores...**\n\n"
+                    "⏳ Aguarde enquanto consulto o sistema HubSoft..."
+                ),
                 parse_mode='Markdown'
             )
 
@@ -276,7 +297,11 @@ class OnCaboTelegramBot:
                         "🙏 **Agradecemos sua compreensão e paciência!**"
                     )
 
-                    await update.message.reply_text(blocked_message, parse_mode='Markdown')
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text=blocked_message,
+                        parse_mode='Markdown'
+                    )
                     logger.info(f"Usuário {user.id} BLOQUEADO - já tem {len(active_tickets)} ticket(s) aberto(s)")
                     return  # BLOQUEIA criação
 
@@ -286,9 +311,12 @@ class OnCaboTelegramBot:
                 active_tickets = []
 
             # 3. NÃO tem ticket aberto - CRIA NO HUBSOFT
-            await update.message.reply_text(
-                "🎫 **Abrindo seu chamado...**\n\n"
-                "⏳ Aguarde um momento enquanto registramos sua solicitação...",
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    "🎫 **Abrindo seu chamado...**\n\n"
+                    "⏳ Aguarde um momento enquanto registramos sua solicitação..."
+                ),
                 parse_mode='Markdown'
             )
 
@@ -371,7 +399,11 @@ class OnCaboTelegramBot:
                     "💡 **Dica:** Guarde o protocolo acima para consultar o andamento do seu atendimento"
                 )
 
-                await update.message.reply_text(success_text, parse_mode='Markdown')
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=success_text,
+                    parse_mode='Markdown'
+                )
 
                 # Notificação APENAS para canal de admins
                 if self.tech_channel_id:
@@ -403,28 +435,34 @@ class OnCaboTelegramBot:
             except Exception as hubsoft_error:
                 # Falha ao criar no HubSoft - notifica usuário
                 logger.error(f"❌ Erro ao criar ticket no HubSoft: {hubsoft_error}")
-                await update.message.reply_text(
-                    "⚠️ **Não foi possível abrir o chamado no momento**\n\n"
-                    "Estamos com uma instabilidade temporária no sistema.\n\n"
-                    "📞 **O que fazer:**\n"
-                    "• Aguarde alguns minutos e tente novamente\n"
-                    "• Ou entre em contato direto pelo telefone\n"
-                    "• Nossa equipe já foi notificada do problema\n\n"
-                    "🙏 **Pedimos desculpas pelo inconveniente!**\n"
-                    "Estamos trabalhando para resolver o mais rápido possível.",
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=(
+                        "⚠️ **Não foi possível abrir o chamado no momento**\n\n"
+                        "Estamos com uma instabilidade temporária no sistema.\n\n"
+                        "📞 **O que fazer:**\n"
+                        "• Aguarde alguns minutos e tente novamente\n"
+                        "• Ou entre em contato direto pelo telefone\n"
+                        "• Nossa equipe já foi notificada do problema\n\n"
+                        "🙏 **Pedimos desculpas pelo inconveniente!**\n"
+                        "Estamos trabalhando para resolver o mais rápido possível."
+                    ),
                     parse_mode='Markdown'
                 )
                 return
 
         except Exception as e:
             logger.error(f"Erro ao criar ticket de suporte: {e}")
-            await update.message.reply_text(
-                "⚠️ **Ocorreu um erro inesperado**\n\n"
-                "Não conseguimos processar sua solicitação no momento.\n\n"
-                "🔄 **Por favor:**\n"
-                "• Tente novamente em alguns instantes\n"
-                "• Se o problema continuar, fale conosco no grupo\n\n"
-                "📞 Em caso de urgência, ligue para nosso suporte!",
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    "⚠️ **Ocorreu um erro inesperado**\n\n"
+                    "Não conseguimos processar sua solicitação no momento.\n\n"
+                    "🔄 **Por favor:**\n"
+                    "• Tente novamente em alguns instantes\n"
+                    "• Se o problema continuar, fale conosco no grupo\n\n"
+                    "📞 Em caso de urgência, ligue para nosso suporte!"
+                ),
                 parse_mode='Markdown'
             )
 
