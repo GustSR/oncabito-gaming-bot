@@ -165,13 +165,14 @@ class HubSoftAtendimentoClient:
             logger.error(f"Erro ao criar atendimento no HubSoft: {e}")
             raise
 
-    async def get_client_atendimentos(self, client_cpf: str, apenas_pendente: bool = True) -> List[Dict[str, Any]]:
+    async def get_client_atendimentos(self, client_cpf: str, apenas_pendente: bool = True, tipo_atendimento: str = None) -> List[Dict[str, Any]]:
         """
         Consulta atendimentos do cliente
 
         Args:
             client_cpf: CPF do cliente
             apenas_pendente: Se True, traz apenas atendimentos abertos
+            tipo_atendimento: ID do tipo de atendimento para filtrar (ex: "101" para Gaming)
 
         Returns:
             Lista de atendimentos do cliente
@@ -187,6 +188,10 @@ class HubSoftAtendimentoClient:
                 f"apenas_pendente={'sim' if apenas_pendente else 'nao'}",
                 f"limit=20"
             ]
+
+            # Adiciona filtro de tipo se especificado
+            if tipo_atendimento:
+                params.append(f"tipo_atendimento={tipo_atendimento}")
 
             endpoint_with_params = f"{endpoint}?{'&'.join(params)}"
 

@@ -205,11 +205,18 @@ class OnCaboTelegramBot:
                 parse_mode='Markdown'
             )
 
-            hubsoft_api = self.container.get("hubsoft_api_service")
-
             try:
-                # Busca tickets abertos do cliente
-                open_tickets = await hubsoft_api.search_tickets_by_cpf(cpf, limit=10)
+                # Busca tickets abertos do cliente APENAS do tipo Gaming (ID 101)
+                from sentinela.integrations.hubsoft.atendimento import HubSoftAtendimentoClient
+                from sentinela.integrations.hubsoft.config import HUBSOFT_TIPO_ATENDIMENTO_GAMING
+
+                hubsoft_atendimento = HubSoftAtendimentoClient()
+
+                open_tickets = await hubsoft_atendimento.get_client_atendimentos(
+                    cpf,
+                    apenas_pendente=True,  # Apenas abertos
+                    tipo_atendimento=HUBSOFT_TIPO_ATENDIMENTO_GAMING  # Filtra por tipo "SUPORTE - ONCABO GAMER"
+                )
 
                 # Filtra apenas tickets NÃO RESOLVIDOS (status HubSoft: 1=Pendente, 2=Aguardando Análise)
                 # Status 3=Resolvido não bloqueia criação de novos tickets
@@ -559,12 +566,16 @@ class OnCaboTelegramBot:
             )
 
             from sentinela.integrations.hubsoft.atendimento import HubSoftAtendimentoClient
-            from sentinela.integrations.hubsoft.config import get_status_display
+            from sentinela.integrations.hubsoft.config import get_status_display, HUBSOFT_TIPO_ATENDIMENTO_GAMING
 
             hubsoft_atendimento = HubSoftAtendimentoClient()
 
-            # Busca TODOS os chamados (abertos e fechados)
-            all_tickets = await hubsoft_atendimento.get_client_atendimentos(cpf, apenas_pendente=False)
+            # Busca TODOS os chamados (abertos e fechados) APENAS do tipo Gaming (ID 101)
+            all_tickets = await hubsoft_atendimento.get_client_atendimentos(
+                cpf,
+                apenas_pendente=False,
+                tipo_atendimento=HUBSOFT_TIPO_ATENDIMENTO_GAMING  # Filtra por tipo "SUPORTE - ONCABO GAMER"
+            )
 
             if not all_tickets:
                 # Cliente não tem chamados
