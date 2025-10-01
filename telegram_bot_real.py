@@ -219,37 +219,53 @@ class OnCaboTelegramBot:
                 ]
 
                 if active_tickets:
-                    # JÁ TEM TICKET ABERTO - apenas notifica admins, NÃO bloqueia
-                    ticket_list_admin = ""
-                    for i, ticket in enumerate(active_tickets[:5], 1):
+                    # JÁ TEM TICKET ABERTO - BLOQUEIA criação de novo ticket
+                    # Importa mapeamento de status do HubSoft
+                    from sentinela.integrations.hubsoft.config import get_status_display, format_protocol
+
+                    ticket_list_user = ""
+                    for i, ticket in enumerate(active_tickets[:5], 1):  # Máximo 5
                         ticket_id = ticket.get('id', 'N/A')
                         status_id = str(ticket.get('status', ''))
                         subject = ticket.get('assunto', 'Sem assunto')
                         created_at = ticket.get('data_abertura', '')
 
-                        # Importa mapeamento de status do HubSoft
-                        from sentinela.integrations.hubsoft.config import get_status_display
                         status_info = get_status_display(status_id)
+                        protocol = format_protocol(ticket_id)
 
-                        ticket_list_admin += (
-                            f"\n   {i}. Protocolo: ATD{str(ticket_id).zfill(6)}\n"
-                            f"      Status: {status_info['emoji']} {status_info['name']}\n"
-                            f"      Assunto: {subject}\n"
+                        ticket_list_user += (
+                            f"\n{i}. **Protocolo:** `{protocol}`\n"
+                            f"   **Status:** {status_info['emoji']} {status_info['name']}\n"
+                            f"   **Assunto:** {subject}\n"
+                            f"   **Aberto em:** {created_at}\n"
                         )
 
-                    logger.info(f"Usuário {user.id} tem {len(active_tickets)} tickets ativos no HubSoft")
-                    # Continua criando ticket normalmente, mas avisa admins
+                    # Mensagem de bloqueio para o usuário
+                    blocked_message = (
+                        "🚫 **Você já possui chamado(s) em aberto!**\n\n"
+                        f"📋 Encontramos **{len(active_tickets)} ticket(s)** ativo(s) "
+                        f"no seu CPF:\n{ticket_list_user}\n\n"
+                        "⚠️ **Regra:** Apenas 1 ticket por CPF de cada vez\n\n"
+                        "📞 **O que fazer:**\n"
+                        "• Aguarde o retorno da equipe técnica\n"
+                        "• Verifique seu WhatsApp/Email cadastrado\n"
+                        "• Entre em contato pelo telefone de suporte\n\n"
+                        "✅ **Após resolução** do chamado atual, você poderá abrir um novo!"
+                    )
+
+                    await update.message.reply_text(blocked_message, parse_mode='Markdown')
+                    logger.info(f"Usuário {user.id} BLOQUEADO - já tem {len(active_tickets)} ticket(s) aberto(s)")
+                    return  # BLOQUEIA criação
 
             except Exception as e:
-                # Erro ao buscar tickets - permite criar mesmo assim
+                # Erro ao buscar tickets - permite criar (fallback)
                 logger.warning(f"Erro ao buscar tickets no HubSoft: {e}")
                 active_tickets = []
-                ticket_list_admin = ""
 
-            # 3. Cria novo ticket (sempre permite)
+            # 3. NÃO tem ticket aberto - PERMITE criar novo
             protocol = f"ONB-{datetime.now().strftime('%Y%m%d')}-{user.id}"
 
-            # Mensagem para o usuário (sempre sucesso)
+            # Mensagem de sucesso para o usuário
             success_text = (
                 "🎫 **Ticket de Suporte Criado!**\n\n"
                 f"📋 **Protocolo:** `{protocol}`\n"
@@ -263,27 +279,15 @@ class OnCaboTelegramBot:
 
             # Notificação APENAS para canal de admins
             if self.tech_channel_id:
-                # Monta notificação com informações de tickets anteriores
                 tech_notification = (
                     f"🚨 **Novo Ticket de Suporte**\n\n"
                     f"📋 **Protocolo:** `{protocol}`\n"
                     f"👤 **Usuário:** {user.first_name} (@{user.username or 'sem username'})\n"
                     f"🆔 **ID Telegram:** `{user.id}`\n"
                     f"📋 **CPF:** {cpf[:3]}***{cpf[-2:]}\n"
-                    f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n"
-                )
-
-                # Adiciona informação de tickets anteriores se houver
-                if active_tickets:
-                    tech_notification += (
-                        f"\n⚠️ **ATENÇÃO:** Cliente possui **{len(active_tickets)} ticket(s)** "
-                        f"em aberto no HubSoft:\n{ticket_list_admin}\n"
-                    )
-                else:
-                    tech_notification += "\n✅ **HubSoft:** Sem chamados anteriores em aberto\n"
-
-                tech_notification += (
-                    f"\n🔗 **Sistema:** Clean Architecture + HubSoft API\n"
+                    f"📅 **Data:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}\n\n"
+                    f"✅ **HubSoft:** Cliente sem chamados anteriores em aberto\n\n"
+                    f"🔗 **Sistema:** Clean Architecture + HubSoft API\n"
                     f"⚡ **Status:** Aguardando atribuição"
                 )
 
@@ -297,10 +301,7 @@ class OnCaboTelegramBot:
                 except Exception as e:
                     logger.warning(f"Erro ao enviar notificação técnica: {e}")
 
-            logger.info(
-                f"Ticket {protocol} criado para usuário {user.id} - "
-                f"Tickets ativos no HubSoft: {len(active_tickets) if active_tickets else 0}"
-            )
+            logger.info(f"Ticket {protocol} criado para usuário {user.id} - Sem tickets ativos no HubSoft")
 
         except Exception as e:
             logger.error(f"Erro ao criar ticket de suporte: {e}")
