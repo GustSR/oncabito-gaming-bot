@@ -525,49 +525,120 @@ class OnCaboTelegramBot:
             )
 
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Comando /status."""
+        """Comando /status - Mostra chamados do cliente."""
         user = update.effective_user
-        logger.info(f"📊 Comando /status - Usuário: {user.username} ({user.id})")
+        logger.info(f"📋 Comando /status - Usuário: {user.username} ({user.id})")
 
         try:
-            # Obtém estatísticas usando nova arquitetura
-            command = GetSystemStatsCommand(admin_user_id=user.id)
-            stats_result = await self.admin_use_case.get_system_stats(command)
+            # 1. Verifica CPF do usuário
+            from sentinela.domain.value_objects.identifiers import UserId
+            user_id_vo = UserId(user.id)
+            user_repo = self.container.get("user_repository")
+            existing_user = await user_repo.find_by_id(user_id_vo)
 
-            # Health check do HubSoft
-            hubsoft_health = await self.hubsoft_use_case.check_hubsoft_health()
+            if not existing_user or not existing_user.cpf:
+                # Usuário sem CPF cadastrado
+                await update.message.reply_text(
+                    "⚠️ **CPF Não Verificado**\n\n"
+                    "Para consultar seus chamados, você precisa primeiro "
+                    "verificar seu CPF no sistema.\n\n"
+                    "📱 **Use o comando:** /verificar_cpf\n\n"
+                    "Após a verificação, você poderá consultar todos os seus "
+                    "atendimentos com /status",
+                    parse_mode='Markdown'
+                )
+                return
 
-            status_text = (
-                "📊 **Status do Sistema OnCabo Gaming**\n\n"
-                "🏛️ **Arquitetura:** Clean Architecture + DDD ✅\n"
-                "⚡ **Event Bus:** Funcionando ✅\n"
-                f"🔗 **HubSoft API:** {'✅' if hubsoft_health.success else '❌'}\n"
-                "📦 **Repositories:** Funcionando ✅\n"
-                "🚫 **Sistema Legado:** REMOVIDO ✅\n\n"
-                "📈 **Nova Arquitetura:**\n"
-                "• Zero dependências legadas\n"
-                "• Performance otimizada\n"
-                "• Event-driven communication\n"
-                "• Dependency injection completa\n\n"
-                f"🕒 **Última atualização:** {datetime.now().strftime('%d/%m/%Y às %H:%M')}"
+            cpf = existing_user.cpf.value
+
+            # 2. Busca chamados do cliente no HubSoft
+            await update.message.reply_text(
+                "🔍 **Consultando seus chamados...**\n\n"
+                "⏳ Aguarde enquanto buscamos seus atendimentos...",
+                parse_mode='Markdown'
             )
 
-            if stats_result.success and stats_result.data:
-                stats = stats_result.data
-                status_text += f"\n\n📊 **Estatísticas:**\n"
-                status_text += f"• Tickets: {stats.get('total_tickets', 0)}\n"
-                status_text += f"• Usuários: {stats.get('total_users', 0)}\n"
-                status_text += f"• Verificações CPF: {stats.get('total_verifications', 0)}"
+            from sentinela.integrations.hubsoft.atendimento import HubSoftAtendimentoClient
+            from sentinela.integrations.hubsoft.config import get_status_display
 
-            await update.message.reply_text(status_text, parse_mode='Markdown')
+            hubsoft_atendimento = HubSoftAtendimentoClient()
+
+            # Busca TODOS os chamados (abertos e fechados)
+            all_tickets = await hubsoft_atendimento.get_client_atendimentos(cpf, apenas_pendente=False)
+
+            if not all_tickets:
+                # Cliente não tem chamados
+                await update.message.reply_text(
+                    "📋 **Meus Chamados**\n\n"
+                    "✅ Você não possui chamados registrados no momento.\n\n"
+                    "🎫 **Precisa de ajuda?**\n"
+                    "Use o comando /suporte para abrir um novo chamado!\n\n"
+                    "📞 Nossa equipe está pronta para atender você!",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # 3. Separa chamados abertos e fechados
+            open_tickets = [t for t in all_tickets if str(t.get('status', '')) in ['1', '2']]
+            closed_tickets = [t for t in all_tickets if str(t.get('status', '')) == '3']
+
+            # 4. Monta mensagem formatada
+            status_message = "📋 **Meus Chamados**\n\n"
+
+            # Chamados ABERTOS
+            if open_tickets:
+                status_message += f"🔔 **{len(open_tickets)} Chamado(s) em Andamento:**\n\n"
+
+                for i, ticket in enumerate(open_tickets[:5], 1):  # Máximo 5
+                    protocol = ticket.get('protocolo', 'N/A')
+                    status_id = str(ticket.get('status', ''))
+                    subject = ticket.get('assunto', 'Sem assunto')
+                    created_at = ticket.get('data_abertura', 'N/A')
+
+                    status_info = get_status_display(status_id)
+
+                    status_message += (
+                        f"{i}. 📋 **Protocolo:** `{protocol}`\n"
+                        f"   {status_info['emoji']} **Status:** {status_info['name']}\n"
+                        f"   📝 **Assunto:** {subject}\n"
+                        f"   📅 **Aberto em:** {created_at}\n\n"
+                    )
+
+            # Chamados FECHADOS (últimos 3)
+            if closed_tickets:
+                status_message += f"✅ **{len(closed_tickets)} Chamado(s) Resolvido(s):**\n\n"
+
+                for i, ticket in enumerate(closed_tickets[:3], 1):  # Últimos 3
+                    protocol = ticket.get('protocolo', 'N/A')
+                    subject = ticket.get('assunto', 'Sem assunto')
+                    created_at = ticket.get('data_abertura', 'N/A')
+                    closed_at = ticket.get('data_fechamento', 'N/A')
+
+                    status_message += (
+                        f"{i}. 📋 **Protocolo:** `{protocol}`\n"
+                        f"   🟢 **Status:** Resolvido\n"
+                        f"   📝 **Assunto:** {subject}\n"
+                        f"   📅 **Fechado em:** {closed_at}\n\n"
+                    )
+
+            # Rodapé
+            status_message += (
+                "⏱️ **Tempo médio de resposta:** 24h úteis\n"
+                "🎫 **Novo chamado?** Use /suporte\n"
+                "📞 **Dúvidas?** Fale conosco no grupo!"
+            )
+
+            await update.message.reply_text(status_message, parse_mode='Markdown')
+            logger.info(f"Status enviado - {len(open_tickets)} abertos, {len(closed_tickets)} fechados")
 
         except Exception as e:
-            logger.error(f"Erro ao obter status: {e}")
+            logger.error(f"Erro ao obter status dos chamados: {e}")
             await update.message.reply_text(
-                "📊 **Status do Sistema**\n\n"
-                "🏛️ **Arquitetura:** Nova ✅\n"
-                "❌ **Erro** ao obter estatísticas detalhadas\n\n"
-                "🔄 Tente novamente em alguns instantes"
+                "⚠️ **Erro ao Consultar Chamados**\n\n"
+                "Não conseguimos buscar seus atendimentos no momento.\n\n"
+                "🔄 **Tente novamente em alguns instantes**\n"
+                "📞 Se o problema persistir, entre em contato no grupo!",
+                parse_mode='Markdown'
             )
 
     async def handle_admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
