@@ -110,6 +110,12 @@ class OnCaboTelegramBot:
             self.handle_group_commands
         ))
 
+        # Mensagens privadas (para CPF e confirmações)
+        app.add_handler(MessageHandler(
+            filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,
+            self.handle_private_message
+        ))
+
         logger.info("📋 Handlers registrados com sucesso")
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,10 +223,83 @@ class OnCaboTelegramBot:
     async def handle_cpf_verification(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Comando /verificar_cpf."""
         user = update.effective_user
-        logger.info(f"🔍 Comando /verificar_cpf - Usuário: {user.username} ({user.id})")
+        chat = update.effective_chat
+        logger.info(f"🔍 Comando /verificar_cpf - Usuário: {user.username} ({user.id}) - Chat: {chat.type}")
 
         try:
-            # Inicia verificação usando nova arquitetura
+            # Se comando foi dado no grupo, avisa e redireciona para privado
+            if chat.type in ['group', 'supergroup']:
+                # Aviso no grupo
+                group_message = (
+                    f"🔒 {user.first_name}, por questões de segurança, a verificação de CPF "
+                    f"será feita no **privado**.\n\n"
+                    f"📱 **Te chamei no privado** - responda lá para continuar!"
+                )
+                await update.message.reply_text(group_message, parse_mode='Markdown')
+
+                # Tenta enviar mensagem privada
+                try:
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text=(
+                            "🔐 **Verificação de CPF - OnCabo Gaming**\n\n"
+                            "Olá! Vamos iniciar sua verificação de CPF.\n\n"
+                            "Por questões de segurança, esse processo é feito aqui no privado.\n\n"
+                            "⏳ Aguarde enquanto verifico seu cadastro..."
+                        ),
+                        parse_mode='Markdown'
+                    )
+                except Exception as dm_error:
+                    # Se falhar ao enviar DM, pede para iniciar conversa
+                    await update.message.reply_text(
+                        f"❌ {user.first_name}, não consegui te enviar mensagem privada.\n\n"
+                        f"📱 **Clique aqui para iniciar conversa comigo:** "
+                        f"https://t.me/{context.bot.username}\n\n"
+                        f"Depois, use /verificar_cpf novamente no privado!",
+                        parse_mode='Markdown'
+                    )
+                    logger.warning(f"Não foi possível enviar DM para {user.id}: {dm_error}")
+                    return
+
+                # Continua processamento no privado
+                target_chat_id = user.id
+            else:
+                # Comando já foi dado no privado
+                target_chat_id = chat.id
+
+            # 1. Verifica se usuário JÁ tem CPF no banco
+            from sentinela.domain.value_objects.identifiers import UserId
+            user_id_vo = UserId(user.id)
+
+            # Busca usuário no repositório
+            user_repo = self.container.get("user_repository")
+            existing_user = await user_repo.find_by_id(user_id_vo)
+
+            if existing_user and existing_user.cpf:
+                # Usuário JÁ tem CPF - pede re-confirmação
+                await context.bot.send_message(
+                    chat_id=target_chat_id,
+                    text=(
+                        "🔍 **Verificação de Cadastro**\n\n"
+                        f"Encontrei um CPF já cadastrado para você!\n\n"
+                        f"📋 **CPF:** {existing_user.cpf.masked_value}\n"
+                        f"👤 **Nome:** {existing_user.client_name or 'Não informado'}\n\n"
+                        "❓ **Este CPF está correto?**\n\n"
+                        "✅ Digite **SIM** para confirmar\n"
+                        "❌ Digite **NAO** para atualizar\n\n"
+                        "⚠️ **Importante:** Você tem **24 horas** para confirmar, "
+                        "caso contrário será removido do grupo por medida de segurança."
+                    ),
+                    parse_mode='Markdown'
+                )
+
+                # Marca contexto para aguardar confirmação
+                context.user_data['awaiting_cpf_confirmation'] = True
+                context.user_data['current_cpf'] = existing_user.cpf.value
+                logger.info(f"Aguardando confirmação de CPF para usuário {user.id}")
+                return
+
+            # 2. Usuário NÃO tem CPF - inicia verificação normal
             result = await self.cpf_use_case.start_verification(
                 user_id=user.id,
                 username=user.username or user.first_name,
@@ -231,11 +310,10 @@ class OnCaboTelegramBot:
                 response_text = (
                     "🔍 **Verificação de CPF Iniciada!**\n\n"
                     f"✅ {result.message}\n\n"
-                    "📱 **Próximos passos:**\n"
-                    "1. Informe seu CPF (somente números)\n"
-                    "2. Aguarde a validação automática\n"
-                    "3. Receba confirmação da verificação\n\n"
-                    "🔒 **Seus dados estão seguros** - sistema totalmente renovado!"
+                    "📱 **Digite seu CPF** (somente números):\n"
+                    "Exemplo: 12345678901\n\n"
+                    "🔒 **Seus dados estão seguros** - criptografia de ponta a ponta\n\n"
+                    "⚠️ **Importante:** Você tem **24 horas** para completar a verificação."
                 )
             else:
                 response_text = (
@@ -245,7 +323,11 @@ class OnCaboTelegramBot:
                     "📞 **Precisa de ajuda?** Use /suporte"
                 )
 
-            await update.message.reply_text(response_text, parse_mode='Markdown')
+            await context.bot.send_message(
+                chat_id=target_chat_id,
+                text=response_text,
+                parse_mode='Markdown'
+            )
 
         except Exception as e:
             logger.error(f"Erro na verificação CPF: {e}")
@@ -399,6 +481,234 @@ class OnCaboTelegramBot:
                 "⚡ **Performance:** Otimizada\n"
                 "🚫 **Legacy:** Removido\n\n"
                 "✅ Tudo funcionando perfeitamente!"
+            )
+
+    async def handle_private_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler para mensagens privadas (CPF, confirmações, etc)."""
+        user = update.effective_user
+        text = update.message.text.strip()
+        logger.info(f"💬 Mensagem privada - Usuário: {user.username} ({user.id}), Texto: {text[:50]}")
+
+        try:
+            # 1. Verifica se está aguardando confirmação de CPF
+            if context.user_data.get('awaiting_cpf_confirmation'):
+                await self._handle_cpf_confirmation(update, context, text)
+                return
+
+            # 2. Verifica se está aguardando escolha de conta duplicada
+            if context.user_data.get('awaiting_duplicate_choice'):
+                await self._handle_duplicate_choice(update, context, text)
+                return
+
+            # 3. Tenta processar como CPF (validação de formato básica)
+            if text.isdigit() and len(text) == 11:
+                await self._handle_cpf_submission(update, context, text)
+                return
+
+            # 4. Mensagem não reconhecida
+            await update.message.reply_text(
+                "❓ **Mensagem não reconhecida**\n\n"
+                "📋 **Comandos disponíveis:**\n"
+                "• /verificar_cpf - Verificar CPF\n"
+                "• /suporte - Abrir ticket\n"
+                "• /status - Status do sistema\n"
+                "• /help - Ajuda completa\n\n"
+                "💡 **Dica:** Se está tentando enviar CPF, use apenas números (11 dígitos)"
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao processar mensagem privada: {e}")
+            await update.message.reply_text(
+                "❌ Erro ao processar sua mensagem.\n"
+                "🔄 Tente novamente ou use /help"
+            )
+
+    async def _handle_cpf_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Processa confirmação de CPF existente."""
+        user = update.effective_user
+        text_upper = text.upper()
+
+        if text_upper in ['SIM', 'S', 'YES', 'Y', 'CONFIRMO', 'OK']:
+            # CPF confirmado
+            await update.message.reply_text(
+                "✅ **CPF Confirmado!**\n\n"
+                "🎮 Seu acesso está verificado e ativo!\n"
+                "📊 Você pode continuar aproveitando o grupo OnCabo Gaming.\n\n"
+                "💡 **Dica:** Use /suporte se precisar de ajuda"
+            )
+
+            # Limpa contexto
+            context.user_data.clear()
+            logger.info(f"CPF confirmado para usuário {user.id}")
+
+        elif text_upper in ['NAO', 'NÃO', 'N', 'NO', 'NEGAR']:
+            # Usuário quer atualizar CPF
+            await update.message.reply_text(
+                "🔄 **Atualização de CPF**\n\n"
+                "📱 **Digite seu novo CPF** (somente números):\n"
+                "Exemplo: 12345678901\n\n"
+                "🔒 Seus dados estão seguros - criptografia de ponta a ponta"
+            )
+
+            # Inicia nova verificação
+            result = await self.cpf_use_case.start_verification(
+                user_id=user.id,
+                username=user.username or user.first_name,
+                user_mention=f"@{user.username}" if user.username else user.first_name,
+                verification_type="cpf_update"
+            )
+
+            # Limpa contexto de confirmação
+            context.user_data.pop('awaiting_cpf_confirmation', None)
+            logger.info(f"Usuário {user.id} iniciou atualização de CPF")
+
+        else:
+            # Resposta inválida
+            await update.message.reply_text(
+                "❓ **Resposta não reconhecida**\n\n"
+                "✅ Digite **SIM** para confirmar o CPF\n"
+                "❌ Digite **NAO** para atualizar\n\n"
+                "⏰ Aguardando sua resposta..."
+            )
+
+    async def _handle_duplicate_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Processa escolha quando há CPF duplicado."""
+        user = update.effective_user
+        duplicate_data = context.user_data.get('duplicate_data', {})
+        duplicate_users = duplicate_data.get('users', [])
+
+        try:
+            # Verifica se respondeu com número
+            choice = int(text.strip())
+
+            if 1 <= choice <= len(duplicate_users):
+                # Escolha válida
+                chosen_user = duplicate_users[choice - 1]
+                other_users = [u for i, u in enumerate(duplicate_users) if i != (choice - 1)]
+
+                await update.message.reply_text(
+                    f"✅ **Conta Selecionada!**\n\n"
+                    f"👤 **Conta mantida:** {chosen_user.get('username', 'Desconhecido')}\n"
+                    f"🆔 **ID:** {chosen_user['user_id']}\n\n"
+                    f"🚫 **As seguintes contas serão removidas:**\n"
+                    + "\n".join([f"• {u.get('username', 'Desconhecido')} (ID: {u['user_id']})" for u in other_users]) +
+                    "\n\n⏳ Processando remoção..."
+                )
+
+                # Remove outras contas do grupo
+                for other_user in other_users:
+                    try:
+                        await context.bot.ban_chat_member(
+                            chat_id=self.group_id,
+                            user_id=other_user['user_id']
+                        )
+                        logger.info(f"Usuário {other_user['user_id']} removido por conta duplicada")
+                    except Exception as e:
+                        logger.error(f"Erro ao remover usuário {other_user['user_id']}: {e}")
+
+                await update.message.reply_text(
+                    "✅ **Processo concluído!**\n\n"
+                    "🎮 Sua conta principal está ativa no grupo.\n"
+                    "📊 As contas duplicadas foram removidas.\n\n"
+                    "💡 Use /suporte se tiver alguma dúvida."
+                )
+
+                # Limpa contexto
+                context.user_data.clear()
+
+            else:
+                await update.message.reply_text(
+                    f"❌ **Opção inválida**\n\n"
+                    f"📋 Escolha um número entre 1 e {len(duplicate_users)}"
+                )
+
+        except ValueError:
+            await update.message.reply_text(
+                "❌ **Entrada inválida**\n\n"
+                "📋 Digite o **número** da conta que deseja manter\n"
+                "Exemplo: 1"
+            )
+
+    async def _handle_cpf_submission(self, update: Update, context: ContextTypes.DEFAULT_TYPE, cpf: str):
+        """Processa submissão de CPF."""
+        user = update.effective_user
+        logger.info(f"📋 Processando submissão de CPF para usuário {user.id}")
+
+        try:
+            # Submete CPF para verificação
+            result = await self.cpf_use_case.submit_cpf(
+                user_id=user.id,
+                username=user.username or user.first_name,
+                cpf=cpf
+            )
+
+            if result.success:
+                # CPF válido - verifica duplicatas
+                duplicate_service = self.container.get("duplicate_cpf_service")
+
+                # Calcula hash do CPF para verificação
+                import hashlib
+                cpf_hash = hashlib.sha256(cpf.encode()).hexdigest()
+
+                duplicate_check = await duplicate_service.check_for_duplicates(
+                    cpf_hash=cpf_hash,
+                    exclude_user_id=user.id
+                )
+
+                if duplicate_check.get('has_duplicates'):
+                    # CPF DUPLICADO - pede para escolher conta
+                    duplicate_users = duplicate_check['users']
+                    duplicate_users.append({
+                        'user_id': user.id,
+                        'username': user.username or user.first_name
+                    })
+
+                    message = (
+                        "⚠️ **CPF Duplicado Detectado!**\n\n"
+                        "🔍 Este CPF está associado a múltiplas contas:\n\n"
+                    )
+
+                    for i, dup_user in enumerate(duplicate_users, 1):
+                        message += f"{i}. {dup_user.get('username', 'Desconhecido')} (ID: {dup_user['user_id']})\n"
+
+                    message += (
+                        "\n❓ **Qual conta você deseja manter?**\n"
+                        "📋 Digite o **número** da conta:\n\n"
+                        "⚠️ **IMPORTANTE:** As outras contas serão removidas do grupo "
+                        "por questões de segurança."
+                    )
+
+                    await update.message.reply_text(message)
+
+                    # Marca contexto
+                    context.user_data['awaiting_duplicate_choice'] = True
+                    context.user_data['duplicate_data'] = duplicate_check
+
+                else:
+                    # CPF único - sucesso!
+                    await update.message.reply_text(
+                        "✅ **Verificação Concluída com Sucesso!**\n\n"
+                        f"{result.message}\n\n"
+                        "🎮 **Seu acesso está liberado!**\n"
+                        "📊 Aproveite todos os benefícios do grupo OnCabo Gaming!\n\n"
+                        "💡 Use /suporte se precisar de ajuda."
+                    )
+
+            else:
+                # Erro na verificação
+                await update.message.reply_text(
+                    f"❌ **Erro na Verificação**\n\n"
+                    f"{result.message}\n\n"
+                    f"🔄 **Tentativas restantes:** {result.data.get('attempts_left', 0)}\n\n"
+                    "💡 Verifique se o CPF está correto e tente novamente."
+                )
+
+        except Exception as e:
+            logger.error(f"Erro ao processar CPF: {e}")
+            await update.message.reply_text(
+                "❌ **Erro interno ao processar CPF**\n\n"
+                "🔄 Tente novamente em alguns instantes\n"
+                "📞 Se persistir, use /suporte"
             )
 
     async def start_bot(self):
