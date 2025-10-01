@@ -70,7 +70,10 @@ echo ""
 # 4. Criar diretórios necessários
 echo "📁 Criando diretórios necessários..."
 mkdir -p data/database logs backups
-chmod 755 data logs backups
+chmod 777 data logs backups
+chmod -R 777 data/database 2>/dev/null || true
+find data -type f -name "*.db" -exec chmod 666 {} \; 2>/dev/null || true
+find data -type f -name "*.db-*" -exec chmod 666 {} \; 2>/dev/null || true
 print_status "Diretórios criados e permissões ajustadas"
 echo ""
 
