@@ -158,3 +158,83 @@ def check_contract_status(cpf: str) -> bool:
     """
     logger.warning("check_contract_status() is deprecated. Use get_client_info(cpf, full_data=False) instead.")
     return get_client_info(cpf, full_data=False)
+
+
+def check_gaming_plan_by_cpf(cpf: str) -> Dict[str, Any]:
+    """
+    Verifica se o cliente possui plano Gaming ativo.
+
+    Busca o cliente no HubSoft e verifica se possui algum serviço
+    que contenha 'gaming', 'gamer' ou 'game' no nome do plano.
+
+    Args:
+        cpf: CPF do cliente (formatado ou não)
+
+    Returns:
+        dict: {
+            'has_gaming': bool,
+            'client_name': str,
+            'plan_name': str,
+            'service_id': int,
+            'cpf': str
+        }
+    """
+    formatted_cpf = "".join(filter(str.isdigit, cpf))
+
+    logger.info(f"Verificando plano Gaming para CPF {formatted_cpf[:3]}***{formatted_cpf[-2:]}")
+
+    # Busca dados completos do cliente
+    client_data = get_client_info(formatted_cpf, full_data=True)
+
+    if not client_data:
+        logger.warning(f"Cliente com CPF {formatted_cpf[:3]}*** não encontrado no HubSoft")
+        return {
+            'has_gaming': False,
+            'client_name': None,
+            'plan_name': None,
+            'service_id': None,
+            'cpf': formatted_cpf
+        }
+
+    client_name = client_data.get('nome', client_data.get('client_name', 'Cliente'))
+
+    # Busca serviços ativos
+    services = client_data.get('servicos', [])
+
+    if not services:
+        logger.info(f"Cliente {client_name} não possui serviços ativos")
+        return {
+            'has_gaming': False,
+            'client_name': client_name,
+            'plan_name': None,
+            'service_id': None,
+            'cpf': formatted_cpf
+        }
+
+    # Procura por plano Gaming
+    gaming_keywords = ['gaming', 'gamer', 'game']
+
+    for service in services:
+        plan_name = service.get('plano', '').lower()
+        service_id = service.get('id')
+
+        # Verifica se o plano contém alguma palavra-chave gaming
+        if any(keyword in plan_name for keyword in gaming_keywords):
+            logger.info(f"✅ Plano Gaming encontrado para {client_name}: {service.get('plano')}")
+            return {
+                'has_gaming': True,
+                'client_name': client_name,
+                'plan_name': service.get('plano'),
+                'service_id': service_id,
+                'cpf': formatted_cpf
+            }
+
+    # Nenhum plano Gaming encontrado
+    logger.info(f"❌ Cliente {client_name} não possui plano Gaming")
+    return {
+        'has_gaming': False,
+        'client_name': client_name,
+        'plan_name': None,
+        'service_id': None,
+        'cpf': formatted_cpf
+    }
