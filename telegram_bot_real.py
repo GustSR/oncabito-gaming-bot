@@ -240,17 +240,19 @@ class OnCaboTelegramBot:
                             f"   **Aberto em:** {created_at}\n"
                         )
 
-                    # Mensagem de bloqueio para o usuário
+                    # Mensagem amigável e profissional para o usuário
                     blocked_message = (
-                        "🚫 **Você já possui chamado(s) em aberto!**\n\n"
-                        f"📋 Encontramos **{len(active_tickets)} ticket(s)** ativo(s) "
-                        f"no seu CPF:\n{ticket_list_user}\n\n"
-                        "⚠️ **Regra:** Apenas 1 ticket por CPF de cada vez\n\n"
-                        "📞 **O que fazer:**\n"
-                        "• Aguarde o retorno da equipe técnica\n"
-                        "• Verifique seu WhatsApp/Email cadastrado\n"
-                        "• Entre em contato pelo telefone de suporte\n\n"
-                        "✅ **Após resolução** do chamado atual, você poderá abrir um novo!"
+                        "👋 **Olá! Identificamos que você já está em atendimento**\n\n"
+                        f"✅ Encontramos **{len(active_tickets)} chamado(s)** em andamento "
+                        f"vinculado(s) ao seu CPF:\n{ticket_list_user}\n\n"
+                        "🎯 **Nossa equipe já está trabalhando para resolver seu problema!**\n\n"
+                        "📞 **Acompanhamento:**\n"
+                        "• Nossa equipe entrará em contato em breve\n"
+                        "• Verifique seu WhatsApp ou Email cadastrado\n"
+                        "• Você pode ligar para nosso suporte se preferir\n\n"
+                        "💡 **Dica:** Assim que finalizarmos seu atendimento atual, "
+                        "você poderá abrir novos chamados quando precisar!\n\n"
+                        "🙏 **Agradecemos sua compreensão e paciência!**"
                     )
 
                     await update.message.reply_text(blocked_message, parse_mode='Markdown')
