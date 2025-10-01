@@ -202,3 +202,24 @@ class ScheduledTask:
             next_run=datetime.now() + timedelta(hours=1),
             timeout_seconds=900  # 15 minutos
         )
+
+    @staticmethod
+    def create_member_cpf_check_task() -> 'ScheduledTask':
+        """
+        Cria tarefa de verificação de CPF de membros do grupo.
+
+        Verifica diariamente se todos os membros (exceto admins) têm CPF vinculado.
+        Remove membros sem CPF após 24h de notificação.
+
+        Returns:
+            ScheduledTask: Tarefa configurada
+        """
+        return ScheduledTask(
+            task_id="check_member_cpf_daily",
+            name="Verificação de CPF de Membros",
+            description="Verifica e remove membros sem CPF vinculado",
+            frequency=TaskFrequency.DAILY,
+            priority=TaskPriority.HIGH,
+            next_run=datetime.now() + timedelta(hours=2),
+            timeout_seconds=600  # 10 minutos
+        )

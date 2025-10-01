@@ -290,6 +290,94 @@ class SQLiteUserRepository(UserRepository):
             await db.commit()
             return cursor.rowcount > 0
 
+    async def find_by_cpf(self, cpf: str) -> Optional[User]:
+        """
+        Busca usuário por CPF.
+
+        Args:
+            cpf: CPF para buscar (apenas números)
+
+        Returns:
+            User encontrado ou None
+        """
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM users WHERE cpf = ? LIMIT 1
+            """, (cpf,))
+
+            row = await cursor.fetchone()
+
+            if row:
+                return self._row_to_user(row)
+
+            return None
+
+    async def find_users_without_cpf(self) -> List[User]:
+        """
+        Busca todos os usuários que NÃO têm CPF vinculado.
+
+        Returns:
+            Lista de usuários sem CPF
+        """
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                SELECT * FROM users
+                WHERE cpf IS NULL OR cpf = ''
+                ORDER BY created_at DESC
+            """)
+
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
+
+    async def update_telegram_id(self, old_user_id: int, new_user_id: int, cpf: str) -> bool:
+        """
+        Atualiza vínculo de CPF para novo Telegram ID.
+
+        Remove CPF do ID antigo e vincula ao novo ID.
+
+        Args:
+            old_user_id: Telegram ID antigo
+            new_user_id: Telegram ID novo
+            cpf: CPF a ser vinculado
+
+        Returns:
+            True se atualizado com sucesso
+        """
+        import aiosqlite
+
+        await self._init_database()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            # Remove CPF do usuário antigo
+            await db.execute("""
+                UPDATE users SET
+                    cpf = NULL,
+                    client_name = NULL,
+                    updated_at = ?
+                WHERE id = ?
+            """, (datetime.now().isoformat(), old_user_id))
+
+            # Vincula CPF ao novo usuário
+            cursor = await db.execute("""
+                UPDATE users SET
+                    cpf = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (cpf, datetime.now().isoformat(), new_user_id))
+
+            await db.commit()
+
+            return cursor.rowcount > 0
+
     async def get_user_statistics(self, user_id: UserId) -> dict:
         """Obtém estatísticas de um usuário."""
         import aiosqlite

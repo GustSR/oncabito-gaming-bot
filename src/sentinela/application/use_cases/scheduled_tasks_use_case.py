@@ -100,7 +100,8 @@ class ScheduledTasksUseCase(UseCase):
                 ScheduledTask.create_rules_check_task(),
                 ScheduledTask.create_invite_cleanup_task(),
                 ScheduledTask.create_verification_expiry_task(),
-                ScheduledTask.create_hubsoft_sync_task()
+                ScheduledTask.create_hubsoft_sync_task(),
+                ScheduledTask.create_member_cpf_check_task()
             ]
 
             registered_count = 0

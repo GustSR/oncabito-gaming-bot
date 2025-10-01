@@ -24,6 +24,7 @@ from ..repositories.sqlite_ticket_repository import SQLiteTicketRepository
 from ..repositories.sqlite_cpf_verification_repository import SQLiteCPFVerificationRepository
 from ..repositories.sqlite_hubsoft_integration_repository import SQLiteHubSoftIntegrationRepository
 from ..repositories.sqlite_user_repository import SQLiteUserRepository
+from ..repositories.sqlite_group_invite_repository import SQLiteGroupInviteRepository
 try:
     from ..external_services.hubsoft_api_service import HubSoftAPIService, HubSoftCacheService
 except ImportError:
@@ -196,6 +197,10 @@ class DIContainer:
         # User Repository
         user_repo = SQLiteUserRepository(db_path)
         self._instances["user_repository"] = user_repo
+
+        # Group Invite Repository
+        group_invite_repo = SQLiteGroupInviteRepository(db_path)
+        self._instances["group_invite_repository"] = group_invite_repo
 
         logger.debug("Repositories registrados")
 
@@ -417,6 +422,21 @@ class DIContainer:
             verification_repository=self._instances["cpf_verification_repository"]
         )
         self._instances["admin_operations_use_case"] = admin_use_case
+
+        # Member Verification Use Case
+        from ...application.use_cases.member_verification_use_case import MemberVerificationUseCase
+        member_verification_use_case = MemberVerificationUseCase(
+            user_repository=self._instances["user_repository"],
+            event_bus=self._instances["event_bus"]
+        )
+        self._instances["member_verification_use_case"] = member_verification_use_case
+
+        # Scheduled Tasks Use Case
+        from ...application.use_cases.scheduled_tasks_use_case import ScheduledTasksUseCase
+        scheduled_tasks_use_case = ScheduledTasksUseCase(
+            event_bus=self._instances["event_bus"]
+        )
+        self._instances["scheduled_tasks_use_case"] = scheduled_tasks_use_case
 
         logger.debug("Use cases registrados")
 

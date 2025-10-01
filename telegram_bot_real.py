@@ -94,7 +94,6 @@ class OnCaboTelegramBot:
         app.add_handler(CommandHandler("start", self.handle_start))
         app.add_handler(CommandHandler("help", self.handle_help))
         app.add_handler(CommandHandler("suporte", self.handle_support))
-        app.add_handler(CommandHandler("verificar_cpf", self.handle_cpf_verification))
         app.add_handler(CommandHandler("status", self.handle_status))
 
         # Comandos administrativos
@@ -119,25 +118,40 @@ class OnCaboTelegramBot:
         logger.info("📋 Handlers registrados com sucesso")
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Comando /start."""
+        """Comando /start - Apresentação do OnCabito e verificação de acesso."""
         user = update.effective_user
-        logger.info(f"🎮 Comando /start - Usuário: {user.username} ({user.id})")
+        chat = update.effective_chat
 
-        welcome_text = (
-            "🎮 **Bem-vindo ao OnCabo Gaming!**\n\n"
-            "✅ Sistema completamente renovado com Clean Architecture\n"
-            "🚀 Zero dependências legadas\n"
-            "⚡ Performance otimizada\n\n"
-            "**Comandos disponíveis:**\n"
-            "• /suporte - Abrir ticket de suporte\n"
-            "• /verificar_cpf - Verificar seu CPF\n"
-            "• /status - Status do sistema\n"
-            "• /help - Ajuda completa\n\n"
-            "📞 **Precisa de suporte?** Use /suporte para abrir um ticket!\n"
-            "🎯 **Sistema totalmente novo e mais eficiente!**"
+        logger.info(f"🎮 Comando /start - Usuário: {user.username} ({user.id}), Chat: {chat.type}")
+
+        # Só responde em chat privado para acesso ao grupo
+        if chat.type != 'private':
+            return
+
+        # Mensagem de apresentação do OnCabito
+        oncabito_welcome = (
+            "🎮 **Olá! Eu sou o OnCabito!**\n\n"
+            "Sou o assistente virtual responsável pelo **melhor grupo de suporte gamer da OnCabo**! 🚀\n\n"
+            "🎯 **O que é o Grupo Gaming OnCabo?**\n\n"
+            "Um espaço exclusivo para clientes do plano Gaming, onde você encontra:\n\n"
+            "✅ Suporte técnico especializado em jogos\n"
+            "✅ Otimização de conexão e latência\n"
+            "✅ Troubleshooting para problemas de performance\n"
+            "✅ Dicas exclusivas da comunidade gamer OnCabo\n"
+            "✅ Atendimento prioritário para gamers\n\n"
+            "🔐 **Requisito para Acesso:**\n\n"
+            "Para entrar no grupo, você precisa ser cliente ativo do **Plano Gaming OnCabo**.\n\n"
+            "📋 **Vamos verificar seu acesso?**\n\n"
+            "Por favor, me envie seu **CPF** (apenas números) para eu validar sua assinatura.\n\n"
+            "🔒 *Seus dados estão seguros e serão usados apenas para verificação.*"
         )
 
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
+        await update.message.reply_text(oncabito_welcome, parse_mode='Markdown')
+
+        # Marca que está aguardando CPF para acesso ao grupo
+        context.user_data['awaiting_cpf_for_access'] = True
+
+        logger.info(f"OnCabito apresentado para {user.username}, aguardando CPF para acesso")
 
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Comando /help."""
@@ -414,122 +428,9 @@ class OnCaboTelegramBot:
                 parse_mode='Markdown'
             )
 
-    async def handle_cpf_verification(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Comando /verificar_cpf."""
-        user = update.effective_user
-        chat = update.effective_chat
-        logger.info(f"🔍 Comando /verificar_cpf - Usuário: {user.username} ({user.id}) - Chat: {chat.type}")
-
-        try:
-            # Se comando foi dado no grupo, avisa e redireciona para privado
-            if chat.type in ['group', 'supergroup']:
-                # Aviso no grupo
-                group_message = (
-                    f"🔒 {user.first_name}, por questões de segurança, a verificação de CPF "
-                    f"será feita no **privado**.\n\n"
-                    f"📱 **Te chamei no privado** - responda lá para continuar!"
-                )
-                await update.message.reply_text(group_message, parse_mode='Markdown')
-
-                # Tenta enviar mensagem privada
-                try:
-                    await context.bot.send_message(
-                        chat_id=user.id,
-                        text=(
-                            "🔐 **Verificação de CPF - OnCabo Gaming**\n\n"
-                            "Olá! Vamos iniciar sua verificação de CPF.\n\n"
-                            "Por questões de segurança, esse processo é feito aqui no privado.\n\n"
-                            "⏳ Aguarde enquanto verifico seu cadastro..."
-                        ),
-                        parse_mode='Markdown'
-                    )
-                except Exception as dm_error:
-                    # Se falhar ao enviar DM, pede para iniciar conversa
-                    await update.message.reply_text(
-                        f"❌ {user.first_name}, não consegui te enviar mensagem privada.\n\n"
-                        f"📱 **Clique aqui para iniciar conversa comigo:** "
-                        f"https://t.me/{context.bot.username}\n\n"
-                        f"Depois, use /verificar_cpf novamente no privado!",
-                        parse_mode='Markdown'
-                    )
-                    logger.warning(f"Não foi possível enviar DM para {user.id}: {dm_error}")
-                    return
-
-                # Continua processamento no privado
-                target_chat_id = user.id
-            else:
-                # Comando já foi dado no privado
-                target_chat_id = chat.id
-
-            # 1. Verifica se usuário JÁ tem CPF no banco
-            from sentinela.domain.value_objects.identifiers import UserId
-            user_id_vo = UserId(user.id)
-
-            # Busca usuário no repositório
-            user_repo = self.container.get("user_repository")
-            existing_user = await user_repo.find_by_id(user_id_vo)
-
-            if existing_user and existing_user.cpf:
-                # Usuário JÁ tem CPF - pede re-confirmação
-                await context.bot.send_message(
-                    chat_id=target_chat_id,
-                    text=(
-                        "🔍 **Verificação de Cadastro**\n\n"
-                        f"Encontrei um CPF já cadastrado para você!\n\n"
-                        f"📋 **CPF:** {existing_user.cpf.masked_value}\n"
-                        f"👤 **Nome:** {existing_user.client_name or 'Não informado'}\n\n"
-                        "❓ **Este CPF está correto?**\n\n"
-                        "✅ Digite **SIM** para confirmar\n"
-                        "❌ Digite **NAO** para atualizar\n\n"
-                        "⚠️ **Importante:** Você tem **24 horas** para confirmar, "
-                        "caso contrário será removido do grupo por medida de segurança."
-                    ),
-                    parse_mode='Markdown'
-                )
-
-                # Marca contexto para aguardar confirmação
-                context.user_data['awaiting_cpf_confirmation'] = True
-                context.user_data['current_cpf'] = existing_user.cpf.value
-                logger.info(f"Aguardando confirmação de CPF para usuário {user.id}")
-                return
-
-            # 2. Usuário NÃO tem CPF - inicia verificação normal
-            result = await self.cpf_use_case.start_verification(
-                user_id=user.id,
-                username=user.username or user.first_name,
-                user_mention=f"@{user.username}" if user.username else user.first_name
-            )
-
-            if result.success:
-                response_text = (
-                    "🔍 **Verificação de CPF Iniciada!**\n\n"
-                    f"✅ {result.message}\n\n"
-                    "📱 **Digite seu CPF** (somente números):\n"
-                    "Exemplo: 12345678901\n\n"
-                    "🔒 **Seus dados estão seguros** - criptografia de ponta a ponta\n\n"
-                    "⚠️ **Importante:** Você tem **24 horas** para completar a verificação."
-                )
-            else:
-                response_text = (
-                    "❌ **Erro na Verificação de CPF**\n\n"
-                    f"🚫 {result.message}\n\n"
-                    "🔄 **Tente novamente** em alguns instantes\n"
-                    "📞 **Precisa de ajuda?** Use /suporte"
-                )
-
-            await context.bot.send_message(
-                chat_id=target_chat_id,
-                text=response_text,
-                parse_mode='Markdown'
-            )
-
-        except Exception as e:
-            logger.error(f"Erro na verificação CPF: {e}")
-            await update.message.reply_text(
-                "❌ **Erro interno na verificação**\n\n"
-                "🔄 Sistema temporariamente indisponível\n"
-                "📞 Use /suporte para reportar o problema"
-            )
+    # REMOVIDO: Comando /verificar_cpf manual
+    # Agora a verificação é automática via checkup diário
+    # O CPF é solicitado automaticamente quando necessário
 
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Comando /status - Mostra chamados do cliente."""
@@ -759,22 +660,41 @@ class OnCaboTelegramBot:
         logger.info(f"💬 Mensagem privada - Usuário: {user.username} ({user.id}), Texto: {text[:50]}")
 
         try:
-            # 1. Verifica se está aguardando confirmação de CPF
+            # 1. Verifica se está aguardando CPF para acesso ao grupo Gaming
+            if context.user_data.get('awaiting_cpf_for_access'):
+                # Valida formato do CPF (apenas números, 11 dígitos)
+                if text.isdigit() and len(text) == 11:
+                    await self._process_cpf_for_group_access(update, context, text)
+                else:
+                    await update.message.reply_text(
+                        "❌ **CPF Inválido**\n\n"
+                        "O CPF deve conter **11 dígitos numéricos**.\n\n"
+                        "📝 **Exemplo:** 12345678901\n\n"
+                        "🔄 **Tente novamente** enviando apenas números."
+                    )
+                return
+
+            # 2. Verifica se está aguardando escolha de conta (CPF duplicado - caso simples)
+            if context.user_data.get('awaiting_account_choice'):
+                await self._handle_account_choice(update, context, text)
+                return
+
+            # 3. Verifica se está aguardando confirmação de CPF
             if context.user_data.get('awaiting_cpf_confirmation'):
                 await self._handle_cpf_confirmation(update, context, text)
                 return
 
-            # 2. Verifica se está aguardando escolha de conta duplicada
+            # 4. Verifica se está aguardando escolha de conta duplicada (caso complexo)
             if context.user_data.get('awaiting_duplicate_choice'):
                 await self._handle_duplicate_choice(update, context, text)
                 return
 
-            # 3. Tenta processar como CPF (validação de formato básica)
+            # 5. Tenta processar como CPF (validação de formato básica)
             if text.isdigit() and len(text) == 11:
                 await self._handle_cpf_submission(update, context, text)
                 return
 
-            # 4. Mensagem não reconhecida
+            # 5. Mensagem não reconhecida
             await update.message.reply_text(
                 "❓ **Mensagem não reconhecida**\n\n"
                 "📋 **Comandos disponíveis:**\n"
@@ -791,6 +711,142 @@ class OnCaboTelegramBot:
                 "❌ Erro ao processar sua mensagem.\n"
                 "🔄 Tente novamente ou use /help"
             )
+
+    async def _handle_account_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, choice: str):
+        """
+        Processa escolha de conta quando CPF duplicado é detectado.
+
+        Args:
+            choice: "1" para manter conta antiga, "2" para manter conta nova
+        """
+        user = update.effective_user
+        choice = choice.strip()
+
+        try:
+            choice_data = context.user_data.get('account_choice_data', {})
+
+            if not choice_data:
+                await update.message.reply_text("❌ Erro: Dados de escolha não encontrados. Tente novamente.")
+                context.user_data.clear()
+                return
+
+            cpf = choice_data['cpf']
+            old_user_id = choice_data['old_user_id']
+            old_username = choice_data['old_username']
+            new_user_id = choice_data['new_user_id']
+            new_username = choice_data['new_username']
+
+            if choice == "1":
+                # Escolheu MANTER CONTA ANTIGA
+                logger.info(f"Usuário {user.id} escolheu manter conta antiga (ID: {old_user_id})")
+
+                await update.message.reply_text(
+                    f"✅ **Conta Antiga Mantida**\n\n"
+                    f"Você escolheu manter a conta @{old_username} (ID: {old_user_id}).\n\n"
+                    f"⚠️ **Esta conta (atual)** será removida do grupo.\n\n"
+                    f"🔄 **Para acessar o grupo novamente:**\n"
+                    f"1. Use a conta @{old_username}\n"
+                    f"2. Entre em contato com o bot /start\n"
+                    f"3. Seu CPF já está vinculado\n\n"
+                    f"🔒 Remoção será executada em breve."
+                )
+
+                # Remove conta NOVA (atual) do grupo
+                try:
+                    await context.bot.ban_chat_member(
+                        chat_id=self.group_id,
+                        user_id=new_user_id
+                    )
+
+                    # Desban imediatamente (apenas remove, não bloqueia permanentemente)
+                    await context.bot.unban_chat_member(
+                        chat_id=self.group_id,
+                        user_id=new_user_id
+                    )
+
+                    logger.info(f"Conta nova (ID: {new_user_id}) removida do grupo")
+
+                except Exception as remove_error:
+                    logger.error(f"Erro ao remover conta nova do grupo: {remove_error}")
+
+            elif choice == "2":
+                # Escolheu MANTER CONTA NOVA (atual)
+                logger.info(f"Usuário {user.id} escolheu manter conta nova (ID: {new_user_id})")
+
+                # Atualiza vínculo de CPF no banco
+                user_repo = self.container.get("user_repository")
+                updated = await user_repo.update_telegram_id(
+                    old_user_id=old_user_id,
+                    new_user_id=new_user_id,
+                    cpf=cpf
+                )
+
+                if updated:
+                    logger.info(f"Vínculo de CPF atualizado: {old_user_id} → {new_user_id}")
+
+                await update.message.reply_text(
+                    f"✅ **Conta Nova Mantida**\n\n"
+                    f"Você escolheu manter esta conta @{new_username} (ID: {new_user_id}).\n\n"
+                    f"🔄 **Processando:**\n"
+                    f"• Removendo conta antiga do grupo\n"
+                    f"• Atualizando vínculo de CPF\n"
+                    f"• Gerando novo link de acesso\n\n"
+                    f"⏳ Aguarde..."
+                )
+
+                # Remove conta ANTIGA do grupo
+                try:
+                    await context.bot.ban_chat_member(
+                        chat_id=self.group_id,
+                        user_id=old_user_id
+                    )
+
+                    # Desban imediatamente
+                    await context.bot.unban_chat_member(
+                        chat_id=self.group_id,
+                        user_id=old_user_id
+                    )
+
+                    logger.info(f"Conta antiga (ID: {old_user_id}) removida do grupo")
+
+                except Exception as remove_error:
+                    logger.error(f"Erro ao remover conta antiga do grupo: {remove_error}")
+
+                # Valida plano Gaming e gera link de acesso
+                from sentinela.integrations.hubsoft.cliente import check_gaming_plan_by_cpf
+
+                gaming_info = check_gaming_plan_by_cpf(cpf)
+
+                if gaming_info['has_gaming']:
+                    # Gera link de acesso
+                    await self._create_temporary_group_invite(update, context, gaming_info)
+                else:
+                    await update.message.reply_text(
+                        "⚠️ **Atenção**\n\n"
+                        "Conta atualizada com sucesso, mas não identificamos "
+                        "plano Gaming ativo no momento.\n\n"
+                        "📞 Entre em contato com suporte: /suporte"
+                    )
+
+            else:
+                # Opção inválida
+                await update.message.reply_text(
+                    "❌ **Opção inválida**\n\n"
+                    "Digite **1** para manter conta antiga\n"
+                    "Digite **2** para manter conta nova"
+                )
+                return
+
+            # Limpa contexto
+            context.user_data.clear()
+
+        except Exception as e:
+            logger.error(f"Erro ao processar escolha de conta: {e}")
+            await update.message.reply_text(
+                "❌ **Erro ao processar escolha**\n\n"
+                "Ocorreu um erro. Tente novamente ou use /suporte"
+            )
+            context.user_data.clear()
 
     async def _handle_cpf_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Processa confirmação de CPF existente."""
@@ -925,33 +981,72 @@ class OnCaboTelegramBot:
                 )
 
                 if duplicate_check.get('has_duplicates'):
-                    # CPF DUPLICADO - pede para escolher conta
+                    # CPF DUPLICADO - Detecta se há apenas 1 conta antiga
                     duplicate_users = duplicate_check['users']
-                    duplicate_users.append({
-                        'user_id': user.id,
-                        'username': user.username or user.first_name
-                    })
 
-                    message = (
-                        "⚠️ **CPF Duplicado Detectado!**\n\n"
-                        "🔍 Este CPF está associado a múltiplas contas:\n\n"
-                    )
+                    if len(duplicate_users) == 1:
+                        # Caso simples: CPF vinculado a 1 conta antiga + 1 nova (atual)
+                        old_user = duplicate_users[0]
+                        old_user_id = old_user['user_id']
+                        old_username = old_user.get('username', 'Conta Antiga')
 
-                    for i, dup_user in enumerate(duplicate_users, 1):
-                        message += f"{i}. {dup_user.get('username', 'Desconhecido')} (ID: {dup_user['user_id']})\n"
+                        message = (
+                            f"⚠️ **CPF JÁ VINCULADO**\n\n"
+                            f"Identificamos que o CPF {cpf[:3]}***{cpf[-2:]} já está "
+                            f"vinculado a outra conta Telegram.\n\n"
+                            f"📱 **Qual conta você deseja MANTER no grupo?**\n\n"
+                            f"1️⃣ **Conta ANTIGA** (@{old_username})\n"
+                            f"   • ID Telegram: {old_user_id}\n"
+                            f"   • Vinculada anteriormente\n"
+                            f"   • Atualmente no grupo\n\n"
+                            f"2️⃣ **Conta NOVA** (@{user.username or user.first_name}) - ESTA CONTA\n"
+                            f"   • ID Telegram: {user.id}\n"
+                            f"   • Tentando entrar agora\n\n"
+                            f"⚠️ **IMPORTANTE:** A conta que NÃO for escolhida será "
+                            f"REMOVIDA do grupo automaticamente.\n\n"
+                            f"Digite **1** para manter conta antiga\n"
+                            f"Digite **2** para manter conta nova"
+                        )
 
-                    message += (
-                        "\n❓ **Qual conta você deseja manter?**\n"
-                        "📋 Digite o **número** da conta:\n\n"
-                        "⚠️ **IMPORTANTE:** As outras contas serão removidas do grupo "
-                        "por questões de segurança."
-                    )
+                        await update.message.reply_text(message)
 
-                    await update.message.reply_text(message)
+                        # Marca contexto para escolha simples (1 vs 2)
+                        context.user_data['awaiting_account_choice'] = True
+                        context.user_data['account_choice_data'] = {
+                            'cpf': cpf,
+                            'old_user_id': old_user_id,
+                            'old_username': old_username,
+                            'new_user_id': user.id,
+                            'new_username': user.username or user.first_name
+                        }
 
-                    # Marca contexto
-                    context.user_data['awaiting_duplicate_choice'] = True
-                    context.user_data['duplicate_data'] = duplicate_check
+                    else:
+                        # Caso complexo: múltiplas contas duplicadas
+                        duplicate_users.append({
+                            'user_id': user.id,
+                            'username': user.username or user.first_name
+                        })
+
+                        message = (
+                            "⚠️ **CPF Duplicado Detectado!**\n\n"
+                            "🔍 Este CPF está associado a múltiplas contas:\n\n"
+                        )
+
+                        for i, dup_user in enumerate(duplicate_users, 1):
+                            message += f"{i}. {dup_user.get('username', 'Desconhecido')} (ID: {dup_user['user_id']})\n"
+
+                        message += (
+                            "\n❓ **Qual conta você deseja manter?**\n"
+                            "📋 Digite o **número** da conta:\n\n"
+                            "⚠️ **IMPORTANTE:** As outras contas serão removidas do grupo "
+                            "por questões de segurança."
+                        )
+
+                        await update.message.reply_text(message)
+
+                        # Marca contexto
+                        context.user_data['awaiting_duplicate_choice'] = True
+                        context.user_data['duplicate_data'] = duplicate_check
 
                 else:
                     # CPF único - sucesso!
@@ -980,6 +1075,165 @@ class OnCaboTelegramBot:
                 "📞 Se persistir, use /suporte"
             )
 
+    async def _process_cpf_for_group_access(self, update: Update, context: ContextTypes.DEFAULT_TYPE, cpf: str):
+        """Processa CPF para verificar acesso ao grupo Gaming."""
+        user = update.effective_user
+
+        try:
+            # Limpa o contexto de espera
+            context.user_data.pop('awaiting_cpf_for_access', None)
+
+            # Exibe mensagem de processamento
+            await update.message.reply_text(
+                "🔍 **Verificando seu plano Gaming...**\n\n"
+                "⏳ Consultando HubSoft, aguarde...",
+                parse_mode='Markdown'
+            )
+
+            # Verifica se tem plano Gaming no HubSoft
+            from sentinela.integrations.hubsoft.cliente import check_gaming_plan_by_cpf
+
+            gaming_info = check_gaming_plan_by_cpf(cpf)
+
+            if gaming_info['has_gaming']:
+                # TEM PLANO GAMING - Cria link temporário
+                await self._create_temporary_group_invite(update, context, gaming_info)
+            else:
+                # NÃO TEM PLANO GAMING - Redireciona para comercial
+                client_name = gaming_info.get('client_name', 'Cliente')
+
+                denial_message = (
+                    f"🎮 **Olá{', ' + client_name if client_name != 'Cliente' else ''}!**\n\n"
+                    "Verificamos que você ainda **não possui o Plano Gaming OnCabo** ativo. 😔\n\n"
+                    "🚀 **Quer fazer parte da melhor experiência gamer?**\n\n"
+                    "O Plano Gaming OnCabo oferece:\n"
+                    "✅ Latência ultra-baixa para jogos online\n"
+                    "✅ Prioridade de tráfego para gaming\n"
+                    "✅ Suporte técnico especializado 24/7\n"
+                    "✅ Acesso ao grupo exclusivo de gamers\n"
+                    "✅ Otimização de rota para servidores de jogos\n\n"
+                    "📞 **Entre em contato conosco:**\n\n"
+                    "🌐 **Site:** https://oncabo.net.br\n"
+                    "💬 **WhatsApp:** https://wa.me/5511999999999\n"
+                    "📧 **Email:** contato@oncabo.net.br\n\n"
+                    "🎯 Nossa equipe comercial terá prazer em te apresentar "
+                    "os planos Gaming e suas vantagens!\n\n"
+                    "🙏 **Obrigado pelo interesse!**"
+                )
+
+                await update.message.reply_text(denial_message, parse_mode='Markdown')
+                logger.info(f"Usuário {user.id} negado - sem plano Gaming (CPF: {cpf[:3]}***)")
+
+        except Exception as e:
+            logger.error(f"Erro ao processar CPF para acesso ao grupo: {e}")
+            await update.message.reply_text(
+                "❌ **Erro ao verificar plano Gaming**\n\n"
+                "Ocorreu um problema ao consultar o HubSoft.\n\n"
+                "🔄 **Tente novamente** em alguns instantes\n"
+                "📞 **Ou entre em contato:** https://oncabo.net.br",
+                parse_mode='Markdown'
+            )
+
+    async def _create_temporary_group_invite(self, update: Update, context: ContextTypes.DEFAULT_TYPE, gaming_info: dict):
+        """Cria link temporário de convite para o grupo Gaming."""
+        user = update.effective_user
+
+        try:
+            # Cria link de convite temporário com Telegram API
+            # Parâmetros: expira em 30 minutos, limite de 1 membro
+            from datetime import datetime, timedelta
+
+            expire_date = datetime.now() + timedelta(minutes=30)
+
+            invite_link = await context.bot.create_chat_invite_link(
+                chat_id=self.group_id,
+                expire_date=expire_date,
+                member_limit=1,
+                name=f"Gaming - {gaming_info['client_name'][:20]}"
+            )
+
+            # Salva convite no banco de dados
+            from sentinela.domain.entities.group_invite import GroupInvite
+
+            group_invite_repo = self.container.get("group_invite_repository")
+
+            invite = GroupInvite.create(
+                user_id=user.id,
+                cpf=gaming_info['cpf'],
+                invite_link=invite_link.invite_link,
+                client_name=gaming_info['client_name'],
+                plan_name=gaming_info['plan_name'],
+                duration_minutes=30
+            )
+
+            await group_invite_repo.save(invite)
+
+            # Mensagem de aprovação com link
+            approval_message = (
+                f"🎉 **Parabéns, {gaming_info['client_name']}!**\n\n"
+                f"✅ Verificamos que você possui o **{gaming_info['plan_name']}** ativo!\n\n"
+                "🎮 **Você está aprovado para entrar no Grupo Gaming OnCabo!**\n\n"
+                "🔗 **Link de Acesso:**\n"
+                f"{invite_link.invite_link}\n\n"
+                "⏰ **IMPORTANTE:**\n"
+                "• Este link expira em **30 minutos**\n"
+                "• Pode ser usado apenas **1 vez**\n"
+                "• Use-o agora para garantir sua entrada!\n\n"
+                "🎯 **No grupo você encontra:**\n"
+                "• Suporte técnico especializado em gaming\n"
+                "• Otimização de latência e performance\n"
+                "• Comunidade exclusiva de gamers OnCabo\n"
+                "• Atendimento prioritário\n\n"
+                "🚀 **Bem-vindo à melhor experiência gamer!**"
+            )
+
+            await update.message.reply_text(approval_message, parse_mode='Markdown')
+
+            logger.info(
+                f"✅ Convite criado - Usuário: {user.id}, "
+                f"Cliente: {gaming_info['client_name']}, "
+                f"Plano: {gaming_info['plan_name']}, "
+                f"Expira: {expire_date.strftime('%d/%m/%Y %H:%M')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao criar convite temporário: {e}")
+            await update.message.reply_text(
+                "❌ **Erro ao gerar link de acesso**\n\n"
+                "Embora seu plano Gaming esteja ativo, ocorreu um problema "
+                "ao gerar o link de convite.\n\n"
+                "📞 **Entre em contato com suporte:**\n"
+                "Use /suporte para abrir um chamado e nossa equipe "
+                "te adicionará manualmente ao grupo!\n\n"
+                "🙏 **Pedimos desculpas pelo inconveniente.**",
+                parse_mode='Markdown'
+            )
+
+    async def _check_scheduled_tasks_loop(self):
+        """
+        Loop infinito que verifica tarefas agendadas.
+
+        Executa a cada 1 minuto, verificando se há tarefas pendentes
+        que devem ser executadas.
+        """
+        logger.info("🔄 Iniciando loop de verificação de tarefas agendadas")
+
+        while True:
+            try:
+                scheduled_tasks = self.container.get("scheduled_tasks_use_case")
+                result = await scheduled_tasks.check_and_execute_due_tasks()
+
+                if result.success and result.data:
+                    executed = result.data.get('executed', [])
+                    if executed:
+                        logger.info(f"✅ Tarefas executadas: {', '.join(executed)}")
+
+            except Exception as e:
+                logger.error(f"❌ Erro ao verificar tarefas agendadas: {e}")
+
+            # Aguarda 1 minuto antes da próxima verificação
+            await asyncio.sleep(60)
+
     async def start_bot(self):
         """Inicia o bot."""
         try:
@@ -987,6 +1241,43 @@ class OnCaboTelegramBot:
 
             # Executa health check inicial
             await self._health_check()
+
+            # Registra tarefas agendadas padrão
+            try:
+                scheduled_tasks = self.container.get("scheduled_tasks_use_case")
+                await scheduled_tasks.register_default_tasks()
+                logger.info("✅ Tarefas agendadas registradas")
+            except Exception as tasks_error:
+                logger.error(f"⚠️ Erro ao registrar tarefas agendadas: {tasks_error}")
+
+            # Registra handlers de eventos de tarefas agendadas
+            try:
+                from src.sentinela.infrastructure.events.scheduled_task_handlers import (
+                    MemberCPFCheckTaskHandler,
+                    InviteCleanupTaskHandler,
+                    VerificationExpiryTaskHandler
+                )
+
+                event_bus = self.container.get("event_bus")
+                member_verification_use_case = self.container.get("member_verification_use_case")
+
+                # Registra handlers
+                member_cpf_handler = MemberCPFCheckTaskHandler(
+                    member_verification_use_case=member_verification_use_case,
+                    bot_instance=self
+                )
+                invite_cleanup_handler = InviteCleanupTaskHandler(bot_instance=self)
+                verification_expiry_handler = VerificationExpiryTaskHandler(bot_instance=self)
+
+                # Assina eventos
+                from src.sentinela.domain.events.system_events import ScheduledTaskTriggeredEvent
+                await event_bus.subscribe(ScheduledTaskTriggeredEvent, member_cpf_handler.handle)
+                await event_bus.subscribe(ScheduledTaskTriggeredEvent, invite_cleanup_handler.handle)
+                await event_bus.subscribe(ScheduledTaskTriggeredEvent, verification_expiry_handler.handle)
+
+                logger.info("✅ Handlers de tarefas agendadas registrados")
+            except Exception as handlers_error:
+                logger.error(f"⚠️ Erro ao registrar handlers de tarefas: {handlers_error}")
 
             # Inicia o bot
             await self.application.initialize()
@@ -998,6 +1289,10 @@ class OnCaboTelegramBot:
             logger.info(f"👥 Grupo Principal: {self.group_id}")
             logger.info(f"🎫 Tópico Suporte: {self.support_topic_id}")
             logger.info(f"👑 Admins: {len(self.admin_user_ids)} configurados")
+
+            # Inicia loop de verificação de tarefas agendadas em background
+            asyncio.create_task(self._check_scheduled_tasks_loop())
+            logger.info("✅ Loop de tarefas agendadas iniciado")
 
             # Mantém o bot rodando
             await self.application.updater.idle()
