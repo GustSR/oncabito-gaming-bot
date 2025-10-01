@@ -266,8 +266,8 @@ class OnCaboTelegramBot:
 
             # 3. NÃO tem ticket aberto - CRIA NO HUBSOFT
             await update.message.reply_text(
-                "🎫 **Criando Ticket de Suporte...**\n\n"
-                "⏳ Registrando no sistema HubSoft...",
+                "🎫 **Abrindo seu chamado...**\n\n"
+                "⏳ Aguarde um momento enquanto registramos sua solicitação...",
                 parse_mode='Markdown'
             )
 
@@ -339,13 +339,15 @@ class OnCaboTelegramBot:
 
                 # Mensagem de sucesso com protocolo REAL
                 success_text = (
-                    "🎉 **Ticket Criado no HubSoft com Sucesso!**\n\n"
-                    f"📋 **Atendimento - {protocol}**\n"
-                    f"📅 **Data:** {data_cadastro}\n"
-                    f"🆔 **ID HubSoft:** `{atendimento_id}`\n\n"
-                    "✅ **Seu chamado foi registrado no sistema oficial!**\n"
-                    "📞 **Nossa equipe técnica entrará em contato em breve**\n\n"
-                    "💡 **Guarde este protocolo** - use-o para acompanhar seu atendimento!"
+                    "✅ **Chamado Criado com Sucesso!**\n\n"
+                    f"📋 **Protocolo:** `{protocol}`\n"
+                    f"📅 **Abertura:** {data_cadastro}\n\n"
+                    "🎯 **Próximos Passos:**\n"
+                    "• Nossa equipe já foi notificada\n"
+                    "• Você será contatado em breve\n"
+                    "• Fique atento ao telefone e e-mail cadastrados\n\n"
+                    "⏱️ **Tempo de Resposta:** Até 24h úteis\n\n"
+                    "💡 **Dica:** Guarde o protocolo acima para consultar o andamento do seu atendimento"
                 )
 
                 await update.message.reply_text(success_text, parse_mode='Markdown')
@@ -381,17 +383,14 @@ class OnCaboTelegramBot:
                 # Falha ao criar no HubSoft - notifica usuário
                 logger.error(f"❌ Erro ao criar ticket no HubSoft: {hubsoft_error}")
                 await update.message.reply_text(
-                    "❌ **Erro ao Criar Ticket no HubSoft**\n\n"
-                    "Não foi possível registrar seu chamado no sistema oficial.\n\n"
-                    "🔄 **Possíveis causas:**\n"
-                    "• Instabilidade temporária na API HubSoft\n"
-                    "• CPF não encontrado no sistema\n"
-                    "• Serviço inativo\n\n"
-                    "📞 **Ações:**\n"
-                    "1. Tente novamente em alguns minutos\n"
-                    "2. Se persistir, entre em contato pelo grupo\n"
-                    "3. Ligue para nosso suporte direto\n\n"
-                    f"🛠️ **Detalhes técnicos:** {str(hubsoft_error)[:100]}",
+                    "⚠️ **Não foi possível abrir o chamado no momento**\n\n"
+                    "Estamos com uma instabilidade temporária no sistema.\n\n"
+                    "📞 **O que fazer:**\n"
+                    "• Aguarde alguns minutos e tente novamente\n"
+                    "• Ou entre em contato direto pelo telefone\n"
+                    "• Nossa equipe já foi notificada do problema\n\n"
+                    "🙏 **Pedimos desculpas pelo inconveniente!**\n"
+                    "Estamos trabalhando para resolver o mais rápido possível.",
                     parse_mode='Markdown'
                 )
                 return
@@ -399,9 +398,13 @@ class OnCaboTelegramBot:
         except Exception as e:
             logger.error(f"Erro ao criar ticket de suporte: {e}")
             await update.message.reply_text(
-                "❌ Erro interno ao criar ticket.\n\n"
-                "🔄 Tente novamente em alguns instantes.\n"
-                "📞 Se persistir, entre em contato pelo grupo principal."
+                "⚠️ **Ocorreu um erro inesperado**\n\n"
+                "Não conseguimos processar sua solicitação no momento.\n\n"
+                "🔄 **Por favor:**\n"
+                "• Tente novamente em alguns instantes\n"
+                "• Se o problema continuar, fale conosco no grupo\n\n"
+                "📞 Em caso de urgência, ligue para nosso suporte!",
+                parse_mode='Markdown'
             )
 
     async def handle_cpf_verification(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
