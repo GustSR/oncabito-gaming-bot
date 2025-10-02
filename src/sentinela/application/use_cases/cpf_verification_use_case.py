@@ -179,9 +179,11 @@ class CPFVerificationUseCase(UseCase):
         """
         try:
             logger.info(f"Processando CPF para usuário {username} (ID: {user_id})")
+            logger.info(f"CPF recebido (primeiros 3 dígitos): {cpf[:3]}***")
 
             # Sanitiza CPF
             clean_cpf = self._sanitize_cpf(cpf)
+            logger.info(f"CPF sanitizado (tamanho: {len(clean_cpf)}, primeiros 3: {clean_cpf[:3]}***)")
 
             # Executa comando
             command = SubmitCPFForVerificationCommand(
@@ -191,8 +193,19 @@ class CPFVerificationUseCase(UseCase):
             )
 
             result = await self.submit_handler.handle(command)
+            logger.info(f"Handler result - success: {result.success}, has_data: {result.data is not None}")
 
             if result.success:
+                # Proteção contra result.data None
+                if not result.data:
+                    logger.error(f"Handler retornou success=True mas data=None para usuário {user_id}")
+                    return CPFVerificationResult(
+                        success=False,
+                        message="Erro interno ao processar CPF. Tente novamente.",
+                        error_code="invalid_handler_response",
+                        next_action="retry_later"
+                    )
+
                 return CPFVerificationResult(
                     success=True,
                     verification_id=result.data.get("verification_id"),
@@ -205,23 +218,26 @@ class CPFVerificationUseCase(UseCase):
                 # Busca dados atualizados da verificação para próximos passos
                 verification_data = await self._get_verification_context(user_id)
 
+                # Proteção contra result.data None no failure
+                result_data = result.data if result.data else {}
+
                 return CPFVerificationResult(
                     success=False,
                     message=result.message,
                     error_code=result.error_code,
                     status=verification_data.get("status"),
                     data={
-                        "attempts_left": result.data.get("attempts_left", 0),
-                        "can_retry": result.data.get("attempts_left", 0) > 0
+                        "attempts_left": result_data.get("attempts_left", 0),
+                        "can_retry": result_data.get("attempts_left", 0) > 0
                     },
                     next_action=self._get_next_action_for_cpf_error(
                         result.error_code,
-                        result.data.get("attempts_left", 0)
+                        result_data.get("attempts_left", 0)
                     )
                 )
 
         except Exception as e:
-            logger.error(f"Erro ao processar CPF para usuário {user_id}: {e}")
+            logger.error(f"Erro ao processar CPF para usuário {user_id}: {e}", exc_info=True)
             return CPFVerificationResult(
                 success=False,
                 message="Erro interno do sistema. Tente novamente mais tarde.",
