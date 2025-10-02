@@ -153,17 +153,24 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
         try:
             # Mantém user_id como int (não converte para UserId para evitar erro de binding SQLite)
             user_id = command.user_id
+            cpf_masked = f"{command.cpf[:3]}***{command.cpf[-2:]}" if len(command.cpf) >= 5 else "***"
+
+            logger.info(f"[CPF Handler] Iniciando verificação - User: {user_id}, CPF: {cpf_masked}")
 
             # Busca verificação pendente
             verification = await self.verification_repository.find_pending_by_user(user_id)
             if not verification:
+                logger.warning(f"[CPF Handler] ❌ Nenhuma verificação pendente para usuário {user_id}")
                 return CommandResult.failure(
                     "no_pending_verification",
                     "Não há verificação pendente para este usuário"
                 )
 
+            logger.info(f"[CPF Handler] Verificação encontrada - ID: {verification.id}, Status: {verification.status.value}")
+
             # Verifica se ainda pode fazer tentativas
             if not verification.can_attempt():
+                logger.warning(f"[CPF Handler] ❌ Usuário {user_id} não pode mais tentar - Tentativas: {verification.attempt_count}, Status: {verification.status.value}")
                 return CommandResult.failure(
                     "cannot_attempt",
                     "Não é possível fazer mais tentativas de verificação",
@@ -175,8 +182,10 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
                 )
 
             # Valida formato do CPF
+            logger.info(f"[CPF Handler] Validando formato do CPF {cpf_masked}")
             cpf_validation = await self.cpf_validation_service.validate_cpf_format(command.cpf)
             if not cpf_validation.is_valid:
+                logger.warning(f"[CPF Handler] ❌ CPF inválido {cpf_masked}: {cpf_validation.error_message}")
                 # Adiciona tentativa falhada
                 verification.add_attempt(
                     cpf_provided=command.cpf,
@@ -192,13 +201,16 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
                 )
 
             cpf = CPF(cpf_validation.clean_cpf)
+            logger.info(f"[CPF Handler] ✅ CPF válido {cpf_masked}")
 
             # Verifica duplicidade (converte para UserId apenas aqui onde é necessário)
+            logger.info(f"[CPF Handler] Verificando duplicidade para {cpf_masked}")
             duplicate_result = await self.duplicate_cpf_service.check_duplicate(
                 cpf, UserId(user_id), command.username
             )
 
             if duplicate_result.has_conflict:
+                logger.warning(f"[CPF Handler] ❌ CPF duplicado {cpf_masked}: {duplicate_result.conflict_details}")
                 # Adiciona tentativa com conflito
                 verification.add_attempt(
                     cpf_provided=str(cpf),
@@ -216,9 +228,13 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
                     }
                 )
 
+            logger.info(f"[CPF Handler] ✅ Sem duplicidade para {cpf_masked}")
+
             # Verifica no sistema externo (HubSoft)
+            logger.info(f"[CPF Handler] Consultando HubSoft para {cpf_masked}")
             client_data = await self._verify_cpf_in_hubsoft(cpf)
             if not client_data:
+                logger.warning(f"[CPF Handler] ❌ CPF {cpf_masked} não encontrado no HubSoft ou sem serviço ativo")
                 # Adiciona tentativa falhada
                 verification.add_attempt(
                     cpf_provided=str(cpf),
@@ -232,6 +248,8 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
                     "CPF não encontrado em nossa base de clientes ativos",
                     {"attempts_left": verification.has_attempts_left()}
                 )
+
+            logger.info(f"[CPF Handler] ✅ Cliente encontrado no HubSoft: {client_data.get('nome_razaosocial', 'N/A')}")
 
             # Adiciona tentativa bem-sucedida
             verification.add_attempt(
@@ -249,7 +267,7 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             for event in verification.get_domain_events():
                 await self.event_bus.publish(event)
 
-            logger.info(f"CPF verificado com sucesso para usuário {command.username}")
+            logger.info(f"[CPF Handler] ✅✅✅ CPF verificado com sucesso para usuário {command.username} - CPF: {cpf_masked}")
 
             return CommandResult.success({
                 "verification_id": str(verification.id),
