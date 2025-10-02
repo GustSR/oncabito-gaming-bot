@@ -151,7 +151,8 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             CommandResult: Resultado da verificação
         """
         try:
-            user_id = UserId(command.user_id)
+            # Mantém user_id como int (não converte para UserId para evitar erro de binding SQLite)
+            user_id = command.user_id
 
             # Busca verificação pendente
             verification = await self.verification_repository.find_pending_by_user(user_id)
@@ -192,9 +193,9 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
 
             cpf = CPF(cpf_validation.clean_cpf)
 
-            # Verifica duplicidade
+            # Verifica duplicidade (converte para UserId apenas aqui onde é necessário)
             duplicate_result = await self.duplicate_cpf_service.check_duplicate(
-                cpf, user_id, command.username
+                cpf, UserId(user_id), command.username
             )
 
             if duplicate_result.has_conflict:
@@ -277,13 +278,26 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
         """
         try:
             # Importa dinamicamente para evitar dependência circular
-            from ....integrations.hubsoft.cliente import get_client_data
+            from ....integrations.hubsoft.cliente import get_client_info
 
-            client_data = get_client_data(str(cpf))
-            return client_data
+            # Log para debug
+            cpf_masked = f"{str(cpf)[:3]}***{str(cpf)[-2:]}"
+            logger.info(f"Consultando HubSoft para CPF {cpf_masked}")
+
+            # Usa função otimizada (não deprecated)
+            client_data = get_client_info(str(cpf), full_data=True)
+
+            if client_data:
+                client_name = client_data.get('nome', client_data.get('client_name', 'N/A'))
+                logger.info(f"✅ Cliente encontrado no HubSoft: {client_name}")
+                logger.debug(f"Dados retornados do HubSoft: {client_data.keys()}")
+                return client_data
+            else:
+                logger.warning(f"❌ Nenhum cliente encontrado no HubSoft para CPF {cpf_masked}")
+                return None
 
         except Exception as e:
-            logger.error(f"Erro ao verificar CPF no HubSoft: {e}")
+            logger.error(f"Erro ao verificar CPF no HubSoft: {e}", exc_info=True)
             return None
 
 
