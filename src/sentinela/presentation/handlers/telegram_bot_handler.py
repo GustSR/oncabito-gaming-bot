@@ -191,7 +191,7 @@ class TelegramBotHandler:
                 user_id=user.id,
                 username=user.username or user.first_name,
                 user_mention=user.mention_html(),
-                verification_type="group_entry",
+                verification_type="auto_checkup",
                 source_action="auto welcome flow"
             )
 
@@ -262,7 +262,7 @@ class TelegramBotHandler:
                     user_id=user.id,
                     username=user.username or user.first_name,
                     user_mention=user.mention_html(),
-                    verification_type="group_entry",
+                    verification_type="auto_checkup",
                     source_action="/start command"
                 )
 

@@ -66,7 +66,7 @@ class StartCPFVerificationHandler(CommandHandler[StartCPFVerificationCommand]):
             # O User será criado no UserRepository após CPF validado com sucesso
 
             # Verifica se já existe verificação pendente
-            existing = await self.verification_repository.find_pending_by_user(user_id)
+            existing = await self.verification_repository.find_pending_by_user(user_id.value)
             if existing:
                 return CommandResult.failure(
                     "verification_already_pending",
@@ -154,7 +154,7 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             logger.info(f"[CPF Handler] Iniciando verificação - User: {user_id}, CPF: {cpf_masked}")
 
             # Busca verificação pendente
-            verification = await self.verification_repository.find_pending_by_user(user_id)
+            verification = await self.verification_repository.find_pending_by_user(user_id.value)
             if not verification:
                 logger.warning(f"[CPF Handler] ❌ Nenhuma verificação pendente para usuário {user_id}")
                 return CommandResult.failure(
@@ -360,7 +360,7 @@ class CancelCPFVerificationHandler(CommandHandler[CancelCPFVerificationCommand])
             user_id = UserId(command.user_id)
 
             # Busca verificação pendente
-            verification = await self.verification_repository.find_pending_by_user(user_id)
+            verification = await self.verification_repository.find_pending_by_user(user_id.value)
             if not verification:
                 return CommandResult.failure(
                     "no_pending_verification",

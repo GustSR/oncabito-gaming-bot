@@ -6,6 +6,7 @@ Implementa persistência de verificações CPF usando SQLite.
 
 import logging
 import sqlite3
+import aiosqlite
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
