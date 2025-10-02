@@ -981,9 +981,10 @@ class TelegramBotHandler:
             )
 
             # Processa verificação via use case
-            result = await self._cpf_use_case.process_verification_with_cpf(
+            result = await self._cpf_use_case.submit_cpf(
                 user_id=user.id,
-                cpf_number=cpf
+                username=user.username or user.first_name,
+                cpf=cpf
             )
 
             # Deleta mensagem de processamento
