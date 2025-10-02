@@ -238,7 +238,7 @@ class TelegramBotHandler:
             user_id = UserId(user.id)
 
             # Busca todos os tickets do usuário
-            ticket_repository = self.container.get("ticket_repository")
+            ticket_repository = self._container.get("ticket_repository")
             tickets = await ticket_repository.find_by_user(user_id)
 
             if not tickets:
