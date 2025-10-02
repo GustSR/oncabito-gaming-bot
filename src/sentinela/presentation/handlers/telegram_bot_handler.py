@@ -185,6 +185,26 @@ class TelegramBotHandler:
                 parse_mode='HTML'
             )
 
+            # CRÍTICO: Cria verificação pendente no banco ANTES de pedir CPF
+            logger.info(f"Criando verificação pendente para usuário {user.id}")
+            verification_result = await self._cpf_use_case.start_verification(
+                user_id=user.id,
+                username=user.username or user.first_name,
+                user_mention=user.mention_html(),
+                verification_type="group_entry",
+                source_action="auto welcome flow"
+            )
+
+            if not verification_result.success:
+                logger.error(f"Erro ao criar verificação: {verification_result.message}")
+                await update.message.reply_text(
+                    "❌ Erro ao iniciar verificação. Tente novamente em alguns instantes.",
+                    parse_mode='HTML'
+                )
+                return
+
+            logger.info(f"Verificação criada: {verification_result.verification_id}")
+
             # Define estado conversacional aguardando CPF
             context.user_data['waiting_cpf'] = True
 
@@ -235,6 +255,26 @@ class TelegramBotHandler:
                     welcome_message,
                     parse_mode='HTML'
                 )
+
+                # CRÍTICO: Cria verificação pendente no banco ANTES de pedir CPF
+                logger.info(f"Criando verificação pendente para usuário {user.id}")
+                verification_result = await self._cpf_use_case.start_verification(
+                    user_id=user.id,
+                    username=user.username or user.first_name,
+                    user_mention=user.mention_html(),
+                    verification_type="group_entry",
+                    source_action="/start command"
+                )
+
+                if not verification_result.success:
+                    logger.error(f"Erro ao criar verificação: {verification_result.message}")
+                    await update.message.reply_text(
+                        "❌ Erro ao iniciar verificação. Tente novamente em alguns instantes.",
+                        parse_mode='HTML'
+                    )
+                    return
+
+                logger.info(f"Verificação criada: {verification_result.verification_id}")
 
                 # Define estado conversacional aguardando CPF
                 context.user_data['waiting_cpf'] = True
