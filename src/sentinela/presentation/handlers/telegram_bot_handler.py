@@ -146,6 +146,44 @@ class TelegramBotHandler:
             if not user:
                 return
 
+            # VALIDAÇÃO: Verifica se já tem ticket ativo
+            existing_tickets = await self._get_tickets_from_old_table(user.id)
+            active_statuses = ['pending', 'open', 'in_progress']
+            active_tickets = [t for t in existing_tickets if t['status'] in active_statuses]
+
+            if active_tickets:
+                # Já tem ticket ativo - não pode abrir outro
+                active_ticket = active_tickets[0]
+                protocol = active_ticket.get('protocol') or f"#{active_ticket['id']:06d}"
+
+                category_names = {
+                    'connectivity': '🌐 Conectividade/Ping',
+                    'performance': '⚡ Performance/FPS',
+                    'game_issues': '🎮 Problemas no Jogo',
+                    'configuration': '💻 Configuração',
+                    'others': '📞 Outros'
+                }
+                category = category_names.get(active_ticket['category'], active_ticket['category'])
+
+                message = (
+                    f"⚠️ **Você já tem um ticket ativo!**\n\n"
+                    f"📋 **Protocolo:** {protocol}\n"
+                    f"📂 **Categoria:** {category}\n"
+                    f"📅 **Status:** {active_ticket['status'].title()}\n\n"
+                    f"❌ **Não é possível abrir outro ticket** enquanto este estiver em andamento.\n\n"
+                    f"💡 **Aguarde o atendimento** da nossa equipe.\n"
+                    f"Use /status para ver detalhes do seu ticket."
+                )
+
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=message,
+                    parse_mode='Markdown'
+                )
+
+                logger.info(f"Usuário {user.id} tentou abrir ticket mas já tem ativo: {protocol}")
+                return
+
             # Se foi enviado no grupo, envia notificação ao tópico
             if is_group:
                 try:
@@ -363,39 +401,28 @@ class TelegramBotHandler:
                     message_parts.append(f"\n_... e mais {len(finished_tickets) - 3} finalizado(s)_\n")
 
             # Rodapé com dicas
-            message_parts.append(
-                "\n💡 **Dicas:**\n"
-                "• Use /suporte para abrir novo chamado\n"
-                "• Nossa equipe trabalha 24/7 para te atender!\n\n"
-                "🙏 Agradecemos sua paciência e confiança!"
-            )
+            if not active_tickets:
+                # Só mostra opção de abrir ticket se NÃO tiver tickets ativos
+                message_parts.append(
+                    "\n💡 **Precisa de ajuda?**\n"
+                    "• Use /suporte para abrir um chamado\n"
+                    "• Nossa equipe trabalha 24/7 para te atender!\n\n"
+                    "🙏 Estamos aqui para ajudar!"
+                )
+            else:
+                message_parts.append(
+                    "\n💡 **Dicas:**\n"
+                    "• Nossa equipe está trabalhando no seu atendimento\n"
+                    "• Aguarde o retorno em breve!\n\n"
+                    "🙏 Agradecemos sua paciência e confiança!"
+                )
 
             message = "".join(message_parts)
 
-            # Cria botões inline para ações rápidas
-            keyboard = []
-
-            if active_tickets:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        "🆕 Abrir Novo Ticket",
-                        callback_data="status_new_ticket"
-                    )
-                ])
-            else:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        "🆘 Preciso de Ajuda",
-                        callback_data="status_new_ticket"
-                    )
-                ])
-
-            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-
+            # NÃO exibe botões - apenas mensagem informativa
             await update.message.reply_text(
                 message,
-                parse_mode='Markdown',
-                reply_markup=reply_markup
+                parse_mode='Markdown'
             )
 
             logger.info(
@@ -537,9 +564,6 @@ class TelegramBotHandler:
             # Callbacks do novo fluxo de suporte
             if callback_data.startswith("sup_"):
                 await self._handle_support_callback(query, context, callback_data)
-            # Callbacks do comando /status
-            elif callback_data == "status_new_ticket":
-                await self._handle_status_new_ticket(query, context)
             # Callbacks antigos (manter compatibilidade)
             elif callback_data.startswith("cat_"):
                 await self._handle_category_selection(query, callback_data)
@@ -1379,68 +1403,6 @@ class TelegramBotHandler:
             "cancelled": "❌"
         }
         return status_emojis.get(status, "❓")
-
-    async def _handle_status_new_ticket(
-        self,
-        query,
-        context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Callback: Abrir novo ticket a partir do /status."""
-        try:
-            user = query.from_user
-
-            # Edita mensagem original
-            await query.edit_message_text(
-                "🆕 **Vamos abrir um novo chamado!**\n\n"
-                "Redirecionando você para o formulário de suporte...",
-                parse_mode='Markdown'
-            )
-
-            # Inicializa novo fluxo de suporte
-            init_support_state(context)
-            state = get_support_state(context)
-            state['state'] = SupportState.CATEGORY
-            state['current_step'] = 1
-
-            # Envia mensagem de início do suporte (igual ao /suporte)
-            progress_bar = self._create_progress_bar(1, 6)
-
-            keyboard = [
-                [
-                    InlineKeyboardButton("🌐 Conectividade/Ping", callback_data="sup_cat_connectivity"),
-                    InlineKeyboardButton("⚡ Performance/FPS", callback_data="sup_cat_performance")
-                ],
-                [
-                    InlineKeyboardButton("🎮 Problemas no Jogo", callback_data="sup_cat_game_issues"),
-                    InlineKeyboardButton("💻 Configuração", callback_data="sup_cat_configuration")
-                ],
-                [InlineKeyboardButton("📞 Outros", callback_data="sup_cat_others")],
-                [InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")]
-            ]
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=(
-                    f"{progress_bar}\n\n"
-                    "🎯 **Passo 1/6: Categoria do Problema**\n\n"
-                    "Olá! Fico feliz em te ajudar! 😊\n\n"
-                    "Primeiro, me diz qual o tipo do seu problema:\n\n"
-                    "Escolha a categoria que mais se encaixa:"
-                ),
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-
-            logger.info(f"Usuário {user.id} iniciou novo ticket via callback /status")
-
-        except Exception as e:
-            logger.error(f"Erro no callback status_new_ticket: {e}", exc_info=True)
-            await query.edit_message_text(
-                "❌ Erro ao iniciar novo ticket.\n\n"
-                "Por favor, use o comando /suporte para tentar novamente."
-            )
 
     async def handle_error(
         self,
