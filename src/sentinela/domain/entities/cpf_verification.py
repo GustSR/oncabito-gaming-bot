@@ -160,6 +160,11 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
             import hashlib
             return hashlib.sha256(f"pending_{self._user_id.value}".encode()).hexdigest()
 
+    @property
+    def max_attempts(self) -> int:
+        """Retorna o número máximo de tentativas permitidas."""
+        return 3
+
     # Business rules
     def is_expired(self) -> bool:
         """Verifica se a verificação expirou."""
@@ -167,17 +172,15 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
 
     def can_attempt(self) -> bool:
         """Verifica se ainda é possível fazer tentativas."""
-        max_attempts = 3
         return (
             self._status in (VerificationStatus.PENDING, VerificationStatus.IN_PROGRESS) and
-            self.attempt_count < max_attempts and
+            self.attempt_count < self.max_attempts and
             not self.is_expired()
         )
 
     def has_attempts_left(self) -> int:
         """Retorna quantas tentativas ainda restam."""
-        max_attempts = 3
-        return max(0, max_attempts - self.attempt_count)
+        return max(0, self.max_attempts - self.attempt_count)
 
     def start_verification(self) -> None:
         """Inicia o processo de verificação."""
