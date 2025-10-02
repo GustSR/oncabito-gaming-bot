@@ -202,6 +202,11 @@ class DIContainer:
         group_invite_repo = SQLiteGroupInviteRepository(db_path)
         self._instances["group_invite_repository"] = group_invite_repo
 
+        # Group Member Repository
+        from ..repositories.sqlite_group_member_repository import SQLiteGroupMemberRepository
+        group_member_repo = SQLiteGroupMemberRepository(db_path)
+        self._instances["group_member_repository"] = group_member_repo
+
         logger.debug("Repositories registrados")
 
     async def _register_external_services(self) -> None:
@@ -437,6 +442,20 @@ class DIContainer:
             event_bus=self._instances["event_bus"]
         )
         self._instances["scheduled_tasks_use_case"] = scheduled_tasks_use_case
+
+        # Welcome Management Use Case
+        from ...application.use_cases.welcome_management_use_case import WelcomeManagementUseCase
+        from ...core.config import TELEGRAM_GROUP_ID, WELCOME_TOPIC_ID, RULES_TOPIC_ID
+        welcome_use_case = WelcomeManagementUseCase(
+            user_repository=self._instances["user_repository"],
+            member_repository=self._instances["group_member_repository"],
+            event_bus=self._instances["event_bus"],
+            group_id=int(TELEGRAM_GROUP_ID) if TELEGRAM_GROUP_ID else 0,
+            welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None,
+            rules_topic_id=int(RULES_TOPIC_ID) if RULES_TOPIC_ID else None,
+            rules_acceptance_hours=24
+        )
+        self._instances["welcome_management_use_case"] = welcome_use_case
 
         logger.debug("Use cases registrados")
 

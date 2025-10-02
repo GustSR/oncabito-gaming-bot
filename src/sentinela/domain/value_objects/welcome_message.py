@@ -86,14 +86,15 @@ class WelcomeMessage:
             WelcomeMessage: Mensagem configurada
         """
         text = (
-            "🎮 <b>Bem-vindo à Comunidade Gamer OnCabo, {user_mention}!</b> 🎮\n\n"
-            "🔥 Você acaba de entrar na melhor comunidade de gamers! 🔥\n\n"
-            "📋 <b>PRÓXIMO PASSO OBRIGATÓRIO:</b>\n"
-            "✅ Vá para o tópico '<b>Regras da Comunidade</b>'\n"
-            "✅ Leia nossas regras e clique no botão para aceitar\n"
-            "✅ Você tem <b>24 horas</b> para aceitar as regras\n\n"
-            "⚠️ <b>IMPORTANTE:</b> Sem aceitar as regras, você será removido automaticamente!\n\n"
-            "🚀 <b>Aproveite a comunidade e bons jogos!</b>"
+            "🎮 <b>Olá, {user_mention}! Seja muito bem-vindo(a) à Comunidade OnCabo Gaming!</b> 🔥\n\n"
+            "Que alegria ter você aqui com a gente! 🎉\n\n"
+            "📋 <b>PRÓXIMO PASSO IMPORTANTE:</b>\n\n"
+            "Por favor, vá até o tópico \"<b>📋 Regras da Comunidade</b>\" e:\n"
+            "1️⃣ Leia nossas regras com atenção\n"
+            "2️⃣ Clique no botão \"<b>✅ Li e aceito as regras</b>\"\n\n"
+            "⏰ Você tem <b>24 horas</b> para aceitar\n"
+            "⚠️ Sem aceitar, você será removido automaticamente\n\n"
+            "🚀 <b>Aproveite a comunidade! Bons jogos!</b> 🎯"
         )
 
         return WelcomeMessage(
@@ -120,9 +121,10 @@ class WelcomeMessage:
             WelcomeMessage: Mensagem configurada
         """
         text = (
-            "📋 <b>{user_mention}, leia as regras acima e clique no botão para aceitar!</b>\n\n"
-            "⚠️ <b>Sua participação no grupo depende da aceitação das regras.</b>\n"
-            "⏰ Você tem 24 horas para aceitar, caso contrário será removido automaticamente."
+            "📋 <b>{user_mention}, leia as regras acima com atenção!</b>\n\n"
+            "Sua permanência no grupo depende da aceitação das regras.\n\n"
+            "⏰ <b>Prazo:</b> 24 horas\n"
+            "👇 <b>Após ler, clique no botão:</b>"
         )
 
         return WelcomeMessage(
@@ -131,7 +133,7 @@ class WelcomeMessage:
             parse_mode="HTML",
             topic_id=rules_topic_id,
             has_button=True,
-            button_text="✅ Li e aceito as regras",
+            button_text="✅ Li e aceito as regras da comunidade",
             button_callback=f"accept_rules_{user_id}"
         )
 
@@ -145,7 +147,8 @@ class WelcomeMessage:
         """
         text = (
             "✅ <b>{user_mention} aceitou as regras!</b>\n\n"
-            "🎮 <b>Bem-vindo oficial à Comunidade Gamer OnCabo!</b>"
+            "🎮 <b>Bem-vindo(a) oficial à Comunidade Gamer OnCabo!</b>\n"
+            "🔥 <b>Aproveite e divirta-se com a galera!</b> 🎯"
         )
 
         return WelcomeMessage(

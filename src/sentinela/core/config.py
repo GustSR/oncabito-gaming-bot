@@ -97,3 +97,7 @@ if HUBSOFT_ENABLED:
 else:
     logger = logging.getLogger(__name__)
     logger.info("Integração HubSoft DESABILITADA via configuração (HUBSOFT_ENABLED=false)")
+
+# --- Informações de Contato OnCabo ---
+ONCABO_SITE_URL = get_env_var("ONCABO_SITE_URL", "https://www.oncabo.com.br")
+ONCABO_WHATSAPP_URL = get_env_var("ONCABO_WHATSAPP_URL", "https://wa.me/5511999999999")

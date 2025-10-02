@@ -10,7 +10,7 @@ from ..core.config import TELEGRAM_TOKEN
 # Cria a instância principal da aplicação do bot
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ChatMemberHandler, filters
 
 from .handlers.telegram_bot_handler import TelegramBotHandler
 
@@ -29,13 +29,15 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", handler.handle_start_command))
     app.add_handler(CommandHandler("suporte", handler.handle_support_command))
     app.add_handler(CommandHandler("status", handler.handle_status_command))
-    app.add_handler(CommandHandler("verificar_cpf", handler.handle_verify_cpf_command))
 
     # Comandos de admin
     app.add_handler(CommandHandler("admin", handler.handle_admin_command))
 
     # Callbacks de botões
     app.add_handler(CallbackQueryHandler(handler.handle_callback_query))
+
+    # Handler de novos membros
+    app.add_handler(ChatMemberHandler(handler.handle_new_member, ChatMemberHandler.CHAT_MEMBER))
 
     # Mensagens de texto (para CPF, descrição de suporte, etc.)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler.handle_text_message))
