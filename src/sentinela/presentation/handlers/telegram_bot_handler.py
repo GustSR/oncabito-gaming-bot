@@ -222,6 +222,47 @@ class TelegramBotHandler:
             except:
                 pass
 
+    async def _get_tickets_from_old_table(self, user_id: int) -> list:
+        """
+        TEMPORÁRIO: Busca tickets da tabela antiga support_tickets.
+        TODO: Migrar dados para nova tabela e remover este método.
+        """
+        import aiosqlite
+        from ...core.config import DATABASE_FILE
+
+        tickets = []
+        try:
+            async with aiosqlite.connect(DATABASE_FILE) as db:
+                async with db.execute(
+                    """
+                    SELECT id, category, affected_game, problem_started,
+                           description, status, created_at, updated_at,
+                           hubsoft_protocol, urgency_level
+                    FROM support_tickets
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    """,
+                    (user_id,)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    for row in rows:
+                        tickets.append({
+                            'id': row[0],
+                            'category': row[1],
+                            'affected_game': row[2],
+                            'problem_timing': row[3],
+                            'description': row[4],
+                            'status': row[5],
+                            'created_at': row[6],
+                            'updated_at': row[7],
+                            'protocol': row[8],
+                            'urgency': row[9]
+                        })
+        except Exception as e:
+            logger.error(f"Erro ao buscar tickets da tabela antiga: {e}")
+
+        return tickets
+
     async def handle_status_command(
         self,
         update: Update,
@@ -235,11 +276,8 @@ class TelegramBotHandler:
             if not user:
                 return
 
-            user_id = UserId(user.id)
-
-            # Busca todos os tickets do usuário
-            ticket_repository = self._container.get("ticket_repository")
-            tickets = await ticket_repository.find_by_user(user_id)
+            # TEMPORÁRIO: Busca da tabela antiga até migração completa
+            tickets = await self._get_tickets_from_old_table(user.id)
 
             if not tickets:
                 # Usuário não tem nenhum ticket
@@ -255,8 +293,9 @@ class TelegramBotHandler:
                 return
 
             # Separa tickets ativos e finalizados
-            active_tickets = [t for t in tickets if t.is_active()]
-            finished_tickets = [t for t in tickets if not t.is_active()]
+            active_statuses = ['pending', 'open', 'in_progress']
+            active_tickets = [t for t in tickets if t['status'] in active_statuses]
+            finished_tickets = [t for t in tickets if t['status'] not in active_statuses]
 
             # Monta mensagem com lista de tickets
             message_parts = ["📋 **Seus Tickets de Suporte**\n"]
@@ -271,40 +310,53 @@ class TelegramBotHandler:
                 f"🟢 Ativos: {active_count} | ✅ Finalizados: {finished_count}\n"
             )
 
+            # Mapeia categorias para nomes amigáveis
+            category_names = {
+                'connectivity': '🌐 Conectividade/Ping',
+                'performance': '⚡ Performance/FPS',
+                'game_issues': '🎮 Problemas no Jogo',
+                'configuration': '💻 Configuração',
+                'others': '📞 Outros'
+            }
+
             # Lista tickets ativos
             if active_tickets:
                 message_parts.append("\n🔴 **TICKETS ATIVOS**\n")
-                for ticket in sorted(active_tickets, key=lambda t: t.created_at, reverse=True):
-                    status_emoji = self._get_status_emoji(ticket.status.value)
-                    protocol = ticket.get_display_protocol()
-                    category = ticket.category.display_name
-                    days_open = (datetime.now() - ticket.created_at).days
+                for ticket in active_tickets:
+                    status_emoji = self._get_status_emoji(ticket['status'])
+                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
+                    category = category_names.get(ticket['category'], ticket['category'])
+
+                    # Calcula dias abertos
+                    if isinstance(ticket['created_at'], str):
+                        created_date = datetime.fromisoformat(ticket['created_at'].replace(' ', 'T'))
+                    else:
+                        created_date = ticket['created_at']
+                    days_open = (datetime.now() - created_date).days
 
                     message_parts.append(
                         f"\n{status_emoji} **{protocol}**\n"
                         f"   📂 {category}\n"
                         f"   📅 Aberto há {days_open} dia(s)\n"
-                        f"   🎮 {ticket.affected_game.display_name}\n"
                     )
 
-                    # Adiciona info de técnico se atribuído
-                    if ticket.assigned_to:
-                        message_parts.append(f"   👤 Técnico: {ticket.assigned_to}\n")
+                    if ticket.get('affected_game'):
+                        message_parts.append(f"   🎮 {ticket['affected_game']}\n")
 
             # Lista últimos 3 tickets finalizados
             if finished_tickets:
                 message_parts.append("\n✅ **ÚLTIMOS TICKETS FINALIZADOS**\n")
-                recent_finished = sorted(finished_tickets, key=lambda t: t.updated_at, reverse=True)[:3]
+                recent_finished = finished_tickets[:3]
 
                 for ticket in recent_finished:
-                    status_emoji = self._get_status_emoji(ticket.status.value)
-                    protocol = ticket.get_display_protocol()
-                    category = ticket.category.display_name
+                    status_emoji = self._get_status_emoji(ticket['status'])
+                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
+                    category = category_names.get(ticket['category'], ticket['category'])
 
                     message_parts.append(
                         f"\n{status_emoji} **{protocol}**\n"
                         f"   📂 {category}\n"
-                        f"   🏁 Status: {ticket.status.value.title()}\n"
+                        f"   🏁 Status: {ticket['status'].title()}\n"
                     )
 
                 if len(finished_tickets) > 3:
