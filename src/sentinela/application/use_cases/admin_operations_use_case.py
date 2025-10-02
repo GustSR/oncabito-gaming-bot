@@ -560,9 +560,8 @@ class AdminOperationsUseCase(UseCase):
         """Executa ações após banimento."""
         try:
             # Cancela verificações pendentes
-            from ...domain.value_objects.identifiers import UserId
-            user_id_vo = UserId(user_id)
-            verification = await self.verification_repository.find_pending_by_user(user_id_vo)
+            # Repositório espera int, não UserId
+            verification = await self.verification_repository.find_pending_by_user(user_id)
 
             if verification:
                 verification.cancel_verification("Usuário banido")

@@ -293,16 +293,19 @@ class CPFVerificationUseCase(UseCase):
             CPFVerificationResult: Status da verificação
         """
         try:
-            user_id_vo = UserId(user_id)
-            verification = await self.verification_repository.find_by_user_id(user_id_vo)
+            # Repositório espera int, não UserId, e retorna lista
+            verifications = await self.verification_repository.find_by_user_id(user_id)
 
-            if not verification:
+            if not verifications:
                 return CPFVerificationResult(
                     success=True,
                     message="Nenhuma verificação encontrada",
                     status="none",
                     next_action="start_verification"
                 )
+
+            # Pega a verificação mais recente
+            verification = verifications[0]
 
             # Verifica se expirou
             if verification.is_expired() and verification.status == VerificationStatus.PENDING:
@@ -380,8 +383,8 @@ class CPFVerificationUseCase(UseCase):
     async def _check_rate_limiting(self, user_id: int) -> 'RateLimitResult':
         """Verifica rate limiting para o usuário."""
         try:
-            user_id_vo = UserId(user_id)
-            attempts_24h = await self.verification_repository.count_attempts_by_user(user_id_vo, 24)
+            # Repositório espera int, não UserId
+            attempts_24h = await self.verification_repository.count_attempts_by_user(UserId(user_id), 24)
 
             max_attempts_24h = 5  # Máximo 5 tentativas por dia
             if attempts_24h >= max_attempts_24h:
@@ -404,11 +407,14 @@ class CPFVerificationUseCase(UseCase):
     async def _get_verification_context(self, user_id: int) -> Dict[str, Any]:
         """Obtém contexto atual da verificação."""
         try:
-            user_id_vo = UserId(user_id)
-            verification = await self.verification_repository.find_by_user_id(user_id_vo)
+            # Repositório espera int, não UserId
+            verifications = await self.verification_repository.find_by_user_id(user_id)
 
-            if not verification:
+            if not verifications:
                 return {"status": "none"}
+
+            # Pega a verificação mais recente
+            verification = verifications[0]
 
             return {
                 "status": verification.status.value,
