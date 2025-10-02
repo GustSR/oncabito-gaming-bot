@@ -235,28 +235,129 @@ class TelegramBotHandler:
             if not user:
                 return
 
-            # Busca tickets do usuário via use case
             user_id = UserId(user.id)
 
-            # Por enquanto, simulamos a resposta até a migração completa
-            # TODO: Implementar busca real de tickets
-            message = (
-                "📋 **Seus Tickets de Suporte**\n\n"
-                "🔄 Buscando seus tickets...\n\n"
-                "⚠️ Sistema em migração - funcionalidade será restaurada em breve."
+            # Busca todos os tickets do usuário
+            ticket_repository = self.container.get("ticket_repository")
+            tickets = await ticket_repository.find_by_user(user_id)
+
+            if not tickets:
+                # Usuário não tem nenhum ticket
+                message = (
+                    "📋 **Seus Tickets de Suporte**\n\n"
+                    "👋 Olá! Você ainda não tem nenhum ticket de suporte aberto.\n\n"
+                    "💡 **Precisa de ajuda?**\n"
+                    "Use o comando /suporte para abrir um novo chamado!\n\n"
+                    "Nossa equipe está sempre pronta para te ajudar! 😊"
+                )
+                await update.message.reply_text(message, parse_mode='Markdown')
+                logger.info(f"Usuário {user.id} verificou status - sem tickets")
+                return
+
+            # Separa tickets ativos e finalizados
+            active_tickets = [t for t in tickets if t.is_active()]
+            finished_tickets = [t for t in tickets if not t.is_active()]
+
+            # Monta mensagem com lista de tickets
+            message_parts = ["📋 **Seus Tickets de Suporte**\n"]
+
+            # Resumo geral
+            total = len(tickets)
+            active_count = len(active_tickets)
+            finished_count = len(finished_tickets)
+
+            message_parts.append(
+                f"📊 **Resumo:** {total} ticket(s) no total\n"
+                f"🟢 Ativos: {active_count} | ✅ Finalizados: {finished_count}\n"
             )
+
+            # Lista tickets ativos
+            if active_tickets:
+                message_parts.append("\n🔴 **TICKETS ATIVOS**\n")
+                for ticket in sorted(active_tickets, key=lambda t: t.created_at, reverse=True):
+                    status_emoji = self._get_status_emoji(ticket.status.value)
+                    protocol = ticket.get_display_protocol()
+                    category = ticket.category.display_name
+                    days_open = (datetime.now() - ticket.created_at).days
+
+                    message_parts.append(
+                        f"\n{status_emoji} **{protocol}**\n"
+                        f"   📂 {category}\n"
+                        f"   📅 Aberto há {days_open} dia(s)\n"
+                        f"   🎮 {ticket.affected_game.display_name}\n"
+                    )
+
+                    # Adiciona info de técnico se atribuído
+                    if ticket.assigned_to:
+                        message_parts.append(f"   👤 Técnico: {ticket.assigned_to}\n")
+
+            # Lista últimos 3 tickets finalizados
+            if finished_tickets:
+                message_parts.append("\n✅ **ÚLTIMOS TICKETS FINALIZADOS**\n")
+                recent_finished = sorted(finished_tickets, key=lambda t: t.updated_at, reverse=True)[:3]
+
+                for ticket in recent_finished:
+                    status_emoji = self._get_status_emoji(ticket.status.value)
+                    protocol = ticket.get_display_protocol()
+                    category = ticket.category.display_name
+
+                    message_parts.append(
+                        f"\n{status_emoji} **{protocol}**\n"
+                        f"   📂 {category}\n"
+                        f"   🏁 Status: {ticket.status.value.title()}\n"
+                    )
+
+                if len(finished_tickets) > 3:
+                    message_parts.append(f"\n_... e mais {len(finished_tickets) - 3} finalizado(s)_\n")
+
+            # Rodapé com dicas
+            message_parts.append(
+                "\n💡 **Dicas:**\n"
+                "• Use /suporte para abrir novo chamado\n"
+                "• Nossa equipe trabalha 24/7 para te atender!\n\n"
+                "🙏 Agradecemos sua paciência e confiança!"
+            )
+
+            message = "".join(message_parts)
+
+            # Cria botões inline para ações rápidas
+            keyboard = []
+
+            if active_tickets:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        "🆕 Abrir Novo Ticket",
+                        callback_data="status_new_ticket"
+                    )
+                ])
+            else:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        "🆘 Preciso de Ajuda",
+                        callback_data="status_new_ticket"
+                    )
+                ])
+
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
             await update.message.reply_text(
                 message,
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=reply_markup
             )
 
-            logger.info(f"Usuário {user.id} verificou status dos tickets")
+            logger.info(
+                f"Usuário {user.id} verificou status: "
+                f"{active_count} ativos, {finished_count} finalizados"
+            )
 
         except Exception as e:
-            logger.error(f"Erro no comando /status: {e}")
+            logger.error(f"Erro no comando /status: {e}", exc_info=True)
             await update.message.reply_text(
-                "❌ Erro ao buscar tickets. Tente novamente."
+                "❌ **Ops! Algo deu errado...**\n\n"
+                "Não consegui buscar seus tickets no momento.\n"
+                "Por favor, tente novamente em alguns instantes.\n\n"
+                "Se o problema persistir, entre em contato com nossa equipe! 🙏"
             )
 
     async def handle_verify_cpf_command(
@@ -384,6 +485,9 @@ class TelegramBotHandler:
             # Callbacks do novo fluxo de suporte
             if callback_data.startswith("sup_"):
                 await self._handle_support_callback(query, context, callback_data)
+            # Callbacks do comando /status
+            elif callback_data == "status_new_ticket":
+                await self._handle_status_new_ticket(query, context)
             # Callbacks antigos (manter compatibilidade)
             elif callback_data.startswith("cat_"):
                 await self._handle_category_selection(query, callback_data)
@@ -1211,6 +1315,80 @@ class TelegramBotHandler:
         # TODO: Implementar verificação real de admin
         admin_list = [123456789, 987654321]  # IDs de exemplo
         return user_id in admin_list
+
+    def _get_status_emoji(self, status: str) -> str:
+        """Retorna emoji correspondente ao status do ticket."""
+        status_emojis = {
+            "pending": "⏳",
+            "open": "🔵",
+            "in_progress": "🔄",
+            "resolved": "✅",
+            "closed": "🔒",
+            "cancelled": "❌"
+        }
+        return status_emojis.get(status, "❓")
+
+    async def _handle_status_new_ticket(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Callback: Abrir novo ticket a partir do /status."""
+        try:
+            user = query.from_user
+
+            # Edita mensagem original
+            await query.edit_message_text(
+                "🆕 **Vamos abrir um novo chamado!**\n\n"
+                "Redirecionando você para o formulário de suporte...",
+                parse_mode='Markdown'
+            )
+
+            # Inicializa novo fluxo de suporte
+            init_support_state(context)
+            state = get_support_state(context)
+            state['state'] = SupportState.CATEGORY
+            state['current_step'] = 1
+
+            # Envia mensagem de início do suporte (igual ao /suporte)
+            progress_bar = self._create_progress_bar(1, 6)
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("🌐 Conectividade/Ping", callback_data="sup_cat_connectivity"),
+                    InlineKeyboardButton("⚡ Performance/FPS", callback_data="sup_cat_performance")
+                ],
+                [
+                    InlineKeyboardButton("🎮 Problemas no Jogo", callback_data="sup_cat_game_issues"),
+                    InlineKeyboardButton("💻 Configuração", callback_data="sup_cat_configuration")
+                ],
+                [InlineKeyboardButton("📞 Outros", callback_data="sup_cat_others")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")]
+            ]
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    f"{progress_bar}\n\n"
+                    "🎯 **Passo 1/6: Categoria do Problema**\n\n"
+                    "Olá! Fico feliz em te ajudar! 😊\n\n"
+                    "Primeiro, me diz qual o tipo do seu problema:\n\n"
+                    "Escolha a categoria que mais se encaixa:"
+                ),
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+            logger.info(f"Usuário {user.id} iniciou novo ticket via callback /status")
+
+        except Exception as e:
+            logger.error(f"Erro no callback status_new_ticket: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Erro ao iniciar novo ticket.\n\n"
+                "Por favor, use o comando /suporte para tentar novamente."
+            )
 
     async def handle_error(
         self,
