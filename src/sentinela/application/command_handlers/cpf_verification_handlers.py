@@ -154,7 +154,7 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             logger.info(f"[CPF Handler] Iniciando verificação - User: {user_id}, CPF: {cpf_masked}")
 
             # Busca verificação pendente
-            verification = await self.verification_repository.find_pending_by_user(user_id.value)
+            verification = await self.verification_repository.find_pending_by_user(user_id)
             if not verification:
                 logger.warning(f"[CPF Handler] ❌ Nenhuma verificação pendente para usuário {user_id}")
                 return CommandResult.failure(
@@ -199,14 +199,15 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             cpf = CPF(cpf_validation.clean_cpf)
             logger.info(f"[CPF Handler] ✅ CPF válido {cpf_masked}")
 
-            # Verifica duplicidade (converte para UserId apenas aqui onde é necessário)
+            # Verifica duplicidade
             logger.info(f"[CPF Handler] Verificando duplicidade para {cpf_masked}")
-            duplicate_result = await self.duplicate_cpf_service.check_duplicate(
-                cpf, UserId(user_id), command.username
+            duplicate_result = await self.duplicate_cpf_service.check_for_duplicates(
+                cpf_hash=cpf.value,
+                exclude_user_id=user_id
             )
 
-            if duplicate_result.has_conflict:
-                logger.warning(f"[CPF Handler] ❌ CPF duplicado {cpf_masked}: {duplicate_result.conflict_details}")
+            if duplicate_result["has_duplicates"]:
+                logger.warning(f"[CPF Handler] ❌ CPF duplicado {cpf_masked}: {duplicate_result}")
                 # Adiciona tentativa com conflito
                 verification.add_attempt(
                     cpf_provided=str(cpf),
@@ -217,9 +218,9 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
 
                 return CommandResult.failure(
                     "cpf_duplicate",
-                    "CPF já está associado a outro usuário",
+                    "Este CPF já está associado a outra conta em nossa comunidade.",
                     {
-                        "conflict_details": duplicate_result.conflict_details,
+                        "conflict_details": duplicate_result,
                         "attempts_left": verification.has_attempts_left()
                     }
                 )

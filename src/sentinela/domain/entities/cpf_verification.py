@@ -148,6 +148,18 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
     def client_data(self) -> Optional[Dict[str, Any]]:
         return self._client_data
 
+    @property
+    def cpf_hash(self) -> str:
+        """Retorna hash do CPF para armazenamento e busca."""
+        if self._cpf_verified:
+            # Usa hash do CPF verificado
+            from ..services.cpf_validation_service import CPFValidationService
+            return CPFValidationService.hash_cpf(str(self._cpf_verified))
+        else:
+            # Antes da verificação, usa hash do user_id como placeholder
+            import hashlib
+            return hashlib.sha256(f"pending_{self._user_id.value}".encode()).hexdigest()
+
     # Business rules
     def is_expired(self) -> bool:
         """Verifica se a verificação expirou."""

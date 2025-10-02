@@ -211,7 +211,10 @@ class CPFVerificationUseCase(UseCase):
                     verification_id=result.data.get("verification_id"),
                     message=result.data.get("message", "CPF verificado com sucesso!"),
                     status="completed",
-                    data=result.data.get("client_data", {}),
+                    data={
+                        "verified": True,
+                        "client_data": result.data.get("client_data", {})
+                    },
                     next_action="verification_complete"
                 )
             else:
