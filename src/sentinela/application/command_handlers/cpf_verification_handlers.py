@@ -270,11 +270,13 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
         """
         Verifica CPF no sistema HubSoft.
 
+        Aceita QUALQUER cliente com serviço ativo, independente do plano.
+
         Args:
             cpf: CPF a ser verificado
 
         Returns:
-            Dict[str, Any]: Dados do cliente ou None se não encontrado
+            Dict[str, Any]: Dados do cliente ou None se não encontrado/ativo
         """
         try:
             # Importa dinamicamente para evitar dependência circular
@@ -288,9 +290,27 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             client_data = get_client_info(str(cpf), full_data=True)
 
             if client_data:
-                client_name = client_data.get('nome', client_data.get('client_name', 'N/A'))
+                # Campo correto retornado pela API HubSoft
+                client_name = client_data.get('nome_razaosocial',
+                                              client_data.get('nome',
+                                              client_data.get('client_name', 'N/A')))
+
+                # Verifica se tem serviço ativo
+                servico_status = client_data.get('servico_status', '')
+                servico_nome = client_data.get('servico_nome', 'N/A')
+
                 logger.info(f"✅ Cliente encontrado no HubSoft: {client_name}")
-                logger.debug(f"Dados retornados do HubSoft: {client_data.keys()}")
+                logger.info(f"   Serviço: {servico_nome}")
+                logger.info(f"   Status: {servico_status}")
+                logger.debug(f"Dados retornados do HubSoft: {list(client_data.keys())}")
+
+                # Valida se serviço está ativo
+                # API já filtra por "servico_habilitado", mas validamos novamente
+                if not servico_status or 'habilitado' not in servico_status.lower():
+                    logger.warning(f"❌ Cliente {client_name} sem serviço habilitado: {servico_status}")
+                    return None
+
+                logger.info(f"✅ Cliente {client_name} validado com sucesso - Serviço ativo")
                 return client_data
             else:
                 logger.warning(f"❌ Nenhum cliente encontrado no HubSoft para CPF {cpf_masked}")
