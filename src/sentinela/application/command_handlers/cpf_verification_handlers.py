@@ -61,13 +61,9 @@ class StartCPFVerificationHandler(CommandHandler[StartCPFVerificationCommand]):
         try:
             user_id = UserId(command.user_id)
 
-            # Verifica se usuário existe
-            user = await self.user_repository.find_by_id(user_id)
-            if not user:
-                return CommandResult.failure(
-                    "user_not_found",
-                    "Usuário não encontrado no sistema"
-                )
+            # NOTA: Removida validação de usuário existente no UserRepository
+            # Novos membros podem iniciar verificação antes de terem um User criado
+            # O User será criado no UserRepository após CPF validado com sucesso
 
             # Verifica se já existe verificação pendente
             existing = await self.verification_repository.find_pending_by_user(user_id)
