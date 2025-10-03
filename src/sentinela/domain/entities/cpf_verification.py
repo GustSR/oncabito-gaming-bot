@@ -42,13 +42,27 @@ class VerificationAttempt:
         cpf_provided: CPF fornecido na tentativa
         success: Se a tentativa foi bem-sucedida
         failure_reason: Motivo da falha (se aplicável)
+        response_data: Dados da resposta da API
+        error_message: Mensagem de erro (alias de failure_reason)
+        duration_ms: Duração da tentativa em milissegundos
     """
 
-    def __init__(self, cpf_provided: str, success: bool = False, failure_reason: Optional[str] = None):
-        self.attempted_at = datetime.now()
+    def __init__(
+        self,
+        cpf_provided: str,
+        success: bool = False,
+        failure_reason: Optional[str] = None,
+        response_data: Optional[Dict[str, Any]] = None,
+        duration_ms: Optional[int] = None,
+        attempted_at: Optional[datetime] = None
+    ):
+        self.attempted_at = attempted_at or datetime.now()
         self.cpf_provided = cpf_provided
         self.success = success
         self.failure_reason = failure_reason
+        self.response_data = response_data or {}
+        self.error_message = failure_reason  # Alias para compatibilidade com repository
+        self.duration_ms = duration_ms
 
 
 @dataclass(frozen=True)
@@ -94,6 +108,8 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
         self._completed_at: Optional[datetime] = None
         self._cpf_verified: Optional[CPF] = None
         self._client_data: Optional[Dict[str, Any]] = None
+        self._verification_data: Dict[str, Any] = {}
+        self._metadata: Dict[str, Any] = {}
 
     # Properties
     @property
@@ -142,6 +158,17 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
 
     @property
     def cpf_verified(self) -> Optional[CPF]:
+        """
+        Retorna o CPF verificado (apenas em memória).
+
+        IMPORTANTE: Por compliance LGPD, o CPF real NÃO é persistido no banco.
+        Apenas o hash é armazenado. Após reload do repositório, este campo
+        retornará None. Para obter dados do cliente, use `client_data` que
+        contém informações do HubSoft.
+
+        Returns:
+            Optional[CPF]: CPF verificado ou None se não verificado ou após reload
+        """
         return self._cpf_verified
 
     @property
@@ -164,6 +191,16 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
     def max_attempts(self) -> int:
         """Retorna o número máximo de tentativas permitidas."""
         return 3
+
+    @property
+    def verification_data(self) -> Dict[str, Any]:
+        """Retorna dados adicionais da verificação."""
+        return getattr(self, '_verification_data', {})
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        """Retorna metadados da verificação."""
+        return getattr(self, '_metadata', {})
 
     # Business rules
     def is_expired(self) -> bool:

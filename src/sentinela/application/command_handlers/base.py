@@ -31,12 +31,12 @@ class CommandResult:
     error_code: Optional[str] = None
 
     @classmethod
-    def success(cls, message: str = "Operação realizada com sucesso", data: Optional[Dict[str, Any]] = None) -> 'CommandResult':
+    def success(cls, data: Optional[Dict[str, Any]] = None, message: str = "Operação realizada com sucesso") -> 'CommandResult':
         """
         Cria um resultado de sucesso.
 
         Args:
-            data: Dados retornados
+            data: Dados retornados (primeiro parâmetro para aceitar dict diretamente)
             message: Mensagem de sucesso
 
         Returns:

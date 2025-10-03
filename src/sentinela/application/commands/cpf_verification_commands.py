@@ -60,58 +60,10 @@ class CancelCPFVerificationCommand(Command):
     reason: str = "Cancelado pelo usuário"
 
 
-@dataclass(frozen=True)
-class ProcessExpiredVerificationsCommand(Command):
-    """
-    Comando para processar verificações expiradas.
-
-    Este comando é executado por job/scheduler para
-    limpar verificações que expiraram.
-    """
-    pass
-
-
-@dataclass(frozen=True)
-class ResolveCPFDuplicateCommand(Command):
-    """
-    Comando para resolver conflito de CPF duplicado.
-
-    Attributes:
-        cpf: CPF em conflito
-        current_user_id: ID do usuário atual
-        existing_user_id: ID do usuário que já possui o CPF
-        current_username: Nome do usuário atual
-        existing_username: Nome do usuário existente
-        resolution_action: Ação para resolver (remap, deny, manual_review)
-    """
-    cpf: str
-    current_user_id: int
-    existing_user_id: int
-    current_username: str
-    existing_username: str
-    resolution_action: str  # "remap", "deny", "manual_review"
-
-
-@dataclass(frozen=True)
-class RemapCPFToNewUserCommand(Command):
-    """
-    Comando para remapear um CPF para um novo usuário.
-
-    Attributes:
-        cpf: CPF a ser remapeado
-        old_user_id: ID do usuário anterior
-        new_user_id: ID do novo usuário
-        old_username: Nome do usuário anterior
-        new_username: Nome do novo usuário
-        reason: Motivo do remapeamento
-    """
-    cpf: str
-    old_user_id: int
-    new_user_id: int
-    old_username: str
-    new_username: str
-    reason: str
-
+# NOTE: ResolveCPFDuplicateCommand e RemapCPFToNewUserCommand foram removidos
+# pois não possuem handlers implementados. Funcionalidade será implementada
+# futuramente quando houver necessidade de negócio.
+# Por enquanto, conflitos de CPF são tratados pelo DuplicateCPFService via eventos.
 
 @dataclass(frozen=True)
 class GetVerificationStatsCommand(Command):

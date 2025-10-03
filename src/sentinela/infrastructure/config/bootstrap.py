@@ -79,6 +79,20 @@ class ApplicationBootstrap:
                 except Exception as e:
                     raise BootstrapError(f"Failed to resolve {dep.__name__}: {e}")
 
+            # Registra event handlers no EventBus
+            logger.info("🔧 Registering event handlers...")
+            try:
+                from ..events.event_handler_registry import EventHandlerRegistry
+                from ..events.event_bus import EventBus
+
+                event_bus = container.get(EventBus)
+                registry = EventHandlerRegistry(event_bus)
+                registry.register_all_handlers()
+                logger.info("✅ Event handlers registered successfully")
+            except Exception as e:
+                logger.error(f"⚠️ Failed to register event handlers: {e}")
+                # Não falha bootstrap por event handlers (sistema pode funcionar sem eventos)
+
             logger.info("✅ Dependencies configured successfully")
 
         except Exception as e:

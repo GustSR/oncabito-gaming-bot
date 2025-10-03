@@ -22,15 +22,16 @@ class CPFVerificationRepository(Repository[CPFVerificationRequest, VerificationI
     """
 
     @abstractmethod
-    async def find_by_user_id(self, user_id: UserId) -> Optional[CPFVerificationRequest]:
+    async def find_by_user_id(self, user_id: UserId, limit: int = 10) -> List[CPFVerificationRequest]:
         """
-        Busca verificação ativa para um usuário.
+        Busca verificações para um usuário.
 
         Args:
             user_id: ID do usuário
+            limit: Número máximo de verificações a retornar
 
         Returns:
-            Optional[CPFVerificationRequest]: Verificação ativa ou None
+            List[CPFVerificationRequest]: Lista de verificações do usuário
         """
         pass
 

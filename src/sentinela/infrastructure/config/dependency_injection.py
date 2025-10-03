@@ -251,6 +251,15 @@ def configure_dependencies() -> None:
 
     container.register_factory(UserRepository, create_user_repository)
 
+    # Admin Repository
+    from ...domain.repositories.admin_repository import AdminRepository
+    from ..repositories.sqlite_admin_repository import SQLiteAdminRepository
+
+    def create_admin_repository() -> SQLiteAdminRepository:
+        return SQLiteAdminRepository(DATABASE_FILE)
+
+    container.register_factory(AdminRepository, create_admin_repository)
+
     # === External Services ===
 
     # HubSoft services
@@ -265,6 +274,12 @@ def configure_dependencies() -> None:
     container.register_singleton(GroupClient, GroupClientImpl)
     container.register_singleton(InviteClient, InviteClientImpl)
 
+    # === Event System ===
+
+    # Event Bus
+    from ..events.event_bus import EventBus, InMemoryEventBus
+    container.register_singleton(EventBus, InMemoryEventBus)
+
     # === Application Layer ===
 
     # Command handlers
@@ -278,6 +293,22 @@ def configure_dependencies() -> None:
     from ...application.queries.get_user_handler import GetUserHandler
 
     container.register_singleton(GetUserHandler, GetUserHandler)
+
+    # === Event System ===
+
+    # Registra event handlers no EventBus
+    logger.info("🔧 Registering event handlers...")
+    try:
+        from ..events.event_handler_registry import EventHandlerRegistry
+        from ..events.event_bus import EventBus
+
+        event_bus = container.get(EventBus)
+        registry = EventHandlerRegistry(event_bus)
+        registry.register_all_handlers()
+        logger.info("✅ Event handlers registered successfully")
+    except Exception as e:
+        logger.error(f"⚠️ Failed to register event handlers: {e}")
+        # Não falha a configuração por event handlers (sistema pode funcionar sem eventos)
 
     logger.info("Dependências configuradas com sucesso")
 

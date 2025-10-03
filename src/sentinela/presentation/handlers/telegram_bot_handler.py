@@ -120,16 +120,19 @@ class TelegramBotHandler:
                 logger.warning("CPF verification repository não disponível")
                 return False
 
-            # Busca verificação pelo user_id
-            verification = await cpf_repo.find_by_user_id(user_id)
+            # Busca verificações pelo user_id (retorna lista)
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=10)
 
-            if not verification:
+            if not verifications:
                 logger.debug(f"Usuário {user_id} não possui verificação de CPF")
                 return False
 
-            # Verifica se status é 'verified'
-            if verification.status.value != 'verified':
-                logger.debug(f"Usuário {user_id} possui CPF mas status não é 'verified': {verification.status.value}")
+            # Busca verificação completed (importa VerificationStatus se necessário)
+            from ...domain.entities.cpf_verification import VerificationStatus
+            verification = next((v for v in verifications if v.status == VerificationStatus.COMPLETED), None)
+
+            if not verification:
+                logger.debug(f"Usuário {user_id} possui verificações mas nenhuma completed")
                 return False
 
             logger.debug(f"Usuário {user_id} está verificado")
@@ -457,7 +460,9 @@ class TelegramBotHandler:
                     chat_id=user.id,
                     text="❌ Erro ao iniciar suporte. Tente novamente."
                 )
-            except:
+            except Exception as e:
+                # Ignora falhas ao enviar mensagem de erro (último recurso)
+                logger.error(f"Failed to send error message: {e}")
                 pass
 
     async def _get_tickets_from_old_table(self, user_id: int) -> list:

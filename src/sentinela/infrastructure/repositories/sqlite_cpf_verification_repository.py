@@ -42,7 +42,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     expires_at TEXT NOT NULL,
                     completed_at TEXT,
                     verification_data TEXT,
-                    metadata TEXT
+                    metadata TEXT,
+                    client_data TEXT
                 )
             """)
 
@@ -55,6 +56,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     response_data TEXT,
                     error_message TEXT,
                     duration_ms INTEGER,
+                    cpf_provided_hash TEXT,
                     FOREIGN KEY (verification_id) REFERENCES cpf_verifications(id)
                 )
             """)
@@ -103,19 +105,21 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                             expires_at = ?,
                             completed_at = ?,
                             verification_data = ?,
-                            metadata = ?
+                            metadata = ?,
+                            client_data = ?
                         WHERE id = ?
                     """, (
-                        verification.user_id,
+                        verification.user_id.value,  # Extrai valor do UserId
                         verification.username,
                         verification.cpf_hash,
-                        verification.verification_type,
+                        verification.verification_type.value,  # Extrai valor do Enum
                         verification.status.value,
                         verification.max_attempts,
                         verification.expires_at.isoformat(),
                         verification.completed_at.isoformat() if verification.completed_at else None,
                         self._serialize_data(verification.verification_data),
                         self._serialize_data(verification.metadata),
+                        self._serialize_data(verification.client_data) if verification.client_data else None,
                         verification.id.value
                     ))
                 else:
@@ -124,21 +128,22 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         INSERT INTO cpf_verifications (
                             id, user_id, username, cpf_hash, verification_type,
                             status, max_attempts, created_at, expires_at,
-                            completed_at, verification_data, metadata
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            completed_at, verification_data, metadata, client_data
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         verification.id.value,
-                        verification.user_id,
+                        verification.user_id.value,  # Extrai valor do UserId
                         verification.username,
                         verification.cpf_hash,
-                        verification.verification_type,
+                        verification.verification_type.value,  # Extrai valor do Enum
                         verification.status.value,
                         verification.max_attempts,
                         verification.created_at.isoformat(),
                         verification.expires_at.isoformat(),
                         verification.completed_at.isoformat() if verification.completed_at else None,
                         self._serialize_data(verification.verification_data),
-                        self._serialize_data(verification.metadata)
+                        self._serialize_data(verification.metadata),
+                        self._serialize_data(verification.client_data) if verification.client_data else None
                     ))
 
                 # Salva tentativas
@@ -163,18 +168,25 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
 
         # Insere tentativas atuais
         for attempt in verification.attempts:
+            # Hash do CPF para LGPD compliance
+            cpf_hash = None
+            if attempt.cpf_provided:
+                from ...domain.services.cpf_validation_service import CPFValidationService
+                cpf_hash = CPFValidationService.hash_cpf(attempt.cpf_provided)
+
             cursor.execute("""
                 INSERT INTO cpf_verification_attempts (
                     verification_id, attempted_at, success, response_data,
-                    error_message, duration_ms
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    error_message, duration_ms, cpf_provided_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 verification.id.value,
                 attempt.attempted_at.isoformat(),
                 attempt.success,
                 self._serialize_data(attempt.response_data),
                 attempt.error_message,
-                attempt.duration_ms
+                attempt.duration_ms,
+                cpf_hash
             ))
 
     async def find_by_id(self, verification_id: VerificationId) -> Optional[CPFVerificationRequest]:
@@ -199,9 +211,12 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             logger.error(f"Erro ao buscar verificação {verification_id.value}: {e}")
             return None
 
-    async def find_by_user_id(self, user_id: int, limit: int = 10) -> List[CPFVerificationRequest]:
+    async def find_by_user_id(self, user_id: UserId, limit: int = 10) -> List[CPFVerificationRequest]:
         """Busca verificações por usuário."""
         try:
+            # Extrai valor int do UserId para binding SQLite
+            user_id_int = user_id.value if isinstance(user_id, UserId) else user_id
+
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
@@ -211,7 +226,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     WHERE user_id = ?
                     ORDER BY created_at DESC
                     LIMIT ?
-                """, (user_id, limit))
+                """, (user_id_int, limit))
 
                 rows = cursor.fetchall()
                 return [await self._row_to_verification(conn, row) for row in rows]
@@ -220,9 +235,12 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             logger.error(f"Erro ao buscar verificações do usuário {user_id}: {e}")
             return []
 
-    async def find_pending_by_user(self, user_id: int) -> Optional[CPFVerificationRequest]:
+    async def find_pending_by_user(self, user_id: UserId) -> Optional[CPFVerificationRequest]:
         """Busca verificação pendente de um usuário."""
         try:
+            # Extrai valor int do UserId para binding SQLite
+            user_id_int = user_id.value if isinstance(user_id, UserId) else user_id
+
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
@@ -232,7 +250,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     WHERE user_id = ? AND status IN ('pending', 'in_progress')
                     ORDER BY created_at DESC
                     LIMIT 1
-                """, (user_id,))
+                """, (user_id_int,))
 
                 row = cursor.fetchone()
 
@@ -379,23 +397,28 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
         attempts = []
 
         for attempt_row in attempt_rows:
+            # cpf_provided_hash está em attempt_row[7] (após migration)
+            # Armazenamos hash para compliance LGPD
+            cpf_hash = attempt_row[7] if len(attempt_row) > 7 else None
+
             attempt = VerificationAttempt(
-                attempted_at=datetime.fromisoformat(attempt_row[2]),  # attempted_at
+                cpf_provided=cpf_hash if cpf_hash else "",  # Hash do CPF (não o CPF limpo)
                 success=bool(attempt_row[3]),  # success
+                failure_reason=attempt_row[5],  # error_message do banco → failure_reason da entity
                 response_data=self._deserialize_data(attempt_row[4]),  # response_data
-                error_message=attempt_row[5],  # error_message
-                duration_ms=attempt_row[6]  # duration_ms
+                duration_ms=attempt_row[6],  # duration_ms
+                attempted_at=datetime.fromisoformat(attempt_row[2])  # attempted_at
             )
             attempts.append(attempt)
 
         # Cria verificação
         verification = CPFVerificationRequest(
             verification_id=VerificationId(row['id']),
-            user_id=row['user_id'],
+            user_id=UserId(row['user_id']),  # INT direto do SQLite
             username=row['username'],
-            cpf_hash=row['cpf_hash'],
-            verification_type=row['verification_type'],
-            max_attempts=row['max_attempts'],
+            user_mention=f"@{row['username']}",  # Reconstruído a partir do username
+            verification_type=VerificationType(row['verification_type']),
+            source_action=None,  # Não persistido no banco
             expires_at=datetime.fromisoformat(row['expires_at'])
         )
 
@@ -412,6 +435,10 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
         if row['metadata']:
             verification._metadata = self._deserialize_data(row['metadata'])
 
+        # Restaura client_data se existir
+        if 'client_data' in row.keys() and row['client_data']:
+            verification._client_data = self._deserialize_data(row['client_data'])
+
         verification._attempts = attempts
 
         return verification
@@ -426,7 +453,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
         import json
         try:
             return json.loads(data_str) if data_str else {}
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to deserialize JSON data: {e}")
             return {}
 
     async def cleanup_old_verifications(self, days_old: int = 30) -> int:

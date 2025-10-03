@@ -14,8 +14,6 @@ from ..commands.cpf_verification_commands import (
     SubmitCPFForVerificationCommand,
     CancelCPFVerificationCommand,
     ProcessExpiredVerificationsCommand,
-    ResolveCPFDuplicateCommand,
-    RemapCPFToNewUserCommand,
     GetVerificationStatsCommand
 )
 from ...domain.entities.cpf_verification import (
@@ -147,16 +145,16 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             CommandResult: Resultado da verificação
         """
         try:
-            # Mantém user_id como int (não converte para UserId para evitar erro de binding SQLite)
-            user_id = command.user_id
+            # Converte user_id para UserId (repository agora aceita)
+            user_id = UserId(command.user_id)
             cpf_masked = f"{command.cpf[:3]}***{command.cpf[-2:]}" if len(command.cpf) >= 5 else "***"
 
-            logger.info(f"[CPF Handler] Iniciando verificação - User: {user_id}, CPF: {cpf_masked}")
+            logger.info(f"[CPF Handler] Iniciando verificação - User: {user_id.value}, CPF: {cpf_masked}")
 
             # Busca verificação pendente
             verification = await self.verification_repository.find_pending_by_user(user_id)
             if not verification:
-                logger.warning(f"[CPF Handler] ❌ Nenhuma verificação pendente para usuário {user_id}")
+                logger.warning(f"[CPF Handler] ❌ Nenhuma verificação pendente para usuário {user_id.value}")
                 return CommandResult.failure(
                     "no_pending_verification",
                     "Não há verificação pendente para este usuário"
@@ -179,9 +177,10 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
 
             # Valida formato do CPF
             logger.info(f"[CPF Handler] Validando formato do CPF {cpf_masked}")
-            cpf_validation = await self.cpf_validation_service.validate_cpf_format(command.cpf)
-            if not cpf_validation.is_valid:
-                logger.warning(f"[CPF Handler] ❌ CPF inválido {cpf_masked}: {cpf_validation.error_message}")
+            from ...domain.services.cpf_validation_service import CPFValidationService
+            is_valid_cpf = CPFValidationService.validate_cpf(command.cpf)
+            if not is_valid_cpf:
+                logger.warning(f"[CPF Handler] ❌ CPF inválido {cpf_masked}: formato inválido")
                 # Adiciona tentativa falhada
                 verification.add_attempt(
                     cpf_provided=command.cpf,
@@ -192,11 +191,11 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
 
                 return CommandResult.failure(
                     "invalid_cpf_format",
-                    cpf_validation.error_message,
+                    "CPF com formato inválido",
                     {"attempts_left": verification.has_attempts_left()}
                 )
 
-            cpf = CPF(cpf_validation.clean_cpf)
+            cpf = CPF.from_raw(command.cpf)
             logger.info(f"[CPF Handler] ✅ CPF válido {cpf_masked}")
 
             # Verifica duplicidade

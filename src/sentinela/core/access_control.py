@@ -46,8 +46,16 @@ class PermissionManager:
         """
         try:
             # 1. Primeiro verifica se é administrador detectado automaticamente
-            from src.sentinela.clients.db_client import is_stored_administrator
-            if is_stored_administrator(user_id):
+            from ..infrastructure.config.dependency_injection import get_container
+            from ..domain.repositories.admin_repository import AdminRepository
+            import asyncio
+
+            container = get_container()
+            admin_repo = container.get(AdminRepository)
+
+            # Verifica no banco de administradores
+            is_admin = asyncio.run(admin_repo.is_administrator(user_id))
+            if is_admin:
                 return AccessLevel.ADMIN
 
             # 2. Fallback para configuração manual (para compatibilidade)
@@ -56,10 +64,13 @@ class PermissionManager:
                 return AccessLevel.ADMIN
 
             # 3. Verificar se é usuário verificado (tem dados no sistema)
-            from src.sentinela.clients.db_client import get_user_data
-            user_data = get_user_data(user_id)
+            from ..domain.repositories.user_repository import UserRepository
+            from ..domain.value_objects.identifiers import UserId
 
-            if user_data and user_data.get('cpf'):
+            user_repo = container.get(UserRepository)
+            user = asyncio.run(user_repo.find_by_telegram_id(user_id))
+
+            if user and user.cpf:
                 return AccessLevel.USER
             else:
                 # Usuário não verificado - apenas acesso básico
@@ -261,8 +272,15 @@ def is_verified_user(user_id: int) -> bool:
         bool: True se está verificado, False caso contrário
     """
     try:
-        from src.sentinela.clients.db_client import get_user_data
-        user_data = get_user_data(user_id)
-        return user_data is not None and user_data.get('cpf') is not None
-    except:
+        from ..infrastructure.config.dependency_injection import get_container
+        from ..domain.repositories.user_repository import UserRepository
+        import asyncio
+
+        container = get_container()
+        user_repo = container.get(UserRepository)
+        user = asyncio.run(user_repo.find_by_telegram_id(user_id))
+
+        return user is not None and user.cpf is not None
+    except Exception as e:
+        logger.warning(f"Error checking CPF verification status: {e}")
         return False
