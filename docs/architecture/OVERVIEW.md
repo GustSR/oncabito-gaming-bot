@@ -291,8 +291,34 @@ use_case = container.get("cpf_use_case")
 - Fácil adicionar novos Use Cases
 - Event Bus permite processamento assíncrono
 
+## 🎯 Decisões Arquiteturais Importantes
+
+### Tickets de Suporte - Single Source of Truth
+- **📋 Fonte Única de Dados:** HubSoft API
+- **❌ Persistência Local:** NÃO utilizada para tickets
+- **✅ Motivo:** Evitar dessincronização e complexidade
+- **📚 Detalhes:** Ver [ADR-001 em ARCHITECTURAL_DECISIONS.md](./ARCHITECTURAL_DECISIONS.md#adr-001-hubsoft-como-single-source-of-truth-para-tickets)
+
+**Implementação:**
+```python
+# ✅ Criar ticket - Apenas no HubSoft
+result = await hubsoft_use_case.sync_ticket_to_hubsoft(...)
+
+# ✅ Consultar tickets - Apenas do HubSoft
+tickets = await hubsoft_use_case.get_user_tickets(user_id)
+```
+
+**Benefícios:**
+- Sem risco de dados dessincronizados
+- Código mais simples e manutenível
+- Dados sempre refletem estado atual do HubSoft
+- Clean Architecture respeitada (presentation não acessa DB)
+
+---
+
 ## Próximos Passos
 
 - [Estrutura do Projeto](./PROJECT_STRUCTURE.md) - Organização de arquivos
+- [Decisões Arquiteturais](./ARCHITECTURAL_DECISIONS.md) - ADRs documentados
 - [Fluxo de Dados](./DATA_FLOW.md) - Exemplos detalhados
 - [Padrões Implementados](./PATTERNS.md) - Design patterns em detalhes

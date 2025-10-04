@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
-from ..base import UseCase
+from .base import UseCase
 from ...domain.repositories.user_repository import UserRepository
 from ...domain.repositories.support_conversation_repository import SupportConversationRepository
 from ...domain.repositories.ticket_repository import TicketRepository

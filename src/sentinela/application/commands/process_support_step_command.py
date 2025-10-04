@@ -5,7 +5,7 @@ Command para processar passo da conversa de suporte.
 from dataclasses import dataclass
 from typing import Optional
 
-from ..base import Command
+from .base import Command
 
 
 @dataclass(frozen=True)

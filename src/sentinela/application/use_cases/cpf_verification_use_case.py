@@ -20,7 +20,9 @@ from ..commands.cpf_verification_commands import (
 from ..command_handlers.cpf_verification_handlers import (
     StartCPFVerificationHandler,
     SubmitCPFForVerificationHandler,
-    CancelCPFVerificationHandler,
+    CancelCPFVerificationHandler
+)
+from ..command_handlers.process_expired_verifications_handler import (
     ProcessExpiredVerificationsHandler
 )
 from ...domain.entities.cpf_verification import VerificationType, VerificationStatus

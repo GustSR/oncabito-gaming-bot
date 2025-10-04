@@ -11,7 +11,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from ...infrastructure.config.container import get_container
+from ...infrastructure.config.dependency_injection import get_container
 from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
 from ...application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
 from ...application.use_cases.admin_operations_use_case import AdminOperationsUseCase
@@ -95,11 +95,48 @@ class TelegramBotHandler:
     async def _ensure_initialized(self) -> None:
         """Garante que o handler está inicializado."""
         if self._container is None:
-            self._container = await get_container()
+            self._container = get_container()
             self._hubsoft_use_case = self._container.get("hubsoft_integration_use_case")
             self._cpf_use_case = self._container.get("cpf_verification_use_case")
             self._admin_use_case = self._container.get("admin_operations_use_case")
             self._welcome_use_case = self._container.get("welcome_management_use_case")
+
+    async def _user_already_interacted(self, user_id: int) -> bool:
+        """
+        Verifica se usuário já teve alguma interação anterior (passou pelo fluxo).
+
+        Verifica se existe QUALQUER registro de verificação (completa, pendente ou expirada).
+        Se existe = usuário já passou pelo fluxo de boas-vindas.
+
+        Args:
+            user_id: ID do usuário do Telegram
+
+        Returns:
+            bool: True se usuário já interagiu antes, False se é primeira vez
+        """
+        try:
+            await self._ensure_initialized()
+
+            cpf_repo = self._container.get("cpf_verification_repository")
+            if not cpf_repo:
+                return False
+
+            # Busca QUALQUER verificação (completa ou não)
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=1)
+
+            # Se tem alguma verificação = já passou pelo fluxo
+            has_interacted = len(verifications) > 0
+
+            if has_interacted:
+                logger.debug(f"Usuário {user_id} já interagiu anteriormente")
+            else:
+                logger.debug(f"Usuário {user_id} é novo (primeira interação)")
+
+            return has_interacted
+
+        except Exception as e:
+            logger.error(f"Erro ao verificar histórico do usuário {user_id}: {e}")
+            return False
 
     async def _check_user_verified(self, user_id: int) -> bool:
         """
@@ -337,14 +374,20 @@ class TelegramBotHandler:
                     return
 
             # VALIDAÇÃO: Verifica se já tem ticket ativo
-            existing_tickets = await self._get_tickets_from_old_table(user.id)
-            active_statuses = ['pending', 'open', 'in_progress']
-            active_tickets = [t for t in existing_tickets if t['status'] in active_statuses]
+            # ADR-001: Busca tickets ativos direto do HubSoft (Single Source of Truth)
+            active_result = await self._hubsoft_use_case.get_user_active_tickets(user.id)
 
-            if active_tickets:
+            if active_result.success and active_result.data.get('has_active'):
                 # Já tem atendimento ativo - não pode abrir outro
-                active_ticket = active_tickets[0]
-                protocol = active_ticket.get('protocol') or f"#{active_ticket['id']:06d}"
+                active_tickets = active_result.data.get('tickets', [])
+                active_ticket = active_tickets[0] if active_tickets else None
+
+                if not active_ticket:
+                    logger.error(f"HubSoft retornou has_active=True mas sem tickets para user {user.id}")
+                    await update.message.reply_text("❌ Erro ao verificar tickets ativos. Tente novamente.")
+                    return
+
+                protocol = active_ticket.get('protocol') or active_ticket.get('hubsoft_protocol') or f"HS-{active_ticket.get('id', 'UNKNOWN')}"
 
                 category_names = {
                     'connectivity': '🌐 Conectividade/Ping',
@@ -465,47 +508,6 @@ class TelegramBotHandler:
                 logger.error(f"Failed to send error message: {e}")
                 pass
 
-    async def _get_tickets_from_old_table(self, user_id: int) -> list:
-        """
-        TEMPORÁRIO: Busca tickets da tabela antiga support_tickets.
-        TODO: Migrar dados para nova tabela e remover este método.
-        """
-        import aiosqlite
-        from ...core.config import DATABASE_FILE
-
-        tickets = []
-        try:
-            async with aiosqlite.connect(DATABASE_FILE) as db:
-                async with db.execute(
-                    """
-                    SELECT id, category, affected_game, problem_started,
-                           description, status, created_at, updated_at,
-                           hubsoft_protocol, urgency_level
-                    FROM support_tickets
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
-                    """,
-                    (user_id,)
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    for row in rows:
-                        tickets.append({
-                            'id': row[0],
-                            'category': row[1],
-                            'affected_game': row[2],
-                            'problem_timing': row[3],
-                            'description': row[4],
-                            'status': row[5],
-                            'created_at': row[6],
-                            'updated_at': row[7],
-                            'protocol': row[8],
-                            'urgency': row[9]
-                        })
-        except Exception as e:
-            logger.error(f"Erro ao buscar tickets da tabela antiga: {e}")
-
-        return tickets
-
     async def handle_status_command(
         self,
         update: Update,
@@ -540,10 +542,10 @@ class TelegramBotHandler:
                     logger.debug(f"Comando /status ignorado - tópico errado (recebido: {message_thread_id}, esperado: {SUPPORT_TOPIC_ID})")
                     return
 
-            # TEMPORÁRIO: Busca da tabela antiga até migração completa
-            tickets = await self._get_tickets_from_old_table(user.id)
+            # ADR-001: Busca tickets direto do HubSoft (Single Source of Truth)
+            tickets_result = await self._hubsoft_use_case.get_user_tickets(user.id)
 
-            if not tickets:
+            if not tickets_result.success or tickets_result.data.get('count', 0) == 0:
                 # Usuário não tem nenhum atendimento
                 message = (
                     "📋 **Seus Atendimentos**\n\n"
@@ -556,10 +558,13 @@ class TelegramBotHandler:
                 logger.info(f"Usuário {user.id} verificou status - sem atendimentos")
                 return
 
+            # Extrai lista de tickets do resultado
+            tickets = tickets_result.data.get('tickets', [])
+
             # Separa tickets ativos e finalizados
             active_statuses = ['pending', 'open', 'in_progress']
-            active_tickets = [t for t in tickets if t['status'] in active_statuses]
-            finished_tickets = [t for t in tickets if t['status'] not in active_statuses]
+            active_tickets = [t for t in tickets if t.get('status') in active_statuses]
+            finished_tickets = [t for t in tickets if t.get('status') not in active_statuses]
 
             # Monta mensagem com lista de atendimentos
             message_parts = ["📋 **Seus Atendimentos**\n"]
@@ -893,24 +898,28 @@ class TelegramBotHandler:
                     logger.info(f"Usuário {user.id} enviou descrição ({len(text)} chars)")
                     return
 
-            # Verifica se é CPF (apenas números) - aceita sem verificação para fluxo de entrada
-            if text and text.isdigit() and len(text) == 11:
+            # Verifica se está aguardando CPF (contexto de verificação ativa)
+            if context.user_data.get('waiting_cpf') and text and text.isdigit() and len(text) == 11:
                 await self._handle_cpf_input(update, context, text)
                 return
 
-            # VALIDAÇÃO: Verifica se usuário está verificado antes de processar outras mensagens
+            # PRIMEIRA INTERAÇÃO? → Inicia fluxo automático
+            already_interacted = await self._user_already_interacted(user.id)
+            if not already_interacted:
+                logger.info(f"Primeira interação do usuário {user.id} - iniciando fluxo de verificação")
+                await self._start_welcome_flow(update, context)
+                return
+
+            # Usuário já interagiu - Verifica se está verificado
             is_verified = await self._check_user_verified(user.id)
             if not is_verified:
-                # Se ainda não enviou boas-vindas, envia agora
-                if not context.user_data.get('waiting_cpf'):
-                    await self._start_welcome_flow(update, context)
-                else:
-                    # Já enviou boas-vindas, mas usuário enviou mensagem que não é CPF
-                    await update.message.reply_text(
-                        "Por favor, me envie seu CPF (apenas os 11 números) para continuar.\n\n"
-                        "Exemplo: 12345678900",
-                        parse_mode='HTML'
-                    )
+                # Já interagiu mas não completou verificação
+                await update.message.reply_text(
+                    "⚠️ Seu cadastro ainda está em análise.\n\n"
+                    "Aguarde a verificação ser concluída para usar os comandos.\n\n"
+                    "Digite /ajuda se precisar de mais informações.",
+                    parse_mode='HTML'
+                )
                 return
 
             # Usuário verificado - outras mensagens de texto
@@ -1664,11 +1673,12 @@ class TelegramBotHandler:
                 logger.error(f"HubSoft retornou sucesso mas sem protocolo para usuário {user.id}")
                 return
 
-            # ===== ETAPA 4: SALVAR NO BANCO LOCAL (COM PROTOCOLO DO HUBSOFT) =====
+            # ===== ETAPA 4: TICKET CRIADO COM SUCESSO NO HUBSOFT =====
             now = datetime.now()
 
-            # TODO: Quando migrar para nova arquitetura, salvar no ticket_repository
-            # Por enquanto, registra nos logs
+            # ADR-001: DECISÃO ARQUITETURAL - Tickets NÃO são salvos localmente
+            # HubSoft é a única fonte da verdade (Single Source of Truth)
+            # Benefícios: Sem dessincronização, dados sempre atualizados, menos complexidade
             logger.info(f"Ticket criado com sucesso - Protocolo HubSoft: {hubsoft_protocol}, Usuário: {user.id}")
 
             # ===== ETAPA 5: MENSAGEM DE SUCESSO =====

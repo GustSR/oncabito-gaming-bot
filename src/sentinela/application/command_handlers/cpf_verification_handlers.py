@@ -395,78 +395,9 @@ class CancelCPFVerificationHandler(CommandHandler[CancelCPFVerificationCommand])
             )
 
 
-class ProcessExpiredVerificationsHandler(CommandHandler[ProcessExpiredVerificationsCommand]):
-    """Handler para processar verificações expiradas."""
-
-    def __init__(
-        self,
-        verification_repository: CPFVerificationRepository,
-        event_bus: EventBus
-    ):
-        self.verification_repository = verification_repository
-        self.event_bus = event_bus
-
-    async def handle(self, command: ProcessExpiredVerificationsCommand) -> CommandResult:
-        """
-        Processa verificações expiradas.
-
-        Args:
-            command: Comando de processamento
-
-        Returns:
-            CommandResult: Resultado da operação
-        """
-        try:
-            # Busca verificações expiradas
-            expired_verifications = await self.verification_repository.find_expired_verifications()
-
-            if not expired_verifications:
-                return CommandResult.success({
-                    "processed": 0,
-                    "message": "Nenhuma verificação expirada encontrada"
-                })
-
-            processed_count = 0
-            errors = []
-
-            for verification in expired_verifications:
-                try:
-                    # Expira verificação
-                    verification.expire_verification()
-
-                    # Salva alterações
-                    await self.verification_repository.save(verification)
-
-                    # Publica eventos
-                    for event in verification.get_domain_events():
-                        await self.event_bus.publish(event)
-
-                    processed_count += 1
-
-                except Exception as e:
-                    logger.error(f"Erro ao processar verificação expirada {verification.id}: {e}")
-                    errors.append({
-                        "verification_id": str(verification.id),
-                        "user_id": verification.user_id.value,
-                        "error": str(e)
-                    })
-
-            logger.info(f"Processadas {processed_count} verificações expiradas")
-
-            return CommandResult.success({
-                "processed": processed_count,
-                "total_found": len(expired_verifications),
-                "errors": errors,
-                "message": f"Processadas {processed_count} verificações expiradas"
-            })
-
-        except Exception as e:
-            logger.error(f"Erro ao processar verificações expiradas: {e}")
-            return CommandResult.failure(
-                "system_error",
-                "Erro interno do sistema",
-                {"error": str(e)}
-            )
+# NOTE: ProcessExpiredVerificationsHandler foi movido para arquivo standalone
+# Ver: application/command_handlers/process_expired_verifications_handler.py
+# Esta classe estava duplicada aqui e foi removida para evitar confusão.
 
 
 class GetVerificationStatsHandler(CommandHandler[GetVerificationStatsCommand]):

@@ -5,7 +5,7 @@ Command para criar ticket de suporte.
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ..base import Command
+from .base import Command
 
 
 @dataclass(frozen=True)

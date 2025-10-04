@@ -658,3 +658,118 @@ class HubSoftIntegrationUseCase:
 
         # Validação simplificada - em produção usaria algoritmo completo
         return True
+
+    # Operações de Consulta de Tickets
+
+    async def get_user_tickets(
+        self,
+        user_id: int,
+        include_closed: bool = True,
+        limit: Optional[int] = None
+    ) -> HubSoftOperationResult:
+        """
+        Busca todos os tickets de um usuário no HubSoft.
+
+        Args:
+            user_id: ID do usuário Telegram
+            include_closed: Incluir tickets fechados/resolvidos
+            limit: Limite de resultados (None = todos)
+
+        Returns:
+            HubSoftOperationResult com lista de tickets em data
+        """
+        try:
+            start_time = datetime.now()
+
+            # Busca tickets diretamente via API Repository
+            tickets_data = await self.api_repository.get_user_tickets(
+                user_id=user_id,
+                include_closed=include_closed,
+                limit=limit
+            )
+
+            duration = (datetime.now() - start_time).total_seconds()
+
+            if not tickets_data:
+                return HubSoftOperationResult(
+                    success=True,
+                    message="Nenhum ticket encontrado para este usuário",
+                    data={"tickets": [], "count": 0},
+                    duration_seconds=duration
+                )
+
+            return HubSoftOperationResult(
+                success=True,
+                message=f"{len(tickets_data)} ticket(s) encontrado(s)",
+                data={
+                    "tickets": tickets_data,
+                    "count": len(tickets_data)
+                },
+                duration_seconds=duration
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar tickets do usuário {user_id}: {e}")
+            return HubSoftOperationResult(
+                success=False,
+                message=f"Erro ao buscar tickets: {str(e)}",
+                error_code="GET_TICKETS_ERROR",
+                data={"tickets": [], "count": 0}
+            )
+
+    async def get_user_active_tickets(
+        self,
+        user_id: int
+    ) -> HubSoftOperationResult:
+        """
+        Busca apenas tickets ativos de um usuário no HubSoft.
+
+        Tickets ativos = status: pending, open, in_progress
+
+        Args:
+            user_id: ID do usuário Telegram
+
+        Returns:
+            HubSoftOperationResult com lista de tickets ativos em data
+        """
+        try:
+            start_time = datetime.now()
+
+            # Busca apenas tickets ativos
+            active_statuses = ['pending', 'open', 'in_progress']
+
+            tickets_data = await self.api_repository.get_user_tickets(
+                user_id=user_id,
+                include_closed=False,
+                status_filter=active_statuses
+            )
+
+            duration = (datetime.now() - start_time).total_seconds()
+
+            if not tickets_data:
+                return HubSoftOperationResult(
+                    success=True,
+                    message="Nenhum ticket ativo",
+                    data={"tickets": [], "count": 0, "has_active": False},
+                    duration_seconds=duration
+                )
+
+            return HubSoftOperationResult(
+                success=True,
+                message=f"{len(tickets_data)} ticket(s) ativo(s)",
+                data={
+                    "tickets": tickets_data,
+                    "count": len(tickets_data),
+                    "has_active": True
+                },
+                duration_seconds=duration
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar tickets ativos do usuário {user_id}: {e}")
+            return HubSoftOperationResult(
+                success=False,
+                message=f"Erro ao buscar tickets ativos: {str(e)}",
+                error_code="GET_ACTIVE_TICKETS_ERROR",
+                data={"tickets": [], "count": 0, "has_active": False}
+            )
