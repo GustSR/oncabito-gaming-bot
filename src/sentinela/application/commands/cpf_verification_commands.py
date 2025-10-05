@@ -6,7 +6,7 @@ no contexto de verificação de CPF.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 from .base import Command
 
