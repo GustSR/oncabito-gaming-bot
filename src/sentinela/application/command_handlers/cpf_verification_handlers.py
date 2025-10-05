@@ -14,7 +14,8 @@ from ..commands.cpf_verification_commands import (
     SubmitCPFForVerificationCommand,
     CancelCPFVerificationCommand,
     ProcessExpiredVerificationsCommand,
-    GetVerificationStatsCommand
+    GetVerificationStatsCommand,
+    ResolveCPFDuplicateCommand
 )
 from ...domain.entities.cpf_verification import (
     CPFVerificationRequest,
