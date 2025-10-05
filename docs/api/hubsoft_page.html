@@ -1,0 +1,99 @@
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="FFFFFF" name="top-bar"/>
+  <meta content="077ae8" name="highlight"/>
+  <meta content="303030" name="right-sidebar"/>
+  <meta content="light" name="documentationTheme"/>
+  <meta content="212121" name="top-bar-dark"/>
+  <meta content="077ae8" name="highlight-dark"/>
+  <meta content="303030" name="right-sidebar-dark"/>
+  <meta content="https://res.cloudinary.com/postman/image/upload/t_team_logo_pubdoc/v1/team/1154978609dd07942cdb643ae7c7323e4e9dcf355cab3227dc0b9e431fb71a68" name="logo"/>
+  <meta content="https://res.cloudinary.com/postman/image/upload/t_team_logo_pubdoc/v1/team/1154978609dd07942cdb643ae7c7323e4e9dcf355cab3227dc0b9e431fb71a68" name="logo-dark"/>
+  <meta content="https://run.pstmn.io/button.js" name="run-js"/>
+  <meta content="-" name="environmentUID"/>
+  <meta content="false" name="isEnvFetchError"/>
+  <meta content="true" name="collection-info-public"/>
+  <meta content="true" name="collection-isPublicCollection"/>
+  <meta content="23327122" name="ownerId"/>
+  <meta content="2sA35LUysW" name="publishedId"/>
+  <meta content="23327122-12bffec9-ac65-4ae0-8224-114eae328c75" name="collectionId"/>
+  <meta content="latest" name="versionTagId"/>
+  <link href="https://docs.hubsoft.com.br/" rel="preconnect"/>
+  <link href="https://documenter-assets.pstmn.io" rel="preconnect"/>
+  <link crossorigin="anonymous" href="https://docs.hubsoft.com.br/view/metadata/2sA35LUysW" rel="prefetch"/>
+  <link crossorigin="anonymous" href="https://docs.hubsoft.com.br/api/collections/23327122/2sA35LUysW?segregateAuth=true&amp;versionTag=latest" rel="prefetch"/>
+  <link href="https://docs.hubsoft.com.br/" rel="canonical"/>
+  <meta content='Documentação oficial da **API do HubSoft**
+
+O **HubSoft é um software ERP** com foco em provedores de internet / empresas de telecomunicações. Desde seu conceito inicial, o software foi construído e preparado voltado para integrações, de forma que qualquer software possa consumir dados do sistema.
+
+## Dados Necessários:
+
+Para utilizar as APIs do HubSoft é importante que você já possua os seguintes dados em posse:
+
+| **Campo** | **Exemplo** | **Observação** |
+| --- | --- | --- |
+| url | [https://api.endereco.com.br](https://api.endereco.com.br) | URL da API |
+| client_id | 89 | Criado pelo usuário administrador do provedor |
+| client_secret | ONe7Ns48Y30tB | Criado pelo usuário administrador do provedor |
+| username | [api@solucao.com](https://mailto:api@solucao.com) | Criado pelo usuário administrador do provedor |
+| password | !@$fas4jFADSF81731 | Criado pelo usuário administrador do provedor |
+
+Com intuito de sempre inovar, a API do HubSoft foi construída em cima das tecnologias mais recentes do mercado. A troca de mensagens com a API é feita através do `HTTP` (Hypertext Transfer Protocol) utilizando o estilo arquitetural **REST** (Representation State Transfer).
+
+## **Exemplo de Endpoint:**
+
+`https://example.com/produto/1234`
+
+Ao fazer uma chamada na rota acima utilizando o método `GET`, estaremos fazendo a consulta do produto de código 1234. Porém ao fazer a chamada na mesma rota, utilizando o método `DELETE`, estaremos enviando a instrução para que a API faça a remoção do produto 1234.
+
+Dessa forma, todas as funções do CRUD estarão disponíveis pela API, através dos métodos:
+
+\* **GET** (Consultar)  
+\* **POST** (Adicionar)  
+\* **PUT** (Editar)  
+\* **DELETE** (Apagar)
+
+**Importante:** Nem todos os endpoints são liberados o CRUD completo. Existem endpoints que na versão atual da API estão disponíveis apenas o método GET.
+
+## **Paginação de Resultados**:
+
+Alguns endpoints que realizam consultas em grandes volumes de dados podem conter estruturas de paginação com o objetivo de melhorar a performance. **A primeira página sempre será 0** e a última página pode ser observada a partir do retorno da consulta. Veja um exemplo de retorno da API abaixo:
+
+``` json
+{
+  "status": "success",
+  "msg": "Dados consultados com sucesso",
+  "paginacao": {
+    "primeira_pagina": 0,
+    "ultima_pagina": 9,
+    "pagina_atual": 0,
+    "total_registros": 50
+  },
+  "dados":[
+     {"id":1},
+     {"id":2}
+     {"id":3}
+     {"id":4}
+     {"id":5}
+  ]
+}
+
+ ```
+
+No exemplo acima, a primeira página é a 0 (zero) e a última página é a 9 (nove), ou seja, um total de 10 páginas. Cada página nesse exemplo acima, está retornando 5 registros, totalizando assim um total de 50 registros distribuídos em 10 páginas. Para percorrer todos os registros, será necessário fazer uma requisição na API para cada página.' name="description"/>
+  <meta content="classic-double-column" name="documentationLayout"/>
+  <meta content="Postman Documenter" name="generator"/>
+  <title>
+   Hubsoft API
+  </title>
+  <meta content='[{"key":"csharp","label":"C#","variant":"HttpClient"},{"key":"csharp","label":"C#","variant":"RestSharp"},{"key":"curl","label":"cURL","variant":"cURL"},{"key":"dart","label":"Dart","variant":"http"},{"key":"go","label":"Go","variant":"Native"},{"key":"http","label":"HTTP","variant":"HTTP"},{"key":"java","label":"Java","variant":"OkHttp"},{"key":"java","label":"Java","variant":"Unirest"},{"key":"javascript","label":"JavaScript","variant":"Fetch"},{"key":"javascript","label":"JavaScript","variant":"jQuery"},{"key":"javascript","label":"JavaScript","variant":"XHR"},{"key":"c","label":"C","variant":"libcurl"},{"key":"nodejs","label":"NodeJs","variant":"Axios"},{"key":"nodejs","label":"NodeJs","variant":"Native"},{"key":"nodejs","label":"NodeJs","variant":"Request"},{"key":"nodejs","label":"NodeJs","variant":"Unirest"},{"key":"objective-c","label":"Objective-C","variant":"NSURLSession"},{"key":"ocaml","label":"OCaml","variant":"Cohttp"},{"key":"php","label":"PHP","variant":"cURL"},{"key":"php","label":"PHP","variant":"Guzzle"},{"key":"php","label":"PHP","variant":"HTTP_Request2"},{"key":"php","label":"PHP","variant":"pecl_http"},{"key":"powershell","label":"PowerShell","variant":"RestMethod"},{"key":"python","label":"Python","variant":"http.client"},{"key":"python","label":"Python","variant":"Requests"},{"key":"r","label":"R","variant":"httr"},{"key":"r","label":"R","variant":"RCurl"},{"key":"ruby","label":"Ruby","variant":"Net::HTTP"},{"key":"shell","label":"Shell","variant":"Httpie"},{"key":"shell","label":"Shell","variant":"wget"},{"key":"swift","label":"Swift","variant":"URLSession"}]' name="languages"/>
+  <link href="https://documenter-assets.pstmn.io/styles/importer.0b9c256e370f9b1206e0.css" rel="stylesheet"/>
+  <link href="https://documenter-assets.pstmn.io/favicon.ico" rel="shortcut icon">
+   <link href="https://res.cloudinary.com/postman/image/upload/v1691755093/team/sqgl2halordivowoie0f.ico" rel="shortcut icon">
+    <meta content="Hubsoft API" property="og:title">
+     <meta content="Documentação oficial da **API do HubSoft**
+

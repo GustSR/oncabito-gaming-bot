@@ -87,3 +87,19 @@ class ProcessExpiredVerificationsCommand(Command):
         cleanup_days_old: Dias para considerar verificações muito antigas para limpeza
     """
     cleanup_days_old: int = 30
+
+
+@dataclass(frozen=True)
+class ResolveCPFDuplicateCommand(Command):
+    """
+    Comando para resolver um conflito de CPF duplicado, 
+    geralmente iniciado por uma ação do usuário.
+
+    Attributes:
+        verification_id: O ID da verificação que gerou o conflito.
+        primary_user_id: O ID do usuário que deve manter o CPF.
+        duplicate_user_ids: Uma lista de IDs de usuários que perderão o CPF.
+    """
+    verification_id: str
+    primary_user_id: int
+    duplicate_user_ids: List[int]

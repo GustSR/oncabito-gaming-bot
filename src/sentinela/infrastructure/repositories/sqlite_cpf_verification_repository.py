@@ -34,6 +34,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
                     username TEXT NOT NULL,
+                    user_mention TEXT,
                     cpf_hash TEXT NOT NULL,
                     verification_type TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -46,6 +47,15 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     client_data TEXT
                 )
             """)
+
+            # Migração: adiciona coluna user_mention se não existir
+            try:
+                conn.execute("ALTER TABLE cpf_verifications ADD COLUMN user_mention TEXT")
+                conn.commit()
+                logger.info("Coluna user_mention adicionada à tabela cpf_verifications")
+            except sqlite3.OperationalError:
+                # Coluna já existe, ignora
+                pass
 
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS cpf_verification_attempts (
@@ -98,6 +108,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         UPDATE cpf_verifications SET
                             user_id = ?,
                             username = ?,
+                            user_mention = ?,
                             cpf_hash = ?,
                             verification_type = ?,
                             status = ?,
@@ -109,10 +120,11 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                             client_data = ?
                         WHERE id = ?
                     """, (
-                        verification.user_id.value,  # Extrai valor do UserId
+                        verification.user_id.value,
                         verification.username,
+                        verification.user_mention,
                         verification.cpf_hash,
-                        verification.verification_type.value,  # Extrai valor do Enum
+                        verification.verification_type.value,
                         verification.status.value,
                         verification.max_attempts,
                         verification.expires_at.isoformat(),
@@ -126,16 +138,17 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                     # Insert
                     cursor.execute("""
                         INSERT INTO cpf_verifications (
-                            id, user_id, username, cpf_hash, verification_type,
+                            id, user_id, username, user_mention, cpf_hash, verification_type,
                             status, max_attempts, created_at, expires_at,
                             completed_at, verification_data, metadata, client_data
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         verification.id.value,
-                        verification.user_id.value,  # Extrai valor do UserId
+                        verification.user_id.value,
                         verification.username,
+                        verification.user_mention,
                         verification.cpf_hash,
-                        verification.verification_type.value,  # Extrai valor do Enum
+                        verification.verification_type.value,
                         verification.status.value,
                         verification.max_attempts,
                         verification.created_at.isoformat(),

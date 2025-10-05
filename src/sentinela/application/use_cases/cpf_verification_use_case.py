@@ -25,6 +25,7 @@ from ..command_handlers.cpf_verification_handlers import (
 from ..command_handlers.process_expired_verifications_handler import (
     ProcessExpiredVerificationsHandler
 )
+from ..command_handlers.resolve_cpf_duplicate_handler import ResolveCPFDuplicateHandler
 from ...domain.entities.cpf_verification import VerificationType, VerificationStatus
 from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
 from ...domain.value_objects.identifiers import UserId
@@ -69,12 +70,14 @@ class CPFVerificationUseCase(UseCase):
         submit_handler: SubmitCPFForVerificationHandler,
         cancel_handler: CancelCPFVerificationHandler,
         expire_handler: ProcessExpiredVerificationsHandler,
+        resolve_duplicate_handler: ResolveCPFDuplicateHandler,
         verification_repository: CPFVerificationRepository
     ):
         self.start_handler = start_handler
         self.submit_handler = submit_handler
         self.cancel_handler = cancel_handler
         self.expire_handler = expire_handler
+        self.resolve_duplicate_handler = resolve_duplicate_handler
         self.verification_repository = verification_repository
 
     async def start_verification(
@@ -301,6 +304,39 @@ class CPFVerificationUseCase(UseCase):
                 message="Erro interno do sistema",
                 error_code="system_error",
                 next_action="contact_support"
+            )
+
+    async def resolve_duplicate_conflict(
+        self,
+        verification_id: str,
+        primary_user_id: int,
+        duplicate_user_ids: list[int]
+    ) -> CPFVerificationResult:
+        """
+        Resolve um conflito de CPF duplicado.
+        """
+        try:
+            from ..commands.cpf_verification_commands import ResolveCPFDuplicateCommand
+
+            command = ResolveCPFDuplicateCommand(
+                verification_id=verification_id,
+                primary_user_id=primary_user_id,
+                duplicate_user_ids=duplicate_user_ids
+            )
+            result = await self.resolve_duplicate_handler.handle(command)
+
+            return CPFVerificationResult(
+                success=result.success,
+                message=result.message,
+                data=result.data,
+                error_code=result.error_code
+            )
+        except Exception as e:
+            logger.error(f"Erro ao resolver conflito de duplicata para verificação {verification_id}: {e}")
+            return CPFVerificationResult(
+                success=False,
+                message="Erro interno ao resolver conflito.",
+                error_code="system_error"
             )
 
     async def get_verification_status(self, user_id: int) -> CPFVerificationResult:

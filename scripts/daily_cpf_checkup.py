@@ -53,9 +53,10 @@ class DailyCPFCheckup:
         self.user_repo = None
         self.cpf_verification_repo = None
         self.cpf_use_case = None
+        self.hubsoft_use_case = None
+        self.admin_repo = None
         self.bot = None
         self.group_id = None
-        self.admin_ids = []
 
     async def initialize(self):
         """Inicializa dependências."""
@@ -79,22 +80,10 @@ class DailyCPFCheckup:
         self.user_repo = self.container.get("user_repository")
         self.cpf_verification_repo = self.container.get("cpf_verification_repository")
         self.cpf_use_case = self.container.get("cpf_verification_use_case")
-
-        # Busca administradores do grupo
-        self.admin_ids = await self._get_admin_ids()
+        self.hubsoft_use_case = self.container.get("hubsoft_integration_use_case")
+        self.admin_repo = self.container.get("admin_repository")
 
         logger.info("✅ Checkup inicializado com sucesso!")
-
-    async def _get_admin_ids(self) -> list:
-        """Busca IDs dos administradores do grupo."""
-        try:
-            admins = await self.bot.get_chat_administrators(self.group_id)
-            admin_ids = [admin.user.id for admin in admins if not admin.user.is_bot]
-            logger.info(f"📋 Encontrados {len(admin_ids)} administradores")
-            return admin_ids
-        except Exception as e:
-            logger.error(f"Erro ao buscar administradores: {e}")
-            return []
 
     async def run_checkup(self):
         """Executa verificação diária completa."""
@@ -104,16 +93,22 @@ class DailyCPFCheckup:
         logger.info("=" * 60)
 
         try:
-            # Fase 1: Processar verificações expiradas
+            # Fase 1: Sincronizar lista de administradores
+            await self._phase_sync_admins()
+
+            # Fase 2: Processar verificações expiradas
             await self._phase1_process_expired_verifications()
 
-            # Fase 2: Verificar membros do grupo sem CPF
+            # Fase 3: Verificar contratos ativos de membros existentes
+            await self._phase_check_active_contracts()
+
+            # Fase 4: Verificar membros do grupo sem CPF
             await self._phase2_check_members_without_cpf()
 
-            # Fase 3: Detectar e resolver duplicatas
+            # Fase 5: Detectar e resolver duplicatas
             await self._phase3_handle_duplicates()
 
-            # Fase 4: Estatísticas finais
+            # Fase 6: Estatísticas finais
             await self._phase4_final_stats()
 
             logger.info("=" * 60)
@@ -122,6 +117,36 @@ class DailyCPFCheckup:
 
         except Exception as e:
             logger.error(f"❌ ERRO CRÍTICO durante checkup: {e}", exc_info=True)
+
+    async def _phase_sync_admins(self):
+        """Busca os admins atuais do grupo no Telegram e sincroniza com o banco de dados."""
+        logger.info("\n" + "=" * 60)
+        logger.info("👤 FASE 1: Sincronizando Administradores")
+        logger.info("=" * 60)
+        
+        try:
+            logger.info("Buscando administradores do grupo no Telegram...")
+            tg_admins = await self.bot.get_chat_administrators(self.group_id)
+            
+            formatted_admins = []
+            for admin in tg_admins:
+                if not admin.user.is_bot:
+                    formatted_admins.append({
+                        "user_id": admin.user.id,
+                        "username": admin.user.username,
+                        "first_name": admin.user.first_name,
+                        "last_name": admin.user.last_name,
+                        "status": admin.status,
+                    })
+            
+            logger.info(f"Encontrados {len(formatted_admins)} administradores. Sincronizando com o banco de dados...")
+            
+            synced_count = await self.admin_repo.sync_from_telegram(formatted_admins)
+            
+            logger.info(f"✅ Sincronização concluída. {synced_count} administradores ativos no banco.")
+
+        except Exception as e:
+            logger.error(f"Erro na fase de sincronização de administradores: {e}", exc_info=True)
 
     async def _phase1_process_expired_verifications(self):
         """Fase 1: Processa verificações expiradas e remove usuários."""
@@ -153,7 +178,7 @@ class DailyCPFCheckup:
                 user_id = verification.user_id.value
 
                 # Não remove administradores
-                if user_id in self.admin_ids:
+                if await self.admin_repo.is_administrator(user_id):
                     logger.info(f"⏭️ Pulando administrador: {user_id}")
                     continue
 
@@ -331,6 +356,66 @@ class DailyCPFCheckup:
 
         except Exception as e:
             logger.error(f"Erro ao obter estatísticas: {e}")
+
+    async def _phase_check_active_contracts(self):
+        """Verifica contratos ativos de usuários com CPF e remove os inativos."""
+        logger.info("\n" + "=" * 60)
+        logger.info("💼 FASE NOVA: Verificando Contratos Ativos de Membros")
+        logger.info("=" * 60)
+
+        try:
+            active_users = await self.user_repo.find_active_users()
+            users_with_cpf = [u for u in active_users if u.cpf]
+            
+            logger.info(f"Encontrados {len(users_with_cpf)} usuários com CPF para verificar.")
+            
+            removed_count = 0
+            for user in users_with_cpf:
+                user_id = user.id.value
+                
+                if await self.admin_repo.is_administrator(user_id):
+                    logger.info(f"⏭️  Pulando verificação de contrato para o administrador {user.username} (ID: {user_id})")
+                    continue
+
+                logger.info(f"📋 Verificando contrato para {user.username} (ID: {user_id})...")
+                
+                result = await self.hubsoft_use_case.verify_user_in_hubsoft(
+                    user_id=user_id,
+                    cpf=user.cpf.value,
+                    force_refresh=True
+                )
+
+                if not result.success or not result.data:
+                    logger.warning(f"Contrato inativo ou não encontrado para {user.username} (ID: {user_id}). Removendo do grupo.")
+                    
+                    try:
+                        await self.bot.ban_chat_member(chat_id=self.group_id, user_id=user_id)
+                        await self.bot.unban_chat_member(chat_id=self.group_id, user_id=user_id, only_if_banned=True)
+                        
+                        await self.user_repo.ban_user(user_id=user.id, reason="Contrato inativo ou cancelado (checkup diário)")
+                        removed_count += 1
+                        
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=(
+                                "🚫 Acesso ao grupo OnCabo Gaming removido 🚫\n\n"
+                                "Olá! Em nossa verificação diária, identificamos que seu plano OnCabo Gaming não se encontra mais ativo.\n\n"
+                                "Por esse motivo, seu acesso ao grupo exclusivo foi revogado para manter a comunidade apenas para membros ativos.\n\n"
+                                "Se você acredita que isso é um erro ou gostaria de reativar seu plano para voltar a participar, "
+                                "por favor, entre em contato com nosso suporte comercial."
+                            )
+                        )
+                        logger.info(f"Usuário {user_id} removido do grupo e notificado por DM.")
+
+                    except Exception as e:
+                        logger.error(f"Falha ao remover/notificar usuário {user_id}: {e}")
+                else:
+                    logger.info(f"✅ Contrato ativo para {user.username} (ID: {user_id}). Acesso mantido.")
+
+            logger.info(f"✅ Verificação de contratos concluída. Total de usuários removidos: {removed_count}")
+
+        except Exception as e:
+            logger.error(f"Erro na fase de verificação de contratos: {e}", exc_info=True)
 
     async def cleanup(self):
         """Limpeza de recursos."""

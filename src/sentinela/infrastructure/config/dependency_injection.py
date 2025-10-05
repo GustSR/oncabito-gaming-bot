@@ -26,6 +26,7 @@ class DIContainer:
         self._services: Dict[Type, Any] = {}
         self._factories: Dict[Type, Callable[[], Any]] = {}
         self._singletons: Dict[Type, Any] = {}
+        self._aliases: Dict[str, Type] = {}  # Mapeamento nome→tipo para compatibilidade
 
     def register_singleton(self, interface: Type[T], implementation: Type[T]) -> None:
         """
@@ -69,12 +70,29 @@ class DIContainer:
         self._singletons[interface] = instance
         logger.debug(f"Registered instance: {interface.__name__}")
 
-    def get(self, interface: Type[T]) -> T:
+    def register_alias(self, name: str, interface: Type[T]) -> None:
+        """
+        Registra um alias (nome string) para um tipo.
+
+        Permite compatibilidade com código que usa strings para buscar dependências.
+
+        Args:
+            name: Nome do alias (string)
+            interface: Tipo/Interface correspondente
+
+        Exemplo:
+            container.register_alias("user_repository", UserRepository)
+            container.get("user_repository")  # Retorna instância de UserRepository
+        """
+        self._aliases[name] = interface
+        logger.debug(f"Registered alias: '{name}' -> {interface.__name__}")
+
+    def get(self, interface_or_name):
         """
         Resolve uma dependência.
 
         Args:
-            interface: Interface ou classe a resolver
+            interface_or_name: Interface/classe a resolver OU nome string (alias)
 
         Returns:
             T: Instância da dependência
@@ -83,10 +101,22 @@ class DIContainer:
             DependencyNotFoundError: Se dependência não registrada
             DependencyResolutionError: Se erro na criação
 
-        Exemplo:
-            user_repo = container.get(UserRepository)
+        Exemplos:
+            user_repo = container.get(UserRepository)  # Por tipo
+            user_repo = container.get("user_repository")  # Por alias
         """
         try:
+            # Se for string, resolve via alias
+            if isinstance(interface_or_name, str):
+                if interface_or_name not in self._aliases:
+                    raise DependencyNotFoundError(
+                        f"Alias '{interface_or_name}' não registrado. "
+                        f"Aliases disponíveis: {list(self._aliases.keys())}"
+                    )
+                interface = self._aliases[interface_or_name]
+            else:
+                interface = interface_or_name
+
             # Verifica se já tem instância singleton
             if interface in self._singletons:
                 return self._singletons[interface]
@@ -133,12 +163,33 @@ class DIContainer:
 
         # Resolve parâmetros (exceto 'self')
         args = {}
+
+        # Tipos primitivos que não devem ser resolvidos como dependências
+        primitive_types = (str, int, float, bool, bytes, type(None))
+
         for param_name, param in sig.parameters.items():
             if param_name == 'self':
                 continue
 
             if param.annotation != inspect.Parameter.empty:
-                # Tenta resolver o tipo
+                # Ignora tipos primitivos
+                if param.annotation in primitive_types:
+                    if param.default != inspect.Parameter.empty:
+                        continue  # Usa valor padrão
+                    else:
+                        # Primitivo sem default - erro de configuração
+                        raise DependencyResolutionError(
+                            f"Parameter '{param_name}' of type '{param.annotation.__name__}' "
+                            f"in {implementation.__name__} requires a default value"
+                        )
+
+                # Ignora Optional[tipos_primitivos]
+                origin = getattr(param.annotation, '__origin__', None)
+                if origin is type(None) or str(param.annotation).startswith('typing.Optional'):
+                    if param.default != inspect.Parameter.empty:
+                        continue
+
+                # Tenta resolver o tipo como dependência
                 try:
                     args[param_name] = self.get(param.annotation)
                 except DependencyNotFoundError:
@@ -163,6 +214,7 @@ class DIContainer:
         self._services.clear()
         self._factories.clear()
         self._singletons.clear()
+        self._aliases.clear()
         logger.debug("DI Container cleared")
 
 
@@ -293,6 +345,188 @@ def configure_dependencies() -> None:
     from ...application.queries.get_user_handler import GetUserHandler
 
     container.register_singleton(GetUserHandler, GetUserHandler)
+
+    # === Repositories (Additional) ===
+
+    # CPF Verification Repository
+    from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
+    from ..repositories.sqlite_cpf_verification_repository import SQLiteCPFVerificationRepository
+
+    def create_cpf_verification_repository() -> SQLiteCPFVerificationRepository:
+        return SQLiteCPFVerificationRepository(DATABASE_FILE)
+
+    container.register_factory(CPFVerificationRepository, create_cpf_verification_repository)
+
+    # Ticket Repository
+    from ...domain.repositories.ticket_repository import TicketRepository
+    from ..repositories.sqlite_ticket_repository import SQLiteTicketRepository
+
+    def create_ticket_repository() -> SQLiteTicketRepository:
+        return SQLiteTicketRepository(DATABASE_FILE)
+
+    container.register_factory(TicketRepository, create_ticket_repository)
+
+    # HubSoft Integration Repository
+    from ...domain.repositories.hubsoft_repository import HubSoftIntegrationRepository
+    from ..repositories.sqlite_hubsoft_integration_repository import SQLiteHubSoftIntegrationRepository
+
+    def create_hubsoft_integration_repository() -> SQLiteHubSoftIntegrationRepository:
+        return SQLiteHubSoftIntegrationRepository(DATABASE_FILE)
+
+    container.register_factory(HubSoftIntegrationRepository, create_hubsoft_integration_repository)
+
+    # Group Member Repository
+    from ...domain.repositories.group_member_repository import GroupMemberRepository
+    from ..repositories.sqlite_group_member_repository import SQLiteGroupMemberRepository
+
+    def create_group_member_repository() -> SQLiteGroupMemberRepository:
+        return SQLiteGroupMemberRepository(DATABASE_FILE)
+
+    container.register_factory(GroupMemberRepository, create_group_member_repository)
+
+    # === Command Handlers ===
+
+    # HubSoft Handlers
+    from ...application.command_handlers.hubsoft_command_handlers import (
+        ScheduleHubSoftIntegrationHandler,
+        SyncTicketToHubSoftHandler,
+        VerifyUserInHubSoftHandler,
+        BulkSyncTicketsToHubSoftHandler,
+        RetryFailedIntegrationsHandler,
+        CancelHubSoftIntegrationHandler,
+        UpdateIntegrationPriorityHandler,
+        GetHubSoftIntegrationStatusHandler
+    )
+
+    container.register_singleton(ScheduleHubSoftIntegrationHandler, ScheduleHubSoftIntegrationHandler)
+    container.register_singleton(SyncTicketToHubSoftHandler, SyncTicketToHubSoftHandler)
+    container.register_singleton(VerifyUserInHubSoftHandler, VerifyUserInHubSoftHandler)
+    container.register_singleton(BulkSyncTicketsToHubSoftHandler, BulkSyncTicketsToHubSoftHandler)
+    container.register_singleton(RetryFailedIntegrationsHandler, RetryFailedIntegrationsHandler)
+    container.register_singleton(CancelHubSoftIntegrationHandler, CancelHubSoftIntegrationHandler)
+    container.register_singleton(UpdateIntegrationPriorityHandler, UpdateIntegrationPriorityHandler)
+    container.register_singleton(GetHubSoftIntegrationStatusHandler, GetHubSoftIntegrationStatusHandler)
+
+    # CPF Verification Handlers
+    from ...application.command_handlers.cpf_verification_handlers import (
+        StartCPFVerificationHandler,
+        SubmitCPFForVerificationHandler,
+        CancelCPFVerificationHandler
+    )
+    from ...application.command_handlers.process_expired_verifications_handler import (
+        ProcessExpiredVerificationsHandler
+    )
+    from ...application.command_handlers.resolve_cpf_duplicate_handler import (
+        ResolveCPFDuplicateHandler
+    )
+
+    container.register_singleton(StartCPFVerificationHandler, StartCPFVerificationHandler)
+    container.register_singleton(SubmitCPFForVerificationHandler, SubmitCPFForVerificationHandler)
+    container.register_singleton(CancelCPFVerificationHandler, CancelCPFVerificationHandler)
+    container.register_singleton(ProcessExpiredVerificationsHandler, ProcessExpiredVerificationsHandler)
+    container.register_singleton(ResolveCPFDuplicateHandler, ResolveCPFDuplicateHandler)
+
+    # Admin Handlers
+    from ...application.command_handlers.admin_command_handlers import (
+        ListTicketsHandler,
+        AssignTicketHandler,
+        UpdateTicketStatusHandler,
+        BanUserHandler,
+        GetSystemStatsHandler
+    )
+
+    container.register_singleton(ListTicketsHandler, ListTicketsHandler)
+    container.register_singleton(AssignTicketHandler, AssignTicketHandler)
+    container.register_singleton(UpdateTicketStatusHandler, UpdateTicketStatusHandler)
+    container.register_singleton(BanUserHandler, BanUserHandler)
+    container.register_singleton(GetSystemStatsHandler, GetSystemStatsHandler)
+
+    # === Domain Services ===
+
+    from ...domain.services.cpf_validation_service import CPFValidationService
+    from ...domain.services.duplicate_cpf_service import DuplicateCPFService
+
+    container.register_singleton(CPFValidationService, CPFValidationService)
+    container.register_singleton(DuplicateCPFService, DuplicateCPFService)
+
+    # === External Services (HubSoft API) ===
+
+    from ...domain.repositories.hubsoft_repository import HubSoftAPIRepository, HubSoftCacheRepository
+    from ..external_services.hubsoft_api_service import HubSoftAPIService, HubSoftCacheService
+    from ...core.config import HUBSOFT_HOST, HUBSOFT_USER, HUBSOFT_PASSWORD
+    import os
+
+    # Factory para HubSoftAPIService com configurações
+    def create_hubsoft_api_service() -> HubSoftAPIService:
+        return HubSoftAPIService(
+            base_url=HUBSOFT_HOST or os.getenv("HUBSOFT_HOST", "https://api.hubsoft.com.br"),
+            username=HUBSOFT_USER or os.getenv("HUBSOFT_USER", ""),
+            password=HUBSOFT_PASSWORD or os.getenv("HUBSOFT_PASSWORD", ""),
+            timeout_seconds=int(os.getenv("HUBSOFT_TIMEOUT", "30"))
+        )
+
+    # Factory para HubSoftCacheService
+    def create_hubsoft_cache_service() -> HubSoftCacheService:
+        return HubSoftCacheService()
+
+    container.register_factory(HubSoftAPIRepository, create_hubsoft_api_service)
+    container.register_factory(HubSoftCacheRepository, create_hubsoft_cache_service)
+
+    # === Use Cases ===
+
+    # CPF Verification Use Case
+    from ...application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
+    container.register_singleton(CPFVerificationUseCase, CPFVerificationUseCase)
+
+    # HubSoft Integration Use Case
+    from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
+    container.register_singleton(HubSoftIntegrationUseCase, HubSoftIntegrationUseCase)
+
+    # Admin Operations Use Case
+    from ...application.use_cases.admin_operations_use_case import AdminOperationsUseCase
+    container.register_singleton(AdminOperationsUseCase, AdminOperationsUseCase)
+
+    # Member Verification Use Case
+    from ...application.use_cases.member_verification_use_case import MemberVerificationUseCase
+    container.register_singleton(MemberVerificationUseCase, MemberVerificationUseCase)
+
+    # Welcome Management Use Case
+    from ...application.use_cases.welcome_management_use_case import WelcomeManagementUseCase
+    from ...core.config import TELEGRAM_GROUP_ID, WELCOME_TOPIC_ID, RULES_TOPIC_ID
+
+    def create_welcome_management_use_case() -> WelcomeManagementUseCase:
+        user_repo = container.get(UserRepository)
+        member_repo = container.get(GroupMemberRepository)
+        event_bus = container.get(EventBus)
+
+        return WelcomeManagementUseCase(
+            user_repository=user_repo,
+            member_repository=member_repo,
+            event_bus=event_bus,
+            group_id=int(TELEGRAM_GROUP_ID),
+            welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None,
+            rules_topic_id=int(RULES_TOPIC_ID) if RULES_TOPIC_ID else None,
+            rules_acceptance_hours=24
+        )
+
+    container.register_factory(WelcomeManagementUseCase, create_welcome_management_use_case)
+
+    # === String Aliases (Compatibilidade com código legado) ===
+
+    # Repositories
+    container.register_alias("user_repository", UserRepository)
+    container.register_alias("admin_repository", AdminRepository)
+    container.register_alias("cpf_verification_repository", CPFVerificationRepository)
+    container.register_alias("ticket_repository", TicketRepository)
+    container.register_alias("hubsoft_integration_repository", HubSoftIntegrationRepository)
+    container.register_alias("group_member_repository", GroupMemberRepository)
+
+    # Use Cases
+    container.register_alias("cpf_verification_use_case", CPFVerificationUseCase)
+    container.register_alias("hubsoft_integration_use_case", HubSoftIntegrationUseCase)
+    container.register_alias("admin_operations_use_case", AdminOperationsUseCase)
+    container.register_alias("member_verification_use_case", MemberVerificationUseCase)
+    container.register_alias("welcome_management_use_case", WelcomeManagementUseCase)
 
     # === Event System ===
 

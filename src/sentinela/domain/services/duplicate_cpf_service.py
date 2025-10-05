@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from ..repositories.cpf_verification_repository import CPFVerificationRepository
+from ..repositories.user_repository import UserRepository
 from ..entities.cpf_verification import VerificationStatus
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,13 @@ logger = logging.getLogger(__name__)
 class DuplicateCPFService:
     """Serviço para detectar e gerenciar CPFs duplicados."""
 
-    def __init__(self, verification_repository: CPFVerificationRepository):
+    def __init__(
+        self,
+        verification_repository: CPFVerificationRepository,
+        user_repository: UserRepository
+    ):
         self.verification_repository = verification_repository
+        self.user_repository = user_repository
 
     async def check_for_duplicates(
         self,
@@ -215,16 +221,51 @@ class DuplicateCPFService:
         primary_user_id: int,
         duplicate_user_ids: List[int]
     ) -> Dict[str, Any]:
-        """Simula merge de contas duplicadas."""
-        # TODO: Implementar lógica real de merge
-        logger.info(f"Merging accounts: primary={primary_user_id}, duplicates={duplicate_user_ids}")
+        """
+        Desativa contas antigas e mantém a principal.
+
+        A lógica de "merge" aqui é desativar os usuários antigos que tinham o CPF,
+        permitindo que o novo usuário (primary_user_id) prossiga com a verificação.
+        """
+        from ...domain.value_objects.identifiers import UserId
+
+        deactivated_count = 0
+        errors = []
+
+        logger.info(f"Iniciando merge de contas para CPF. Primária: {primary_user_id}, Duplicadas: {duplicate_user_ids}")
+
+        for dup_id in duplicate_user_ids:
+            try:
+                user_to_deactivate = await self.user_repo.find_by_id(UserId(dup_id))
+                if user_to_deactivate:
+                    reason = f"CPF transferido para o usuário {primary_user_id}"
+                    user_to_deactivate.deactivate(reason)
+                    await self.user_repo.save(user_to_deactivate)
+                    deactivated_count += 1
+                    logger.info(f"Usuário {dup_id} desativado com sucesso.")
+                else:
+                    logger.warning(f"Usuário duplicado com ID {dup_id} não encontrado para desativação.")
+            except Exception as e:
+                error_msg = f"Erro ao desativar usuário duplicado {dup_id}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+        if errors:
+            return {
+                "success": False,
+                "action": "merge",
+                "primary_user_id": primary_user_id,
+                "deactivated_accounts": deactivated_count,
+                "error": "Ocorreram erros ao desativar as contas antigas.",
+                "error_details": errors
+            }
 
         return {
             "success": True,
             "action": "merge",
             "primary_user_id": primary_user_id,
-            "merged_accounts": len(duplicate_user_ids),
-            "message": "Contas mescladas com sucesso (simulado)"
+            "deactivated_accounts": deactivated_count,
+            "message": "Contas antigas desativadas com sucesso."
         }
 
     async def _block_duplicate_accounts(

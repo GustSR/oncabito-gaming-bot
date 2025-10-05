@@ -100,6 +100,185 @@ class HubSoftIntegrationUseCase:
         self.api_repository = api_repository
         self.cache_repository = cache_repository
 
+    # Operações de Criação de Atendimento
+
+    async def create_support_ticket(
+        self,
+        ticket_data: Dict[str, Any]
+    ) -> HubSoftOperationResult:
+        """
+        Cria atendimento de suporte no HubSoft.
+
+        Busca dados do cliente verificado e cria ticket no sistema HubSoft
+        usando o endpoint correto de integração.
+
+        Args:
+            ticket_data: Dados do ticket contendo:
+                - user_id (int): ID do usuário Telegram
+                - user_name (str): Nome do usuário
+                - user_telegram (str): Menção/username do Telegram
+                - category (str): Categoria do problema
+                - game_name (str): Nome do jogo afetado
+                - timing (str): Quando começou o problema
+                - description (str): Descrição detalhada
+                - attachments (list): Lista de anexos (opcional)
+
+        Returns:
+            HubSoftOperationResult com sucesso/falha e dados do atendimento criado
+
+        Raises:
+            Nenhuma exceção é lançada, erros são retornados no Result
+        """
+        try:
+            start_time = datetime.now()
+            user_id = ticket_data.get('user_id')
+
+            if not user_id:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="user_id é obrigatório",
+                    error_code="MISSING_USER_ID"
+                )
+
+            # 1. Busca verificação CPF COMPLETED do usuário
+            from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
+            from ...domain.entities.cpf_verification import VerificationStatus
+            from ...infrastructure.config.dependency_injection import get_container
+
+            container = get_container()
+            cpf_repo: CPFVerificationRepository = container.get("cpf_verification_repository")
+
+            # Busca verificações do usuário
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=10)
+
+            # Filtra por status COMPLETED
+            completed_verification = next(
+                (v for v in verifications if v.status == VerificationStatus.COMPLETED),
+                None
+            )
+
+            if not completed_verification:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Usuário não possui verificação de CPF concluída",
+                    error_code="USER_NOT_VERIFIED"
+                )
+
+            # 2. Extrai client_data da verificação
+            client_data = completed_verification.client_data
+
+            if not client_data:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Dados do cliente não encontrados na verificação",
+                    error_code="CLIENT_DATA_NOT_FOUND"
+                )
+
+            # 3. Valida campos obrigatórios do client_data
+            id_cliente_servico = client_data.get('id_cliente_servico')
+            nome_cliente = client_data.get('nome_razaosocial') or ticket_data.get('user_name', 'Cliente')
+            telefone_cliente = client_data.get('telefone')
+
+            if not id_cliente_servico:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="id_cliente_servico não encontrado nos dados do cliente",
+                    error_code="MISSING_CLIENT_SERVICE_ID"
+                )
+
+            if not telefone_cliente:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Telefone não encontrado nos dados do cliente",
+                    error_code="MISSING_PHONE"
+                )
+
+            # 4. Formata telefone (remove caracteres especiais, mantém apenas dígitos)
+            telefone_formatado = ''.join(filter(str.isdigit, telefone_cliente))
+
+            # Valida formato (mínimo 10 dígitos: DD + número)
+            if len(telefone_formatado) < 10:
+                logger.warning(f"Telefone inválido para user {user_id}: {telefone_cliente}")
+                # Usa telefone padrão se inválido
+                telefone_formatado = "0000000000"
+
+            # 5. Monta descrição enriquecida com metadados do bot
+            description = ticket_data.get('description', 'Sem descrição fornecida')
+            category = ticket_data.get('category', 'others')
+            game_name = ticket_data.get('game_name', 'Não especificado')
+            timing = ticket_data.get('timing', 'Não especificado')
+            user_telegram = ticket_data.get('user_telegram', f'ID: {user_id}')
+
+            # Monta descrição final
+            enriched_description = (
+                f"-- ATENDIMENTO ABERTO VIA BOT TELEGRAM --\n"
+                f"Usuário: {user_telegram}\n"
+                f"Categoria: {category}\n"
+                f"Jogo Afetado: {game_name}\n"
+                f"Quando começou: {timing}\n"
+                f"-------------------------------------------\n\n"
+                f"{description}"
+            )
+
+            # 6. Monta payload para API HubSoft
+            hubsoft_payload = {
+                "id_cliente_servico": id_cliente_servico,
+                "descricao": enriched_description,
+                "nome": nome_cliente,
+                "telefone": telefone_formatado,
+                "parametros": {
+                    "origem": "telegram_bot",
+                    "bot_user_id": user_id,
+                    "bot_username": user_telegram,
+                    "categoria_bot": category,
+                    "jogo_afetado": game_name,
+                    "timing": timing,
+                    "created_at": datetime.now().isoformat()
+                }
+            }
+
+            # Adiciona email se disponível
+            email_cliente = client_data.get('email')
+            if email_cliente:
+                hubsoft_payload["email"] = email_cliente
+
+            # 7. Chama API HubSoft para criar atendimento
+            logger.info(f"Criando atendimento no HubSoft para user {user_id}, cliente_servico={id_cliente_servico}")
+
+            response = await self.api_repository.create_ticket(hubsoft_payload)
+
+            # 8. Extrai dados do atendimento criado
+            atendimento = response.get('atendimento', {})
+            protocolo = atendimento.get('protocolo')
+            id_atendimento = atendimento.get('id_atendimento')
+
+            duration = (datetime.now() - start_time).total_seconds()
+
+            logger.info(
+                f"Atendimento criado com sucesso: protocolo={protocolo}, "
+                f"id={id_atendimento}, user={user_id}"
+            )
+
+            return HubSoftOperationResult(
+                success=True,
+                message=f"Atendimento criado com sucesso. Protocolo: {protocolo}",
+                data={
+                    "protocolo": protocolo,
+                    "id_atendimento": id_atendimento,
+                    "atendimento": atendimento,
+                    "response": response
+                },
+                duration_seconds=duration
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao criar atendimento de suporte: {e}", exc_info=True)
+            return HubSoftOperationResult(
+                success=False,
+                message=f"Erro ao criar atendimento: {str(e)}",
+                error_code="CREATE_TICKET_ERROR"
+            )
+
     # Operações de Sincronização de Tickets
 
     async def sync_ticket_to_hubsoft(
@@ -681,9 +860,58 @@ class HubSoftIntegrationUseCase:
         try:
             start_time = datetime.now()
 
-            # Busca tickets diretamente via API Repository
+            # 1. Busca verificação CPF COMPLETED do usuário
+            from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
+            from ...domain.entities.cpf_verification import VerificationStatus
+            from ...infrastructure.config.dependency_injection import get_container
+
+            container = get_container()
+            cpf_repo: CPFVerificationRepository = container.get("cpf_verification_repository")
+
+            # Busca verificações do usuário
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=10)
+
+            # Filtra por status COMPLETED
+            completed_verification = next(
+                (v for v in verifications if v.status == VerificationStatus.COMPLETED),
+                None
+            )
+
+            if not completed_verification:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Usuário não possui verificação de CPF concluída",
+                    error_code="USER_NOT_VERIFIED",
+                    data={"tickets": [], "count": 0}
+                )
+
+            # 2. Extrai client_data da verificação
+            client_data = completed_verification.client_data
+
+            if not client_data:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Dados do cliente não encontrados na verificação",
+                    error_code="CLIENT_DATA_NOT_FOUND",
+                    data={"tickets": [], "count": 0}
+                )
+
+            # 3. Obtém CPF do client_data
+            cpf = client_data.get('cpf_cnpj')
+
+            if not cpf:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="CPF não encontrado nos dados do cliente",
+                    error_code="CPF_NOT_FOUND",
+                    data={"tickets": [], "count": 0}
+                )
+
+            # 4. Busca tickets via API Repository usando o CPF
+            logger.info(f"Buscando tickets para user {user_id} (CPF: {cpf[:3]}***)")
+
             tickets_data = await self.api_repository.get_user_tickets(
-                user_id=user_id,
+                cpf=cpf,
                 include_closed=include_closed,
                 limit=limit
             )
@@ -709,7 +937,7 @@ class HubSoftIntegrationUseCase:
             )
 
         except Exception as e:
-            logger.error(f"Erro ao buscar tickets do usuário {user_id}: {e}")
+            logger.error(f"Erro ao buscar tickets do usuário {user_id}: {e}", exc_info=True)
             return HubSoftOperationResult(
                 success=False,
                 message=f"Erro ao buscar tickets: {str(e)}",

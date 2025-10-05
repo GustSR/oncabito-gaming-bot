@@ -83,11 +83,15 @@ class StartCPFVerificationHandler(CommandHandler[StartCPFVerificationCommand]):
 
             # Cria nova verificação
             verification_id = VerificationId.generate()
+
+            # Garante que user_mention não seja nulo, usando username como fallback
+            user_mention = command.user_mention or command.username
+
             verification = CPFVerificationRequest(
                 verification_id=verification_id,
                 user_id=user_id,
                 username=command.username,
-                user_mention=command.user_mention,
+                user_mention=user_mention,
                 verification_type=verification_type,
                 source_action=command.source_action
             )
@@ -181,85 +185,61 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
             is_valid_cpf = CPFValidationService.validate_cpf(command.cpf)
             if not is_valid_cpf:
                 logger.warning(f"[CPF Handler] ❌ CPF inválido {cpf_masked}: formato inválido")
-                # Adiciona tentativa falhada
                 verification.add_attempt(
-                    cpf_provided=command.cpf,
-                    success=False,
-                    failure_reason="invalid_cpf_format"
+                    cpf_provided=command.cpf, success=False, failure_reason="invalid_cpf_format"
                 )
                 await self.verification_repository.save(verification)
-
                 return CommandResult.failure(
-                    "invalid_cpf_format",
-                    "CPF com formato inválido",
-                    {"attempts_left": verification.has_attempts_left()}
+                    "invalid_cpf_format", "CPF com formato inválido", {"attempts_left": verification.has_attempts_left()}
                 )
 
             cpf = CPF.from_raw(command.cpf)
             logger.info(f"[CPF Handler] ✅ CPF válido {cpf_masked}")
 
-            # Verifica duplicidade
-            logger.info(f"[CPF Handler] Verificando duplicidade para {cpf_masked}")
-            duplicate_result = await self.duplicate_cpf_service.check_for_duplicates(
-                cpf_hash=cpf.value,
-                exclude_user_id=user_id
-            )
-
-            if duplicate_result["has_duplicates"]:
-                logger.warning(f"[CPF Handler] ❌ CPF duplicado {cpf_masked}: {duplicate_result}")
-                # Adiciona tentativa com conflito
-                verification.add_attempt(
-                    cpf_provided=str(cpf),
-                    success=False,
-                    failure_reason="cpf_duplicate_conflict"
-                )
-                await self.verification_repository.save(verification)
-
-                return CommandResult.failure(
-                    "cpf_duplicate",
-                    "Este CPF já está associado a outra conta em nossa comunidade.",
-                    {
-                        "conflict_details": duplicate_result,
-                        "attempts_left": verification.has_attempts_left()
-                    }
-                )
-
-            logger.info(f"[CPF Handler] ✅ Sem duplicidade para {cpf_masked}")
-
-            # Verifica no sistema externo (HubSoft)
+            # --- LÓGICA REORDENADA ---
+            # 1. Verifica no sistema externo (HubSoft) PRIMEIRO
             logger.info(f"[CPF Handler] Consultando HubSoft para {cpf_masked}")
             client_data = await self._verify_cpf_in_hubsoft(cpf)
             if not client_data:
                 logger.warning(f"[CPF Handler] ❌ CPF {cpf_masked} não encontrado no HubSoft ou sem serviço ativo")
-                # Adiciona tentativa falhada
                 verification.add_attempt(
-                    cpf_provided=str(cpf),
-                    success=False,
-                    failure_reason="cpf_not_found_in_hubsoft"
+                    cpf_provided=str(cpf), success=False, failure_reason="cpf_not_found_in_hubsoft"
                 )
                 await self.verification_repository.save(verification)
-
                 return CommandResult.failure(
                     "cpf_not_found",
                     "CPF não encontrado em nossa base de clientes ativos",
                     {"attempts_left": verification.has_attempts_left()}
                 )
-
+            
             logger.info(f"[CPF Handler] ✅ Cliente encontrado no HubSoft: {client_data.get('nome_razaosocial', 'N/A')}")
 
-            # Adiciona tentativa bem-sucedida
-            verification.add_attempt(
-                cpf_provided=str(cpf),
-                success=True
+            # 2. Se o contrato está ativo, AGORA verifica duplicidade
+            logger.info(f"[CPF Handler] Verificando duplicidade para {cpf_masked}")
+            duplicate_result = await self.duplicate_cpf_service.check_for_duplicates(
+                cpf_hash=cpf.value, exclude_user_id=user_id.value
             )
 
-            # Completa verificação com sucesso
-            verification.complete_with_success(cpf, client_data)
+            if duplicate_result["has_duplicates"]:
+                logger.warning(f"[CPF Handler] ❌ Conflito de CPF duplicado detectado para {cpf_masked}: {duplicate_result}")
+                # Retorna um resultado de sucesso, mas com um status de conflito,
+                # para que a camada de apresentação possa iniciar o fluxo interativo.
+                return CommandResult.success(
+                    {
+                        "status": "conflict_detected",
+                        "conflict_details": duplicate_result,
+                        "message": "CPF duplicado detectado, aguardando resolução do usuário."
+                    }
+                )
 
-            # Salva alterações
+            logger.info(f"[CPF Handler] ✅ Sem duplicidade para {cpf_masked}")
+            # --- FIM DA LÓGICA REORDENADA ---
+
+            # Caminho feliz: Contrato ativo e sem duplicatas
+            verification.add_attempt(cpf_provided=str(cpf), success=True)
+            verification.complete_with_success(cpf, client_data)
             await self.verification_repository.save(verification)
 
-            # Publica eventos
             for event in verification.get_domain_events():
                 await self.event_bus.publish(event)
 
@@ -393,6 +373,70 @@ class CancelCPFVerificationHandler(CommandHandler[CancelCPFVerificationCommand])
                 "Erro interno do sistema",
                 {"error": str(e)}
             )
+
+
+class ResolveCPFDuplicateHandler(CommandHandler[ResolveCPFDuplicateCommand]):
+    """Handler para resolver conflitos de CPF duplicado."""
+
+    def __init__(
+        self,
+        duplicate_cpf_service: DuplicateCPFService,
+        verification_repository: CPFVerificationRepository,
+        event_bus: EventBus
+    ):
+        self.duplicate_cpf_service = duplicate_cpf_service
+        self.verification_repository = verification_repository
+        self.event_bus = event_bus
+
+    async def handle(self, command: ResolveCPFDuplicateCommand) -> CommandResult:
+        try:
+            logger.info(f"Resolvendo conflito de CPF para verificação {command.verification_id}")
+
+            resolution_result = await self.duplicate_cpf_service.resolve_duplicate(
+                primary_user_id=command.primary_user_id,
+                duplicate_user_ids=command.duplicate_user_ids,
+                resolution_type="merge"
+            )
+
+            if not resolution_result.get("success"):
+                return CommandResult.failure(
+                    "resolution_failed",
+                    resolution_result.get("error", "Falha ao resolver duplicata."),
+                    resolution_result.get("error_details", {})
+                )
+
+            verification = await self.verification_repository.find_by_id(VerificationId(command.verification_id))
+            if not verification:
+                return CommandResult.failure("verification_not_found", "Verificação original não encontrada.")
+
+            last_attempt = verification.get_last_attempt()
+            if not last_attempt or not last_attempt.cpf_provided:
+                 return CommandResult.failure("cpf_not_found_in_attempt", "CPF não encontrado na tentativa de verificação.")
+            
+            cpf = CPF.from_raw(last_attempt.cpf_provided)
+
+            from ....integrations.hubsoft.cliente import get_client_info
+            client_data = get_client_info(str(cpf), full_data=True)
+            if not client_data:
+                 return CommandResult.failure("client_not_found_after_resolution", "Cliente não encontrado no Hubsoft após resolução.")
+
+            verification.complete_with_success(cpf, client_data)
+            await self.verification_repository.save(verification)
+
+            for event in verification.get_domain_events():
+                await self.event_bus.publish(event)
+
+            logger.info(f"Conflito resolvido e verificação {command.verification_id} completada.")
+            
+            return CommandResult.success({
+                "message": "Conflito resolvido e verificação completada.",
+                "client_data": client_data,
+                "verified": True
+            })
+
+        except Exception as e:
+            logger.error(f"Erro crítico ao resolver duplicata para verificação {command.verification_id}: {e}", exc_info=True)
+            return CommandResult.failure("system_error", "Erro interno do sistema ao resolver duplicata.")
 
 
 # NOTE: ProcessExpiredVerificationsHandler foi movido para arquivo standalone

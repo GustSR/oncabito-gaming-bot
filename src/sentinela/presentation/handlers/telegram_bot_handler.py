@@ -91,6 +91,7 @@ class TelegramBotHandler:
         self._cpf_use_case: Optional[CPFVerificationUseCase] = None
         self._admin_use_case: Optional[AdminOperationsUseCase] = None
         self._welcome_use_case = None  # WelcomeManagementUseCase
+        self._admin_repo = None  # AdminRepository
 
     async def _ensure_initialized(self) -> None:
         """Garante que o handler está inicializado."""
@@ -100,6 +101,7 @@ class TelegramBotHandler:
             self._cpf_use_case = self._container.get("cpf_verification_use_case")
             self._admin_use_case = self._container.get("admin_operations_use_case")
             self._welcome_use_case = self._container.get("welcome_management_use_case")
+            self._admin_repo = self._container.get("admin_repository")
 
     async def _user_already_interacted(self, user_id: int) -> bool:
         """
@@ -230,7 +232,7 @@ class TelegramBotHandler:
             verification_result = await self._cpf_use_case.start_verification(
                 user_id=user.id,
                 username=user.username or user.first_name,
-                user_mention=user.mention_html(),
+                user_mention=f"<a href='tg://user?id={user.id}'>{user.first_name}</a>",
                 verification_type="auto_checkup",
                 source_action="auto welcome flow"
             )
@@ -301,7 +303,7 @@ class TelegramBotHandler:
                 verification_result = await self._cpf_use_case.start_verification(
                     user_id=user.id,
                     username=user.username or user.first_name,
-                    user_mention=user.mention_html(),
+                    user_mention=f"<a href='tg://user?id={user.id}'>{user.first_name}</a>",
                     verification_type="auto_checkup",
                     source_action="/start command"
                 )
@@ -686,7 +688,7 @@ class TelegramBotHandler:
                 return
 
             # Verifica se é admin (implementar validação real)
-            if not self._is_admin(user.id):
+            if not await self._is_admin(user.id):
                 await update.message.reply_text("❌ Acesso negado.")
                 return
 
@@ -740,13 +742,13 @@ class TelegramBotHandler:
             callback_data = query.data
             user = query.from_user
 
-            # Callbacks do novo fluxo de suporte
+            # Roteador de callbacks
             if callback_data.startswith("sup_"):
                 await self._handle_support_callback(query, context, callback_data)
-            # Callback de aceitar regras
+            elif callback_data.startswith("dup_resolve_"):
+                await self._handle_duplicate_resolution_callback(query, context, callback_data)
             elif callback_data.startswith("accept_rules_"):
                 await self._handle_accept_rules_callback(query, context, callback_data)
-            # Callbacks antigos (manter compatibilidade)
             elif callback_data.startswith("cat_"):
                 await self._handle_category_selection(query, callback_data)
             elif callback_data.startswith("admin_"):
@@ -760,6 +762,68 @@ class TelegramBotHandler:
                 await update.callback_query.edit_message_text(
                     "❌ Erro inesperado. Tente novamente."
                 )
+
+    async def _handle_duplicate_resolution_callback(self, query, context: ContextTypes.DEFAULT_TYPE, callback_data: str) -> None:
+        """Processa a escolha do usuário na resolução de CPF duplicado."""
+        parts = callback_data.split('_')
+        action = parts[2]
+        verification_id = parts[3]
+
+        await query.edit_message_text("⏳ Processando sua escolha...", parse_mode='Markdown')
+
+        if action == "merge":
+            logger.info(f"Usuário {query.from_user.id} escolheu 'merge' para a verificação {verification_id}.")
+            
+            # Pega os detalhes do conflito salvos no contexto
+            resolution_context = context.user_data.get('duplicate_resolution_context')
+            if not resolution_context or resolution_context.get('verification_id') != verification_id:
+                await query.edit_message_text("❌ Ops! Perdi o contexto desta conversa. Por favor, tente verificar seu CPF novamente.")
+                return
+
+            duplicate_users = resolution_context.get('conflicting_users', [])
+            duplicate_user_ids = [u.get('user_id') for u in duplicate_users]
+
+            # Chama o Use Case para resolver o conflito
+            result = await self._cpf_use_case.resolve_duplicate_conflict(
+                verification_id=verification_id,
+                primary_user_id=query.from_user.id,
+                duplicate_user_ids=duplicate_user_ids
+            )
+
+            if result.success and result.data.get('verified'):
+                # A resolução foi um sucesso e a verificação foi completada.
+                try:
+                    from ...core.config import TELEGRAM_GROUP_ID
+                    client_name = query.from_user.first_name
+                    invite_link = await query.get_bot().create_chat_invite_link(
+                        chat_id=int(TELEGRAM_GROUP_ID),
+                        member_limit=1,
+                        name=f"Link para {client_name}"
+                    )
+                    message = (
+                        f"✅ **Conflito Resolvido!**\n\n"
+                        f"O CPF foi associado à sua conta e removido da(s) conta(s) antiga(s).\n\n"
+                        f"Seja bem-vindo(a) ao grupo!\n\n"
+                        f"🔗 **Seu novo link de acesso:**\n{invite_link.invite_link}"
+                    )
+                    await query.edit_message_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+                except Exception as e:
+                    logger.error(f"Erro ao criar link de convite pós-resolução de conflito: {e}")
+                    await query.edit_message_text("✅ Conflito resolvido, mas houve um erro ao gerar seu link de convite. Por favor, contate o suporte.")
+            else:
+                # A resolução falhou
+                await query.edit_message_text(f"❌ Ops! Ocorreu um erro ao tentar resolver o conflito: {result.message}. Por favor, contate o suporte.")
+
+            # Limpa o contexto da resolução
+            if 'duplicate_resolution_context' in context.user_data:
+                del context.user_data['duplicate_resolution_context']
+
+        elif action == "cancel":
+            logger.info(f"Usuário {query.from_user.id} cancelou a resolução de conflito para a verificação {verification_id}.")
+            # TODO: Chamar use case para cancelar a verificação
+            await query.edit_message_text(
+                "Ok, operação cancelada. Você pode tentar a verificação novamente com um CPF diferente, ou usar o comando /start para recomeçar."
+            )
 
     async def _handle_category_selection(self, query, callback_data: str) -> None:
         """Processa seleção de categoria de suporte."""
@@ -794,7 +858,7 @@ class TelegramBotHandler:
         """Processa callbacks administrativos."""
         user = query.from_user
 
-        if not self._is_admin(user.id):
+        if not await self._is_admin(user.id):
             await query.edit_message_text("❌ Acesso negado.")
             return
 
@@ -1027,95 +1091,104 @@ class TelegramBotHandler:
                 INVITE_LINK_EXPIRE_TIME
             )
 
-            # Envia mensagem de processamento
             processing_msg = await update.message.reply_text(
                 "🔍 <b>Verificando seu CPF...</b>\n\n"
                 "Aguarde um momento enquanto consulto nossa base de dados.",
                 parse_mode='HTML'
             )
 
-            # Processa verificação via use case
             result = await self._cpf_use_case.submit_cpf(
                 user_id=user.id,
                 username=user.username or user.first_name,
                 cpf=cpf
             )
 
-            # Deleta mensagem de processamento
             await processing_msg.delete()
 
-            if result.success and result.data and result.data.get('verified'):
-                # CPF VÁLIDO - Cliente tem contrato ativo
-                client_data = result.data.get('client_data', {})
-                client_name = client_data.get('name', user.first_name)
+            if result.success:
+                # CASO 1: Conflito de CPF Duplicado
+                if result.data.get('status') == 'conflict_detected':
+                    conflict_details = result.data.get('conflict_details', {})
+                    conflicting_users = conflict_details.get('users', [])
+                    
+                    if conflicting_users:
+                        conflicting_user = conflicting_users[0]
+                        conflicting_username = conflicting_user.get('username', 'outro usuário')
+                        
+                        message = (
+                            "⚠️ **Conflito de CPF Encontrado** ⚠️\n\n"
+                            f"Olá! Verifiquei que este CPF já está associado à conta **@{conflicting_username}**.\n\n"
+                            "Para garantir a segurança, cada CPF só pode estar vinculado a um único usuário no Telegram.\n\n"
+                            "**O que você gostaria de fazer?**"
+                        )
+                        
+                        verification_id = result.verification_id 
+                        
+                        keyboard = [[
+                            InlineKeyboardButton(
+                                "✅ Usar nesta conta (remover da antiga)", 
+                                callback_data=f"dup_resolve_merge_{verification_id}"
+                            )],[
+                            InlineKeyboardButton(
+                                "❌ Cancelar e tentar outro CPF", 
+                                callback_data=f"dup_resolve_cancel_{verification_id}"
+                            )
+                        ]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
 
-                # Cria link temporário de acesso ao grupo
-                try:
-                    invite_link = await update.get_bot().create_chat_invite_link(
-                        chat_id=int(TELEGRAM_GROUP_ID),
-                        expire_date=None,  # Usa configuração padrão
-                        member_limit=1,  # Apenas 1 uso
-                        name=f"Link para {client_name}",
-                        creates_join_request=False
-                    )
+                        # Salva o contexto para o callback
+                        context.user_data['duplicate_resolution_context'] = {
+                            'verification_id': verification_id,
+                            'conflicting_users': conflicting_users
+                        }
 
-                    message = (
-                        f"✅ <b>PARABÉNS, {client_name}!</b> 🎉\n\n"
-                        f"Seu plano OnCabo Gaming está ativo e verificado com sucesso!\n\n"
-                        f"🎮 É um prazer ter você conosco! Estamos muito felizes "
-                        f"em receber mais um gamer na nossa comunidade!\n\n"
-                        f"🔗 <b>LINK DE ACESSO AO GRUPO:</b>\n"
-                        f"{invite_link.invite_link}\n\n"
-                        f"⏰ <b>Atenção:</b> Este link é pessoal e pode ser usado <b>apenas 1 vez</b>!\n\n"
-                        f"🚀 Clique no link acima para entrar no grupo e começar "
-                        f"a aproveitar todos os benefícios da comunidade!\n\n"
-                        f"🔥 <b>Nos vemos lá! Bons jogos!</b> 🎯"
-                    )
+                        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                        logger.info(f"Conflito de CPF para user {user.id}. Iniciando fluxo de resolução.")
+                    else:
+                        await update.message.reply_text("❌ Encontrei um conflito com este CPF, mas não consegui obter os detalhes. Por favor, contate o suporte.")
 
-                    logger.info(
-                        f"Link temporário criado para {user.id} ({client_name}) - "
-                        f"CPF: {cpf[:3]}***{cpf[-2:]}"
-                    )
+                # CASO 2: Sucesso na Verificação (Caminho Feliz)
+                elif result.data.get('verified'):
+                    client_data = result.data.get('client_data', {})
+                    client_name = client_data.get('name', user.first_name)
+                    try:
+                        invite_link = await update.get_bot().create_chat_invite_link(
+                            chat_id=int(TELEGRAM_GROUP_ID),
+                            member_limit=1,
+                            name=f"Link para {client_name}"
+                        )
+                        message = (
+                            f"✅ <b>PARABÉNS, {client_name}!</b> 🎉\n\n"
+                            "Seu plano OnCabo Gaming está ativo e verificado com sucesso!\n\n"
+                            "🔗 **LINK DE ACESSO AO GRUPO:**\n"
+                            f"{invite_link.invite_link}\n\n"
+                            "⏰ <b>Atenção:</b> Este link é pessoal e pode ser usado <b>apenas 1 vez</b>!\n\n"
+                            "Clique no link para entrar no grupo. Nos vemos lá! 🔥"
+                        )
+                        logger.info(f"Link temporário criado para {user.id} ({client_name})")
+                    except Exception as link_error:
+                        logger.error(f"Erro ao criar link de convite: {link_error}")
+                        message = "✅ **CPF Verificado!** 🎉\n\nSeu plano está ativo, mas houve um erro ao gerar seu link de convite. Por favor, contate o suporte."
+                    
+                    await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=True)
 
-                except Exception as link_error:
-                    logger.error(f"Erro ao criar link de convite: {link_error}")
-                    message = (
-                        f"✅ <b>CPF Verificado, {client_name}!</b> 🎉\n\n"
-                        f"Seu plano está ativo, mas houve um erro ao gerar o link.\n\n"
-                        f"📞 Entre em contato com o suporte para receber o acesso."
-                    )
-
+            # CASO 3: Falha na Verificação (Contrato inativo, etc.)
             else:
-                # CPF INVÁLIDO ou SEM CONTRATO ATIVO
                 message = (
                     "❌ <b>Ops! Não encontrei seu CPF vinculado a um plano OnCabo Gaming ativo.</b>\n\n"
-                    "😔 Infelizmente, o acesso ao grupo é exclusivo para assinantes "
-                    "do plano OnCabo Gaming.\n\n"
-                    "📌 <b>MAS VOCÊ PODE CONTRATAR AGORA!</b>\n\n"
-                    "O plano OnCabo Gaming oferece:\n"
-                    "• Internet ultra-rápida para jogos\n"
-                    "• Ping baixo e estável\n"
-                    "• Acesso à comunidade exclusiva\n"
-                    "• Suporte técnico especializado\n\n"
-                    f"🌐 <b>Acesse nosso site:</b> {ONCABO_SITE_URL}\n"
-                    f"📱 <b>Fale no WhatsApp:</b> {ONCABO_WHATSAPP_URL}\n\n"
-                    "🎮 Assim que contratar, volte aqui e me envie seu CPF "
-                    "para liberar seu acesso ao grupo!\n\n"
+                    "Infelizmente, o acesso ao grupo é exclusivo para assinantes do plano OnCabo Gaming.\n\n"
+                    "📌 <b>QUER FAZER PARTE?</b>\n"
+                    f"Acesse nosso site em {ONCABO_SITE_URL} ou fale conosco pelo WhatsApp em {ONCABO_WHATSAPP_URL} para contratar e entrar na comunidade!\n\n"
                     "Estamos te esperando! 🚀"
                 )
-
-            await update.message.reply_text(
-                message,
-                parse_mode='HTML',
-                disable_web_page_preview=False
-            )
+                await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=False)
 
             # Limpa estado de aguardando CPF
             if 'waiting_cpf' in context.user_data:
                 del context.user_data['waiting_cpf']
 
         except Exception as e:
-            logger.error(f"Erro ao processar CPF: {e}")
+            logger.error(f"Erro ao processar CPF: {e}", exc_info=True)
             await update.message.reply_text(
                 "❌ <b>Erro ao verificar CPF.</b>\n\n"
                 "Tente novamente ou entre em contato com o suporte.",
@@ -1587,135 +1660,85 @@ class TelegramBotHandler:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
-        Cria ticket a partir do fluxo de suporte.
-
-        ATENÇÃO: Esta função SEMPRE cria o ticket primeiro no HubSoft para obter
-        o protocolo oficial. Tickets NÃO são criados apenas localmente.
+        Cria ticket a partir do fluxo de suporte, usando a nova arquitetura
+        e o endpoint correto do HubSoft.
         """
         state = get_support_state(context)
         user = query.from_user
 
         try:
-            # Mostra mensagem de processamento
             await query.edit_message_text(
                 "⏳ **Criando seu chamado...**\n\n"
-                "Aguarde enquanto registro suas informações no sistema HubSoft.\n"
-                "Isso pode levar alguns segundos. ⚙️",
+                "Aguarde enquanto registro suas informações no sistema.",
                 parse_mode='Markdown'
             )
 
-            # ===== ETAPA 1: CRIAR TICKET NO HUBSOFT (OBRIGATÓRIO) =====
-            # Prepara dados para HubSoft
+            # 1. Montar a descrição enriquecida
+            user_mention = f"@{user.username}" if user.username else f"ID: {user.id}"
+            now_str = datetime.now().strftime('%d/%m/%Y às %H:%M')
+            
+            enhanced_description = (
+                f"-- ABERTO VIA BOT TELEGRAM --\n"
+                f"Data/Hora: {now_str}\n"
+                f"Usuário: {user_mention}\n"
+                f"---------------------------\n"
+                f"{state['description']}"
+            )
+
+            # 2. Montar os dados do ticket
             ticket_data = {
                 "user_id": user.id,
                 "user_name": user.first_name,
-                "username": user.username or "",
+                "user_telegram": user_mention,
                 "category": state['category'],
-                "category_name": state['category_name'],
-                "game": state['game'],
                 "game_name": state['game_name'],
-                "timing": state['timing'],
-                "timing_name": state['timing_name'],
-                "description": state['description'],
-                "attachments": state.get('attachments', []),
-                "created_at": datetime.now().isoformat()
+                "timing": state['timing_name'],
+                "description": enhanced_description,
+                "attachments": state.get('attachments', [])
             }
 
-            # CRÍTICO: Cria ticket no HubSoft PRIMEIRO
-            logger.info(f"Criando ticket no HubSoft para usuário {user.id}...")
+            # 3. Chamar o Use Case correto
+            logger.info(f"Iniciando criação de ticket para usuário {user.id} via Use Case...")
+            hubsoft_result = await self._hubsoft_use_case.create_support_ticket(ticket_data)
 
-            # TODO: Quando o método correto do HubSoft estiver disponível, usar assim:
-            # hubsoft_result = await self._hubsoft_use_case.create_support_ticket(ticket_data)
-
-            # Por enquanto, vamos usar sync_ticket_to_hubsoft que agenda a integração
-            # Gera ID temporário para o ticket
-            temp_ticket_id = f"TMP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{user.id}"
-
-            # Agenda integração com HubSoft
-            hubsoft_result = await self._hubsoft_use_case.sync_ticket_to_hubsoft(
-                ticket_id=temp_ticket_id,
-                sync_type="create",
-                priority="high",
-                force_sync=True
-            )
-
-            # ===== ETAPA 2: VERIFICAR SE HUBSOFT RETORNOU SUCESSO =====
             if not hubsoft_result.success:
-                # FALHOU - NÃO CRIAR TICKET LOCAL
                 error_message = (
                     "❌ **Não foi possível criar seu chamado**\n\n"
                     "Nosso sistema de suporte está temporariamente indisponível.\n\n"
-                    "**O que fazer:**\n"
-                    "• Tente novamente em alguns minutos\n"
-                    "• Se o problema persistir, entre em contato com nossa equipe\n\n"
-                    f"**Código do erro:** {hubsoft_result.error_code or 'HUBSOFT_UNAVAILABLE'}\n\n"
-                    "🙏 Pedimos desculpas pelo inconveniente!"
+                    f"**Código do erro:** {hubsoft_result.error_code or 'CREATE_TICKET_ERROR'}\n\n"
+                    "Por favor, tente novamente em alguns minutos."
                 )
-
                 await query.edit_message_text(error_message, parse_mode='Markdown')
-                logger.error(f"Falha ao criar ticket no HubSoft para usuário {user.id}: {hubsoft_result.message}")
+                logger.error(f"Falha ao criar ticket para usuário {user.id}: {hubsoft_result.message}")
                 return
 
-            # ===== ETAPA 3: OBTER PROTOCOLO DO HUBSOFT =====
-            # Extrai protocolo retornado pelo HubSoft
-            hubsoft_protocol = hubsoft_result.data.get("hubsoft_ticket_id") if hubsoft_result.data else None
-
-            # Se não temos protocolo do HubSoft, usa o integration_id como fallback
-            if not hubsoft_protocol and hubsoft_result.integration_id:
-                hubsoft_protocol = f"HS-{hubsoft_result.integration_id}"
-
-            # Se ainda não tem protocolo, FALHA (não deveria acontecer)
-            if not hubsoft_protocol:
-                await query.edit_message_text(
-                    "❌ Erro ao obter protocolo do sistema. Por favor, tente novamente.",
-                    parse_mode='Markdown'
-                )
-                logger.error(f"HubSoft retornou sucesso mas sem protocolo para usuário {user.id}")
-                return
-
-            # ===== ETAPA 4: TICKET CRIADO COM SUCESSO NO HUBSOFT =====
+            # 4. Montar mensagem de sucesso com o protocolo real
+            hubsoft_protocol = hubsoft_result.data.get("protocolo") or f"ID {hubsoft_result.data.get('id_atendimento')}"
             now = datetime.now()
-
-            # ADR-001: DECISÃO ARQUITETURAL - Tickets NÃO são salvos localmente
-            # HubSoft é a única fonte da verdade (Single Source of Truth)
-            # Benefícios: Sem dessincronização, dados sempre atualizados, menos complexidade
-            logger.info(f"Ticket criado com sucesso - Protocolo HubSoft: {hubsoft_protocol}, Usuário: {user.id}")
-
-            # ===== ETAPA 5: MENSAGEM DE SUCESSO =====
+            
             success_message = (
                 f"🎉 **PRONTO! SEU CHAMADO FOI CRIADO COM SUCESSO!**\n\n"
                 f"📋 **Protocolo:** `{hubsoft_protocol}`\n"
                 f"📅 **Criado em:** {now.strftime('%d/%m/%Y às %H:%M')}\n"
                 f"📊 **Status:** Aguardando Atendimento\n\n"
-                f"✅ Nossa equipe técnica já recebeu todas as informações e vai começar a "
-                f"trabalhar no seu caso o quanto antes! 💪\n\n"
-                f"📱 **Fique tranquilo:**\n"
-                f"• Você receberá todas as atualizações aqui mesmo pelo Telegram\n"
-                f"• Tempo médio de resposta: **até 24h úteis**\n"
-                f"• Nossa meta: resolver seu problema o mais rápido possível!\n\n"
-                f"💬 Enquanto isso, se lembrar de mais algum detalhe importante, pode me "
-                f"mandar que eu adiciono ao seu chamado! 😊\n\n"
-                f"🔍 **Seu protocolo:** `{hubsoft_protocol}` _(guarde para consultas)_\n\n"
-                f"📣 Acompanhe as respostas no grupo, tópico **Suporte Gamer**!"
+                f"✅ Nossa equipe técnica já recebeu seu chamado e vai começar a análise.\n\n"
+                f"Você receberá todas as atualizações aqui pelo Telegram. "
+                f"O tempo médio de primeira resposta é de **até 24h úteis**.\n\n"
+                f"Obrigado pela paciência! 🙏"
             )
-
             await query.edit_message_text(success_message, parse_mode='Markdown')
 
-            # ===== ETAPA 6: NOTIFICAR EQUIPE NO GRUPO =====
+            # 5. Notificar a equipe
             try:
+                notification_desc = state['description'][:200] + '...' if len(state['description']) > 200 else state['description']
                 notification = (
-                    f"🎫 **NOVO CHAMADO - Atenção Equipe!**\n\n"
-                    f"📋 **Protocolo HubSoft:** `{hubsoft_protocol}`\n"
-                    f"👤 **Cliente:** @{user.username or user.first_name}\n"
+                    f"🎫 **NOVO CHAMADO - VIA BOT**\n\n"
+                    f"📋 **Protocolo:** `{hubsoft_protocol}`\n"
+                    f"👤 **Cliente:** {user_mention}\n"
                     f"🎯 **Categoria:** {state['category_name']}\n"
                     f"🎮 **Jogo:** {state['game_name']}\n"
-                    f"⏰ **Quando começou:** {state['timing_name']}\n"
-                    f"📎 **Anexos:** {len(state.get('attachments', []))} arquivo(s)\n\n"
-                    f"📝 **Descrição resumida:**\n{state['description'][:200]}...\n\n"
-                    f"✅ Cliente já foi informado - aguardando nossa análise!\n"
-                    f"🔔 **Prazo de resposta:** 24h úteis"
+                    f"📝 **Descrição:**\n{notification_desc}"
                 )
-
                 await context.bot.send_message(
                     chat_id=int(TELEGRAM_GROUP_ID),
                     message_thread_id=int(SUPPORT_TOPIC_ID),
@@ -1723,27 +1746,26 @@ class TelegramBotHandler:
                     parse_mode='Markdown'
                 )
             except Exception as e:
-                logger.error(f"Erro ao enviar notificação de ticket ao grupo: {e}")
+                logger.error(f"Erro ao enviar notificação de novo ticket ao grupo: {e}")
 
-            # Limpa estado
             clear_support_state(context)
-
             logger.info(f"Ticket {hubsoft_protocol} criado com sucesso para usuário {user.id}")
 
         except Exception as e:
             logger.error(f"Erro crítico ao criar ticket: {e}", exc_info=True)
             await query.edit_message_text(
                 "❌ **Erro ao criar chamado**\n\n"
-                "Ocorreu um erro inesperado. Por favor, tente novamente com /suporte\n\n"
-                "Se o problema persistir, entre em contato com nossa equipe.",
+                "Ocorreu um erro inesperado. Por favor, tente novamente com /suporte.",
                 parse_mode='Markdown'
             )
 
-    def _is_admin(self, user_id: int) -> bool:
-        """Verifica se usuário é administrador."""
-        # TODO: Implementar verificação real de admin
-        admin_list = [123456789, 987654321]  # IDs de exemplo
-        return user_id in admin_list
+    async def _is_admin(self, user_id: int) -> bool:
+        """Verifica se usuário é administrador consultando o repositório."""
+        # Garante que o repositório está inicializado
+        if not self._admin_repo:
+            await self._ensure_initialized()
+        
+        return await self._admin_repo.is_administrator(user_id)
 
     def _get_status_emoji(self, status: str) -> str:
         """Retorna emoji correspondente ao status do atendimento."""

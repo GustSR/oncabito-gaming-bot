@@ -18,9 +18,9 @@ from ...domain.repositories.hubsoft_repository import (
     HubSoftCacheRepository,
     HubSoftAPIError
 )
-from ...integrations.hubsoft.rate_limiter import RateLimiter
-from ...integrations.hubsoft.token_manager import TokenManager
-from ...integrations.hubsoft.cache_manager import CacheManager
+from ...integrations.hubsoft.rate_limiter import HubSoftRateLimiter
+from ...integrations.hubsoft.token_manager import HubSoftTokenManager
+from ...integrations.hubsoft.cache_manager import HubSoftCacheManager
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,8 @@ class HubSoftAPIService(HubSoftAPIRepository):
         base_url: str,
         username: str,
         password: str,
-        rate_limiter: Optional[RateLimiter] = None,
-        token_manager: Optional[TokenManager] = None,
+        rate_limiter: Optional[HubSoftRateLimiter] = None,
+        token_manager: Optional[HubSoftTokenManager] = None,
         timeout_seconds: int = 30
     ):
         self.base_url = base_url.rstrip('/')
@@ -43,8 +43,8 @@ class HubSoftAPIService(HubSoftAPIRepository):
         self.timeout_seconds = timeout_seconds
 
         # Componentes auxiliares
-        self.rate_limiter = rate_limiter or RateLimiter()
-        self.token_manager = token_manager or TokenManager()
+        self.rate_limiter = rate_limiter or HubSoftRateLimiter()
+        self.token_manager = token_manager or HubSoftTokenManager()
 
         # Session HTTP reutilizável
         self._session: Optional[aiohttp.ClientSession] = None
@@ -199,21 +199,149 @@ class HubSoftAPIService(HubSoftAPIRepository):
         self,
         ticket_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Cria ticket no HubSoft."""
+        """
+        Cria atendimento no HubSoft via endpoint correto.
+
+        Args:
+            ticket_data: Dados do atendimento contendo:
+                - id_cliente_servico (int): ID do serviço do cliente (obrigatório)
+                - descricao (str): Descrição detalhada (obrigatório)
+                - nome (str): Nome do solicitante (obrigatório)
+                - telefone (str): Telefone no formato DDNNNNNNNNN (obrigatório)
+                - email (str): Email do solicitante (opcional)
+                - id_tipo_atendimento (int): Tipo de atendimento (opcional, padrão SAC)
+                - id_atendimento_status (int): Status inicial (opcional)
+                - parametros (dict): Parâmetros dinâmicos (opcional)
+
+        Returns:
+            Dict contendo response da API com protocolo e id_atendimento
+        """
         try:
             response = await self._make_request(
                 "POST",
-                "/tickets",
+                "/api/v1/integracao/atendimento",
                 data=ticket_data
             )
 
-            ticket_id = response.get('id')
-            logger.info(f"Ticket criado no HubSoft: {ticket_id}")
+            # Extrai protocolo e ID do atendimento criado
+            atendimento = response.get('atendimento', {})
+            protocolo = atendimento.get('protocolo')
+            id_atendimento = atendimento.get('id_atendimento')
+
+            logger.info(f"Atendimento criado no HubSoft: protocolo={protocolo}, id={id_atendimento}")
             return response
 
         except Exception as e:
-            logger.error(f"Erro ao criar ticket: {e}")
+            logger.error(f"Erro ao criar atendimento no HubSoft: {e}")
             raise
+
+    async def get_user_tickets(
+        self,
+        cpf: str,
+        include_closed: bool = True,
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Busca atendimentos de um cliente por CPF.
+
+        Args:
+            cpf: CPF do cliente (formatado ou não)
+            include_closed: Se True, inclui atendimentos fechados/resolvidos
+            limit: Limite de resultados (padrão: 20)
+
+        Returns:
+            Lista de atendimentos do cliente
+        """
+        try:
+            # Formata CPF (remove caracteres especiais)
+            formatted_cpf = ''.join(filter(str.isdigit, cpf))
+
+            # Monta parâmetros da requisição
+            params = {
+                "busca": "cpf_cnpj",
+                "termo_busca": formatted_cpf,
+                "apenas_pendente": "nao" if include_closed else "sim",
+                "limit": limit or 20
+            }
+
+            logger.info(
+                f"Buscando atendimentos para CPF {formatted_cpf[:3]}*** "
+                f"(include_closed={include_closed}, limit={params['limit']})"
+            )
+
+            # Chama endpoint de consulta de atendimentos
+            response = await self._make_request(
+                "GET",
+                "/api/v1/integracao/cliente/atendimento",
+                params=params
+            )
+
+            # Processa resposta da API
+            # Nota: API retorna "suscess" com 's' duplo (typo da API HubSoft)
+            if response.get('status') == 'suscess' and response.get('atendimentos'):
+                atendimentos = response['atendimentos']
+                logger.info(f"Encontrados {len(atendimentos)} atendimentos para CPF {formatted_cpf[:3]}***")
+
+                # Mapeia campos da API HubSoft para campos esperados pelo bot
+                mapped_tickets = []
+                for atendimento in atendimentos:
+                    mapped_ticket = self._map_hubsoft_ticket_to_internal(atendimento)
+                    mapped_tickets.append(mapped_ticket)
+
+                return mapped_tickets
+
+            # Nenhum atendimento encontrado
+            logger.info(f"Nenhum atendimento encontrado para CPF {formatted_cpf[:3]}***")
+            return []
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar atendimentos por CPF: {e}")
+            raise HubSoftAPIError(f"Falha ao buscar atendimentos: {str(e)}")
+
+    def _map_hubsoft_ticket_to_internal(self, hubsoft_ticket: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Mapeia campos retornados pela API HubSoft para formato interno esperado pelo bot.
+
+        Args:
+            hubsoft_ticket: Dados do atendimento retornados pela API HubSoft
+
+        Returns:
+            Ticket mapeado para formato interno
+        """
+        # Mapeia status da API HubSoft para status interno
+        status_map = {
+            'Pendente': 'pending',
+            'Aberto': 'open',
+            'Em Andamento': 'in_progress',
+            'Aguardando Cliente': 'waiting_customer',
+            'Fechado': 'closed',
+            'Resolvido': 'resolved',
+            'Cancelado': 'cancelled'
+        }
+
+        hubsoft_status = hubsoft_ticket.get('status', 'Pendente')
+        internal_status = status_map.get(hubsoft_status, 'pending')
+
+        # Tenta extrair categoria do tipo_atendimento ou parametros
+        # Por padrão, tickets do HubSoft não têm categoria, então usa "others"
+        category = 'others'
+
+        # Se o ticket foi criado pelo bot, pode ter parametros com categoria
+        # (verificar se há campo parametros no retorno da API)
+
+        return {
+            'id': hubsoft_ticket.get('id_atendimento'),
+            'protocol': hubsoft_ticket.get('protocolo'),
+            'status': internal_status,
+            'category': category,
+            'created_at': hubsoft_ticket.get('data_cadastro'),
+            'closed_at': hubsoft_ticket.get('data_fechamento'),
+            'description': hubsoft_ticket.get('descricao_abertura', ''),
+            'type': hubsoft_ticket.get('tipo_atendimento', ''),
+            'affected_game': None,  # HubSoft não retorna esse campo diretamente
+            # Dados originais da API HubSoft para referência
+            '_hubsoft_data': hubsoft_ticket
+        }
 
     async def update_ticket(
         self,
@@ -342,8 +470,8 @@ class HubSoftAPIService(HubSoftAPIRepository):
 class HubSoftCacheService(HubSoftCacheRepository):
     """Implementação do serviço de cache HubSoft."""
 
-    def __init__(self, cache_manager: Optional[CacheManager] = None):
-        self.cache_manager = cache_manager or CacheManager()
+    def __init__(self, cache_manager: Optional[HubSoftCacheManager] = None):
+        self.cache_manager = cache_manager or HubSoftCacheManager()
 
     async def get_cached_client_data(
         self,
