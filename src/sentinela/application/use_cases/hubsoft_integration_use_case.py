@@ -963,11 +963,45 @@ class HubSoftIntegrationUseCase:
         try:
             start_time = datetime.now()
 
-            # Busca apenas tickets ativos
+            # 1. Busca verificação CPF COMPLETED do usuário (LÓGICA CORRIGIDA)
+            from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
+            from ...domain.entities.cpf_verification import VerificationStatus
+            from ...infrastructure.config.dependency_injection import get_container
+
+            container = get_container()
+            cpf_repo: CPFVerificationRepository = container.get("cpf_verification_repository")
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=10)
+            completed_verification = next(
+                (v for v in verifications if v.status == VerificationStatus.COMPLETED),
+                None
+            )
+
+            if not completed_verification:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="Usuário não possui verificação de CPF concluída para buscar tickets.",
+                    error_code="USER_NOT_VERIFIED",
+                    data={"tickets": [], "count": 0, "has_active": False}
+                )
+
+            # 2. Extrai CPF do client_data (LÓGICA CORRIGIDA)
+            client_data = completed_verification.client_data
+            cpf = client_data.get('cpf_cnpj') if client_data else None
+
+            if not cpf:
+                return HubSoftOperationResult(
+                    success=False,
+                    message="CPF não encontrado nos dados do cliente para buscar tickets.",
+                    error_code="CPF_NOT_FOUND",
+                    data={"tickets": [], "count": 0, "has_active": False}
+                )
+
+            # 3. Busca apenas tickets ativos usando o CPF (LÓGICA CORRIGIDA)
             active_statuses = ['pending', 'open', 'in_progress']
+            logger.info(f"Buscando tickets ATIVOS para user {user_id} (CPF: {cpf[:3]}***)")
 
             tickets_data = await self.api_repository.get_user_tickets(
-                user_id=user_id,
+                cpf=cpf,
                 include_closed=False,
                 status_filter=active_statuses
             )
@@ -994,7 +1028,7 @@ class HubSoftIntegrationUseCase:
             )
 
         except Exception as e:
-            logger.error(f"Erro ao buscar tickets ativos do usuário {user_id}: {e}")
+            logger.error(f"Erro ao buscar tickets ativos do usuário {user_id}: {e}", exc_info=True)
             return HubSoftOperationResult(
                 success=False,
                 message=f"Erro ao buscar tickets ativos: {str(e)}",

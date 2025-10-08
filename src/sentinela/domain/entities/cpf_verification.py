@@ -307,6 +307,7 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
             username=self._username,
             verification_type=self._verification_type.value,
             cpf_number=str(cpf),
+            client_data=self._client_data,  # Adicionado para propagar os dados
             success=True
         ))
 

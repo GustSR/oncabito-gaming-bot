@@ -19,12 +19,14 @@ class ResolveCPFDuplicateHandler(CommandHandler[ResolveCPFDuplicateCommand]):
         duplicate_cpf_service: DuplicateCPFService,
         verification_repository: CPFVerificationRepository,
         user_repository: UserRepository,
-        event_bus: EventBus
+        event_bus: EventBus,
+        hubsoft_api_service=None
     ):
         self.duplicate_cpf_service = duplicate_cpf_service
         self.verification_repository = verification_repository
         self.user_repository = user_repository
         self.event_bus = event_bus
+        self.hubsoft_api_service = hubsoft_api_service
 
     async def handle(self, command: ResolveCPFDuplicateCommand) -> CommandResult:
         try:
@@ -53,10 +55,15 @@ class ResolveCPFDuplicateHandler(CommandHandler[ResolveCPFDuplicateCommand]):
             
             cpf = CPF.from_raw(last_attempt.cpf_provided)
 
-            from ....integrations.hubsoft.cliente import get_client_info
-            client_data = get_client_info(str(cpf), full_data=True)
-            if not client_data:
+            if not self.hubsoft_api_service:
+                logger.error("HubSoftAPIService não injetado no handler!")
+                return CommandResult.failure("service_unavailable", "Serviço HubSoft indisponível.")
+
+            result = await self.hubsoft_api_service.verify_client(str(cpf))
+            if not result or not result.get('success'):
                  return CommandResult.failure("client_not_found_after_resolution", "Cliente não encontrado no Hubsoft após resolução.")
+
+            client_data = result.get('data', {})
 
             verification.complete_with_success(cpf, client_data)
             await self.verification_repository.save(verification)

@@ -26,67 +26,9 @@ logger = logging.getLogger(__name__)
 class SQLiteHubSoftIntegrationRepository(HubSoftIntegrationRepository):
     """Implementação SQLite do repositório de integrações HubSoft."""
 
-    def __init__(self, db_path: str = "data/oncabo.db"):
+    def __init__(self, db_path: str = "data/database/sentinela.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_tables()
-
-    def _init_tables(self) -> None:
-        """Inicializa tabelas do banco."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS hubsoft_integrations (
-                    id TEXT PRIMARY KEY,
-                    integration_type TEXT NOT NULL,
-                    priority TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    metadata TEXT,
-                    max_retries INTEGER NOT NULL,
-                    timeout_seconds INTEGER NOT NULL,
-                    scheduled_at TEXT,
-                    started_at TEXT,
-                    completed_at TEXT,
-                    hubsoft_response TEXT,
-                    error_details TEXT,
-                    created_at TEXT NOT NULL
-                )
-            """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS hubsoft_integration_attempts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    integration_id TEXT NOT NULL,
-                    attempted_at TEXT NOT NULL,
-                    success BOOLEAN NOT NULL,
-                    error_message TEXT,
-                    response_data TEXT,
-                    duration_ms INTEGER,
-                    FOREIGN KEY (integration_id) REFERENCES hubsoft_integrations(id)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hubsoft_integrations_type ON hubsoft_integrations(integration_type)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hubsoft_integrations_status ON hubsoft_integrations(status)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hubsoft_integrations_priority ON hubsoft_integrations(priority)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hubsoft_integrations_scheduled_at ON hubsoft_integrations(scheduled_at)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hubsoft_integration_attempts_integration_id ON hubsoft_integration_attempts(integration_id)
-            """)
-
-            conn.commit()
 
     async def save(self, integration: HubSoftIntegrationRequest) -> None:
         """Salva uma integração."""

@@ -18,7 +18,9 @@ def setup_logging():
     )
 
     # Exemplo de como silenciar logs muito verbosos de bibliotecas de terceiros
-    # logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+    logging.getLogger("telegram.bot").setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
     logger.info("Sistema de logging configurado com sucesso.")

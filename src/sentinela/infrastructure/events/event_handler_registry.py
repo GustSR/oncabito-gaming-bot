@@ -8,6 +8,7 @@ no Event Bus durante a inicialização da aplicação.
 import logging
 from typing import Type, List
 
+from ...domain.repositories.user_repository import UserRepository
 from .event_bus import EventBus, EventHandler
 from .handlers.ticket_event_handlers import (
     TicketCreatedHandler,
@@ -49,14 +50,16 @@ class EventHandlerRegistry:
     e permite ativação/desativação de grupos de handlers.
     """
 
-    def __init__(self, event_bus: EventBus):
+    def __init__(self, event_bus: EventBus, user_repository: UserRepository):
         """
         Inicializa o registry.
 
         Args:
             event_bus: Instância do event bus para registrar handlers
+            user_repository: Repositório de usuários para injetar nos handlers
         """
         self.event_bus = event_bus
+        self.user_repository = user_repository
         self._registered_handlers: List[EventHandler] = []
 
     def register_all_handlers(self) -> None:
@@ -130,7 +133,7 @@ class EventHandlerRegistry:
         """Registra handlers para eventos de verificação de CPF."""
         cpf_handlers = [
             VerificationStartedHandler(),
-            VerificationCompletedHandler(),
+            VerificationCompletedHandler(self.user_repository),
             VerificationFailedHandler(),
             VerificationExpiredHandler(),
             CPFDuplicateDetectedHandler(),
@@ -246,17 +249,18 @@ class EventHandlerRegistry:
         logger.info(f"  🔗 Total de subscrições: {total_subscriptions}")
 
 
-def setup_event_handlers(event_bus: EventBus) -> EventHandlerRegistry:
+def setup_event_handlers(event_bus: EventBus, user_repository: UserRepository) -> EventHandlerRegistry:
     """
     Função de conveniência para configurar todos os event handlers.
 
     Args:
         event_bus: Instância do event bus
+        user_repository: Instância do repositório de usuários
 
     Returns:
         EventHandlerRegistry: Registry configurado com todos os handlers
     """
-    registry = EventHandlerRegistry(event_bus)
+    registry = EventHandlerRegistry(event_bus, user_repository)
     registry.register_all_handlers()
     registry.diagnose_handlers()
 

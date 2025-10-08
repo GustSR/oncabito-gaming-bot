@@ -28,52 +28,45 @@ class DuplicateCPFService:
 
     async def check_for_duplicates(
         self,
-        cpf_hash: str,
+        cpf: str,
         exclude_user_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Verifica se existem duplicatas de CPF.
+        Verifica se um CPF já está em uso por outro usuário na tabela principal.
 
         Args:
-            cpf_hash: Hash do CPF a ser verificado
-            exclude_user_id: ID de usuário para excluir da busca
+            cpf: O CPF em texto puro para verificar.
+            exclude_user_id: ID do usuário para excluir da busca (o próprio usuário que está se verificando).
 
         Returns:
-            Informações sobre duplicatas encontradas
+            Informações sobre a duplicata, se encontrada.
         """
         try:
-            # Busca verificações recentes com o mesmo CPF
-            recent_verifications = await self._find_recent_verifications_by_cpf(
-                cpf_hash, exclude_user_id
-            )
+            # Busca diretamente na tabela de usuários pelo CPF
+            existing_user = await self.user_repository.find_by_cpf(cpf)
 
-            if not recent_verifications:
+            # Verifica se um usuário foi encontrado e se não é o mesmo usuário que está se verificando
+            if existing_user and existing_user.id.value != exclude_user_id:
+                logger.warning(f"CPF duplicado encontrado. CPF pertence ao usuário ID: {existing_user.id.value}")
                 return {
-                    "has_duplicates": False,
-                    "duplicate_count": 0,
-                    "users": []
+                    "has_duplicates": True,
+                    "duplicate_count": 1,
+                    "users": [{
+                        "user_id": existing_user.id.value,
+                        "username": existing_user.username,
+                        "is_banned": existing_user.is_banned
+                    }]
                 }
 
-            # Analisa duplicatas
-            duplicate_users = []
-            for verification in recent_verifications:
-                duplicate_users.append({
-                    "user_id": verification.user_id,
-                    "username": verification.username,
-                    "status": verification.status.value,
-                    "created_at": verification.created_at.isoformat(),
-                    "verification_id": verification.id.value
-                })
-
+            # Se nenhum usuário foi encontrado, ou se o usuário encontrado é o mesmo que está se verificando
             return {
-                "has_duplicates": True,
-                "duplicate_count": len(duplicate_users),
-                "users": duplicate_users,
-                "risk_level": self._calculate_risk_level(duplicate_users)
+                "has_duplicates": False,
+                "duplicate_count": 0,
+                "users": []
             }
 
         except Exception as e:
-            logger.error(f"Erro ao verificar duplicatas: {e}")
+            logger.error(f"Erro ao verificar duplicatas de CPF na tabela de usuários: {e}")
             return {
                 "has_duplicates": False,
                 "error": str(e)

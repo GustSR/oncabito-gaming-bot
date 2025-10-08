@@ -21,73 +21,9 @@ logger = logging.getLogger(__name__)
 class SQLiteCPFVerificationRepository(CPFVerificationRepository):
     """Implementação SQLite do repositório de verificações CPF."""
 
-    def __init__(self, db_path: str = "data/oncabo.db"):
+    def __init__(self, db_path: str = "data/database/sentinela.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_tables()
-
-    def _init_tables(self) -> None:
-        """Inicializa tabelas do banco."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS cpf_verifications (
-                    id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    user_mention TEXT,
-                    cpf_hash TEXT NOT NULL,
-                    verification_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    max_attempts INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    verification_data TEXT,
-                    metadata TEXT,
-                    client_data TEXT
-                )
-            """)
-
-            # Migração: adiciona coluna user_mention se não existir
-            try:
-                conn.execute("ALTER TABLE cpf_verifications ADD COLUMN user_mention TEXT")
-                conn.commit()
-                logger.info("Coluna user_mention adicionada à tabela cpf_verifications")
-            except sqlite3.OperationalError:
-                # Coluna já existe, ignora
-                pass
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS cpf_verification_attempts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    verification_id TEXT NOT NULL,
-                    attempted_at TEXT NOT NULL,
-                    success BOOLEAN NOT NULL,
-                    response_data TEXT,
-                    error_message TEXT,
-                    duration_ms INTEGER,
-                    cpf_provided_hash TEXT,
-                    FOREIGN KEY (verification_id) REFERENCES cpf_verifications(id)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_user_id ON cpf_verifications(user_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_status ON cpf_verifications(status)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_cpf_hash ON cpf_verifications(cpf_hash)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verification_attempts_verification_id ON cpf_verification_attempts(verification_id)
-            """)
-
-            conn.commit()
 
     async def save(self, verification: CPFVerificationRequest) -> None:
         """Salva uma verificação CPF."""

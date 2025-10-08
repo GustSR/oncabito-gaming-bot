@@ -73,7 +73,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
         """Faz requisição para a API HubSoft."""
 
         # Rate limiting
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait_for_rate_limit()
 
         try:
             session = await self._get_session()
@@ -83,7 +83,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
             headers = {}
 
             if authenticated:
-                token = await self.token_manager.get_valid_token()
+                token = self.token_manager.get_access_token()
                 if not token:
                     # Faz login se necessário
                     token = await self._authenticate()
@@ -178,13 +178,15 @@ class HubSoftAPIService(HubSoftAPIRepository):
         """Verifica cliente no HubSoft por CPF."""
         try:
             params = {
-                "cpf": cpf,
-                "include_contracts": include_contracts
+                "busca": "cpf_cnpj",
+                "termo_busca": cpf,
+                "incluir_contrato": str(include_contracts).lower(),
+                "servico_status": "servico_habilitado"
             }
 
             response = await self._make_request(
                 "GET",
-                "/clients/verify",
+                "/api/v1/integracao/cliente",
                 params=params
             )
 

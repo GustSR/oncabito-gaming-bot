@@ -142,44 +142,120 @@ class TelegramBotHandler:
 
     async def _check_user_verified(self, user_id: int) -> bool:
         """
-        Verifica se usuário tem CPF verificado e está autorizado a usar comandos.
+        Verifica se um usuário está ATIVO no sistema.
+
+        A única fonte da verdade para um usuário ativo é a tabela `users`
+        com o status 'active'.
 
         Args:
-            user_id: ID do usuário do Telegram
+            user_id: ID do usuário do Telegram.
 
         Returns:
-            bool: True se usuário está verificado, False caso contrário
+            bool: True se o usuário existe e está ativo, False caso contrário.
+        """
+        try:
+            await self._ensure_initialized()
+            user_repo = self._container.get("user_repository")
+            if not user_repo:
+                logger.warning("UserRepository não disponível no container.")
+                return False
+
+            user = await user_repo.find_by_telegram_id(user_id)
+
+            if user and user.is_active():
+                logger.debug(f"Usuário {user_id} está verificado e ativo.")
+                return True
+            
+            if user:
+                logger.debug(f"Usuário {user_id} encontrado, mas com status '{user.status.value}', não 'active'.")
+            else:
+                logger.debug(f"Usuário {user_id} não encontrado na tabela 'users'.")
+            
+            return False
+
+        except Exception as e:
+            logger.error(f"Erro ao verificar status do usuário {user_id}: {e}", exc_info=True)
+            return False
+
+    async def _get_verification_status_message(self, user_id: int) -> dict:
+        """
+        Retorna mensagem contextualizada baseada no status da verificação.
+
+        Returns:
+            dict: {
+                "is_verified": bool,
+                "status": str,
+                "message": str
+            }
         """
         try:
             await self._ensure_initialized()
 
-            # Busca verificação de CPF no repositório
             cpf_repo = self._container.get("cpf_verification_repository")
             if not cpf_repo:
-                logger.warning("CPF verification repository não disponível")
-                return False
+                return {
+                    "is_verified": False,
+                    "status": "unknown",
+                    "message": "⚠️ Sistema de verificação indisponível.\n\nTente novamente mais tarde."
+                }
 
-            # Busca verificações pelo user_id (retorna lista)
             verifications = await cpf_repo.find_by_user_id(user_id, limit=10)
 
             if not verifications:
-                logger.debug(f"Usuário {user_id} não possui verificação de CPF")
-                return False
+                return {
+                    "is_verified": False,
+                    "status": "no_verification",
+                    "message": "⚠️ Nenhuma verificação encontrada.\n\nDigite /start para iniciar."
+                }
 
-            # Busca verificação completed (importa VerificationStatus se necessário)
+            latest = verifications[0]
+
             from ...domain.entities.cpf_verification import VerificationStatus
-            verification = next((v for v in verifications if v.status == VerificationStatus.COMPLETED), None)
 
-            if not verification:
-                logger.debug(f"Usuário {user_id} possui verificações mas nenhuma completed")
-                return False
+            completed = next((v for v in verifications if v.status == VerificationStatus.COMPLETED), None)
+            if completed:
+                return {
+                    "is_verified": True,
+                    "status": "completed",
+                    "message": ""
+                }
 
-            logger.debug(f"Usuário {user_id} está verificado")
-            return True
+            status_messages = {
+                VerificationStatus.PENDING: {
+                    "message": "⏳ **Aguardando verificação de CPF**\n\n📝 Por favor, envie seu CPF (apenas números) para continuar.\n\nDigite /ajuda se precisar de mais informações."
+                },
+                VerificationStatus.IN_PROGRESS: {
+                    "message": "🔄 **Verificação em andamento**\n\nAguarde enquanto processamos suas informações.\n\nEm caso de dúvidas, digite /ajuda"
+                },
+                VerificationStatus.FAILED: {
+                    "message": "❌ **Verificação não concluída**\n\nSuas tentativas foram esgotadas ou houve um erro.\n\n🔄 Para tentar novamente, digite /start"
+                },
+                VerificationStatus.CANCELLED: {
+                    "message": "🚫 **Verificação cancelada**\n\nVocê cancelou o processo de verificação.\n\n🔄 Para tentar novamente, digite /start"
+                },
+                VerificationStatus.EXPIRED: {
+                    "message": "⏱️ **Verificação expirada**\n\nO prazo para verificação expirou.\n\n🔄 Para tentar novamente, digite /start"
+                }
+            }
+
+            status_info = status_messages.get(
+                latest.status,
+                {"message": "⚠️ Status desconhecido. Digite /start para reiniciar."}
+            )
+
+            return {
+                "is_verified": False,
+                "status": latest.status.value,
+                "message": status_info["message"]
+            }
 
         except Exception as e:
-            logger.error(f"Erro ao verificar usuário {user_id}: {e}")
-            return False
+            logger.error(f"Erro ao obter mensagem de status: {e}")
+            return {
+                "is_verified": False,
+                "status": "error",
+                "message": "⚠️ Erro ao verificar status. Digite /start"
+            }
 
     async def _start_welcome_flow(
         self,
@@ -250,6 +326,23 @@ class TelegramBotHandler:
             # Define estado conversacional aguardando CPF
             context.user_data['waiting_cpf'] = True
 
+            # Agenda um lembrete para 5 minutos (300 segundos)
+            job_name = f"cpf_reminder_{user.id}"
+            # Remove job antigo se existir, para evitar duplicatas
+            jobs = context.job_queue.get_jobs_by_name(job_name)
+            for job in jobs:
+                job.schedule_removal()
+                logger.debug(f"Job de lembrete antigo {job_name} removido.")
+            
+            context.job_queue.run_once(
+                self._cpf_reminder_callback,
+                300,
+                chat_id=user.id,
+                name=job_name,
+                data={'user_id': user.id}
+            )
+            logger.info(f"Lembrete de CPF agendado para usuário {user.id} em 5 minutos (via welcome flow). Job: {job_name}")
+
             logger.info(f"Fluxo de boas-vindas iniciado para usuário {user.id}")
 
         except Exception as e:
@@ -274,7 +367,63 @@ class TelegramBotHandler:
 
             # Verifica se é conversa privada
             if chat.type == 'private':
-                # Apresentação do OnCabito e solicitação de CPF
+                # LÓGICA CORRIGIDA: Verifica se o usuário já é um membro verificado e ativo no grupo.
+                try:
+                    from telegram.error import BadRequest
+                    member = await context.bot.get_chat_member(chat_id=TELEGRAM_GROUP_ID, user_id=user.id)
+                    if member and member.status in ['creator', 'administrator', 'member']:
+                        logger.info(f"Usuário {user.id} (membro do grupo, status: {member.status}) usou /start.")
+
+                        # Etapa 1: Diferenciar Admin de Usuário Normal
+                        if await self._is_admin(user.id):
+                            logger.info(f"Usuário {user.id} é admin. Exibindo menu de admin.")
+                            keyboard = [
+                                [
+                                    InlineKeyboardButton("📋 Listar Tickets", callback_data="admin_list_tickets"),
+                                    InlineKeyboardButton("📊 Estatísticas", callback_data="admin_stats")
+                                ],
+                                [
+                                    InlineKeyboardButton("🔄 Sync HubSoft", callback_data="admin_sync"),
+                                    InlineKeyboardButton("⚙️ Configurações", callback_data="admin_config")
+                                ]
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                            message = (
+                                f"👋 Olá, {user.first_name}! Como administrador, o que você gostaria de fazer?"
+                            )
+                            await update.message.reply_text(message, reply_markup=reply_markup)
+
+                        else:
+                            logger.info(f"Usuário {user.id} é membro normal. Exibindo opções de suporte.")
+                            keyboard = [
+                                [
+                                    InlineKeyboardButton("➕ Abrir novo chamado", callback_data="start_flow_support"),
+                                    InlineKeyboardButton("🔍 Verificar chamado", callback_data="start_flow_status")
+                                ]
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                            message = (
+                                f"👋 Olá, {user.first_name}! Você já está em nosso grupo de suporte. O que deseja fazer?"
+                            )
+                            await update.message.reply_text(message, reply_markup=reply_markup)
+
+                        return # Finaliza o fluxo de /start para membros existentes
+
+                except BadRequest:
+                    # Erro esperado se o usuário não estiver no grupo. Continua o fluxo normal.
+                    logger.debug(f"Usuário {user.id} não é membro do grupo (BadRequest). Continuando com o fluxo de /start.")
+                except Exception as e:
+                    # Outros erros podem ser de configuração (e.g., bot não é admin).
+                    # Loga como erro e avisa o usuário, mas não continua o fluxo para evitar comportamento inesperado.
+                    logger.error(f"Erro inesperado ao verificar se usuário {user.id} é membro do grupo. Pode ser um problema de permissão ou configuração. Erro: {e}", exc_info=True)
+                    await update.message.reply_text(
+                        "🤖 Ops! Tive um problema para verificar suas informações. "
+                        "Por favor, tente novamente em alguns instantes ou contate o suporte se o erro persistir."
+                    )
+                    return
+
+                # Apresentação do OnCabito e solicitação de CPF (FLUXO DE RESET)
+                # Esta parte agora é executada para qualquer usuário não-membro, resetando a conversa.
                 from ...core.config import ONCABO_SITE_URL, ONCABO_WHATSAPP_URL
 
                 welcome_message = (
@@ -298,8 +447,9 @@ class TelegramBotHandler:
                     parse_mode='HTML'
                 )
 
-                # CRÍTICO: Cria verificação pendente no banco ANTES de pedir CPF
-                logger.info(f"Criando verificação pendente para usuário {user.id}")
+                # Garante que o estado de verificação seja criado ou exista.
+                # A lógica de 'reset' é simplesmente ignorar a falha de 'já existe'.
+                logger.info(f"Garantindo estado de verificação pendente para usuário {user.id} via /start.")
                 verification_result = await self._cpf_use_case.start_verification(
                     user_id=user.id,
                     username=user.username or user.first_name,
@@ -309,19 +459,38 @@ class TelegramBotHandler:
                 )
 
                 if not verification_result.success:
-                    logger.error(f"Erro ao criar verificação: {verification_result.message}")
-                    await update.message.reply_text(
-                        "❌ Erro ao iniciar verificação. Tente novamente em alguns instantes.",
-                        parse_mode='HTML'
-                    )
-                    return
+                    # A única falha que não ignoramos é uma que não seja 'already pending'.
+                    if "já existe" not in verification_result.message.lower() and "already pending" not in verification_result.message.lower():
+                        logger.error(f"Erro ao criar verificação: {verification_result.message}")
+                        await update.message.reply_text(
+                            "❌ Erro ao iniciar verificação. Tente novamente em alguns instantes.",
+                            parse_mode='HTML'
+                        )
+                        return
+                    else:
+                        logger.info(f"Usuário {user.id} já tinha verificação pendente. Continuando fluxo de /start (reset). ")
 
-                logger.info(f"Verificação criada: {verification_result.verification_id}")
-
-                # Define estado conversacional aguardando CPF
+                # Define estado conversacional aguardando CPF, garantindo que o bot está pronto para o input.
                 context.user_data['waiting_cpf'] = True
+                logger.info(f"Usuário {user.id} (re)iniciou o fluxo de /start - aguardando CPF.")
 
-                logger.info(f"Usuário {user.id} iniciou conversa privada - aguardando CPF")
+                # Agenda um lembrete para 5 minutos (300 segundos)
+                job_name = f"cpf_reminder_{user.id}"
+                # Remove job antigo se existir, para evitar duplicatas
+                jobs = context.job_queue.get_jobs_by_name(job_name)
+                for job in jobs:
+                    job.schedule_removal()
+                    logger.debug(f"Job de lembrete antigo {job_name} removido.")
+                
+                context.job_queue.run_once(
+                    self._cpf_reminder_callback,
+                    300,
+                    chat_id=user.id,
+                    name=job_name,
+                    data={'user_id': user.id}
+                )
+                logger.info(f"Lembrete de CPF agendado para usuário {user.id} em 5 minutos. Job: {job_name}")
+
             else:
                 # Mensagem para uso em grupo
                 message = (
@@ -336,7 +505,7 @@ class TelegramBotHandler:
                 )
 
         except Exception as e:
-            logger.error(f"Erro no comando /start: {e}")
+            logger.error(f"Erro no comando /start: {e}", exc_info=True)
             await update.message.reply_text(
                 "❌ Ocorreu um erro inesperado. Tente novamente mais tarde."
             )
@@ -724,6 +893,194 @@ class TelegramBotHandler:
                 "❌ Erro no painel administrativo."
             )
 
+    async def _handle_start_flow_support_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Inicia o fluxo de suporte a partir de um botão de callback, replicando /suporte."""
+        logger.info(f"Usuário {query.from_user.id} iniciou fluxo de suporte via callback.")
+        await query.message.edit_text("Iniciando o fluxo de suporte...")
+
+        try:
+            user = query.from_user
+
+            # VALIDAÇÃO CRÍTICA: Usuário deve estar verificado.
+            is_verified = await self._check_user_verified(user.id)
+            if not is_verified:
+                await context.bot.send_message(chat_id=user.id, text="⚠️ Sua verificação não foi encontrada. Por favor, use /start para se verificar novamente.")
+                return
+
+            # VALIDAÇÃO: Verifica se já tem ticket ativo
+            active_result = await self._hubsoft_use_case.get_user_active_tickets(user.id)
+
+            if active_result.success and active_result.data.get('has_active'):
+                active_tickets = active_result.data.get('tickets', [])
+                active_ticket = active_tickets[0] if active_tickets else None
+
+                if not active_ticket:
+                    logger.error(f"HubSoft retornou has_active=True mas sem tickets para user {user.id}")
+                    await context.bot.send_message(chat_id=user.id, text="❌ Erro ao verificar tickets ativos. Tente novamente.")
+                    return
+
+                protocol = active_ticket.get('protocol') or f"HS-{active_ticket.get('id', 'UNKNOWN')}"
+                category_names = {
+                    'connectivity': '🌐 Conectividade/Ping', 'performance': '⚡ Performance/FPS',
+                    'game_issues': '🎮 Problemas no Jogo', 'configuration': '💻 Configuração', 'others': '📞 Outros'
+                }
+                category = category_names.get(active_ticket['category'], active_ticket['category'])
+                status_pt = self._get_status_name_pt(active_ticket['status'])
+                user_mention = user.mention_markdown() if user.username else user.first_name
+
+                message = (
+                    f"Olá, {user_mention}! 😊\\n\\n"
+                    f"🎮 Vejo que você já está sendo atendido pela nossa equipe!\\n\\n"
+                    f"📋 **Protocolo:** `{protocol}`\\n"
+                    f"📂 **Categoria:** {category}\\n"
+                    f"📅 **Status:** {status_pt}\\n\\n"
+                    f"⏰ **Nossos técnicos já estão trabalhando no seu caso!**\\n\\n"
+                    f"💡 Use /status para acompanhar o andamento\\n"
+                    f"🙏 Agradecemos sua paciência e confiança!"
+                )
+                await context.bot.send_message(chat_id=user.id, text=message, parse_mode='Markdown')
+                logger.info(f"Usuário {user.id} tentou abrir ticket via callback mas já tem ativo: {protocol}")
+                return
+
+            # Inicia o fluxo de suporte (formulário)
+            init_support_state(context)
+            state = get_support_state(context)
+            state['state'] = SupportState.CATEGORY
+            state['current_step'] = 1
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("🌐 Conectividade/Ping", callback_data="sup_cat_connectivity"),
+                    InlineKeyboardButton("⚡ Performance/FPS", callback_data="sup_cat_performance")
+                ],
+                [
+                    InlineKeyboardButton("🎮 Problemas no Jogo", callback_data="sup_cat_game_issues"),
+                    InlineKeyboardButton("💻 Configuração", callback_data="sup_cat_configuration")
+                ],
+                [InlineKeyboardButton("📞 Outros", callback_data="sup_cat_others")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            progress = get_progress_bar(1)
+            message = (
+                f"🎮 **SUPORTE GAMER ONCABO**\\n\\n"
+                f"Olá! Fico feliz em te ajudar! 😊\\n\\n"
+                f"Vou te guiar passo a passo para resolver seu problema da melhor forma.\\n\\n"
+                f"{progress} - **Tipo do Problema**\\n\\n"
+                f"Primeiro, me conta: qual dessas opções descreve melhor o que está acontecendo?"
+            )
+            await context.bot.send_message(chat_id=user.id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+            logger.info(f"Usuário {user.id} iniciou fluxo de suporte via callback - Step 1 (Categoria)")
+
+        except Exception as e:
+            logger.error(f"Erro no _handle_start_flow_support_callback: {e}", exc_info=True)
+            await context.bot.send_message(chat_id=query.from_user.id, text="❌ Erro ao iniciar suporte. Tente novamente.")
+
+    async def _handle_start_flow_status_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Inicia a verificação de status a partir de um botão de callback, replicando /status."""
+        logger.info(f"Usuário {query.from_user.id} iniciou verificação de status via callback.")
+        await query.message.edit_text("Verificando status dos seus chamados...")
+
+        try:
+            user = query.from_user
+
+            # VALIDAÇÃO CRÍTICA: Usuário deve estar verificado.
+            is_verified = await self._check_user_verified(user.id)
+            if not is_verified:
+                await context.bot.send_message(chat_id=user.id, text="⚠️ Sua verificação não foi encontrada. Por favor, use /start para se verificar novamente.")
+                return
+
+            # ADR-001: Busca tickets direto do HubSoft
+            tickets_result = await self._hubsoft_use_case.get_user_tickets(user.id)
+
+            if not tickets_result.success or tickets_result.data.get('count', 0) == 0:
+                message = (
+                    "📋 **Seus Atendimentos**\\n\\n"
+                    "👋 Olá! Você ainda não tem nenhum atendimento aberto.\\n\\n"
+                    "💡 **Precisa de ajuda?**\\n"
+                    "Use o comando /suporte para abrir um novo chamado!\\n\\n"
+                    "Nossa equipe está sempre pronta para te ajudar! 😊"
+                )
+                await context.bot.send_message(chat_id=user.id, text=message, parse_mode='Markdown')
+                logger.info(f"Usuário {user.id} verificou status via callback - sem atendimentos")
+                return
+
+            tickets = tickets_result.data.get('tickets', [])
+            active_statuses = ['pending', 'open', 'in_progress']
+            active_tickets = [t for t in tickets if t.get('status') in active_statuses]
+            finished_tickets = [t for t in tickets if t.get('status') not in active_statuses]
+
+            message_parts = ["📋 **Seus Atendimentos**\\n"]
+            total = len(tickets)
+            active_count = len(active_tickets)
+            finished_count = len(finished_tickets)
+
+            message_parts.append(
+                f"📊 **Resumo:** {total} atendimento(s) no total\\n"
+                f"🟢 Ativos: {active_count} | ✅ Finalizados: {finished_count}\\n"
+            )
+
+            category_names = {
+                'connectivity': '🌐 Conectividade/Ping', 'performance': '⚡ Performance/FPS',
+                'game_issues': '🎮 Problemas no Jogo', 'configuration': '💻 Configuração', 'others': '📞 Outros'
+            }
+
+            if active_tickets:
+                message_parts.append("\\n🔴 **ATENDIMENTOS ATIVOS**\\n")
+                for ticket in active_tickets:
+                    status_emoji = self._get_status_emoji(ticket['status'])
+                    status_name = self._get_status_name_pt(ticket['status'])
+                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
+                    category = category_names.get(ticket['category'], ticket['category'])
+                    if isinstance(ticket['created_at'], str):
+                        created_date = datetime.fromisoformat(ticket['created_at'].replace(' ', 'T'))
+                    else:
+                        created_date = ticket['created_at']
+                    days_open = (datetime.now() - created_date).days
+                    message_parts.append(
+                        f"\\n{status_emoji} **{protocol}**\\n"
+                        f"   📂 {category}\\n"
+                        f"   📅 {status_name} • Aberto há {days_open} dia(s)\\n"
+                    )
+                    if ticket.get('affected_game'):
+                        message_parts.append(f"   🎮 {ticket['affected_game']}\\n")
+
+            if finished_tickets:
+                message_parts.append("\\n✅ **ÚLTIMOS ATENDIMENTOS FINALIZADOS**\\n")
+                recent_finished = finished_tickets[:3]
+                for ticket in recent_finished:
+                    status_emoji = self._get_status_emoji(ticket['status'])
+                    status_name = self._get_status_name_pt(ticket['status'])
+                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
+                    category = category_names.get(ticket['category'], ticket['category'])
+                    message_parts.append(
+                        f"\\n{status_emoji} **{protocol}**\\n"
+                        f"   📂 {category}\\n"
+                        f"   🏁 Status: {status_name}\\n"
+                    )
+                if len(finished_tickets) > 3:
+                    message_parts.append(f"\\n_... e mais {len(finished_tickets) - 3} finalizado(s)_\\n")
+
+            if not active_tickets:
+                message_parts.append(
+                    "\\n💡 **Precisa de ajuda?**\\n"
+                    "• Use /suporte para abrir um atendimento\\n"
+                )
+            else:
+                message_parts.append(
+                    "\\n💡 **Dicas:**\\n"
+                    "• Nossa equipe está trabalhando no seu atendimento\\n"
+                    "• Aguarde o retorno em breve!\\n"
+                )
+
+            message = "".join(message_parts)
+            await context.bot.send_message(chat_id=user.id, text=message, parse_mode='Markdown')
+            logger.info(f"Usuário {user.id} verificou status via callback: {active_count} ativos, {finished_count} finalizados")
+
+        except Exception as e:
+            logger.error(f"Erro no _handle_start_flow_status_callback: {e}", exc_info=True)
+            await context.bot.send_message(chat_id=query.from_user.id, text="❌ Erro ao verificar seus chamados. Tente novamente.")
+
     async def handle_callback_query(
         self,
         update: Update,
@@ -753,6 +1110,10 @@ class TelegramBotHandler:
                 await self._handle_category_selection(query, callback_data)
             elif callback_data.startswith("admin_"):
                 await self._handle_admin_callback(query, callback_data)
+            elif callback_data == "start_flow_support":
+                await self._handle_start_flow_support_callback(query, context)
+            elif callback_data == "start_flow_status":
+                await self._handle_start_flow_status_callback(query, context)
             else:
                 logger.warning(f"Callback não reconhecido: {callback_data}")
 
@@ -820,10 +1181,30 @@ class TelegramBotHandler:
 
         elif action == "cancel":
             logger.info(f"Usuário {query.from_user.id} cancelou a resolução de conflito para a verificação {verification_id}.")
-            # TODO: Chamar use case para cancelar a verificação
-            await query.edit_message_text(
-                "Ok, operação cancelada. Você pode tentar a verificação novamente com um CPF diferente, ou usar o comando /start para recomeçar."
+            
+            # Chama o use case para cancelar a verificação
+            result = await self._cpf_use_case.cancel_verification_by_id(
+                verification_id=verification_id,
+                reason="conflict_cancelled_by_user"
             )
+
+            if result.success:
+                await query.edit_message_text(
+                    "🚫 **Verificação Cancelada**\n\n"
+                    "Você cancelou a resolução do conflito de CPF.\n\n"
+                    "Para tentar novamente com outro CPF, por favor, use o comando /start.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Erro ao cancelar: {result.message}\n\n"
+                    "Por favor, entre em contato com o suporte.",
+                    parse_mode='Markdown'
+                )
+            
+            # Limpa o contexto da resolução
+            if 'duplicate_resolution_context' in context.user_data:
+                del context.user_data['duplicate_resolution_context']
 
     async def _handle_category_selection(self, query, callback_data: str) -> None:
         """Processa seleção de categoria de suporte."""
@@ -924,6 +1305,7 @@ class TelegramBotHandler:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Processa mensagens de texto."""
+        logger.info(f"handle_text_message triggered for user {update.effective_user.id} with text: '{update.message.text}'")
         try:
             await self._ensure_initialized()
 
@@ -975,14 +1357,17 @@ class TelegramBotHandler:
                 return
 
             # Usuário já interagiu - Verifica se está verificado
-            is_verified = await self._check_user_verified(user.id)
-            if not is_verified:
-                # Já interagiu mas não completou verificação
+            status_info = await self._get_verification_status_message(user.id)
+            if not status_info["is_verified"]:
+                # Se está aguardando CPF (PENDING ou IN_PROGRESS), seta flag para processar próxima mensagem
+                from ...domain.entities.cpf_verification import VerificationStatus
+                if status_info["status"] in [VerificationStatus.PENDING.value, VerificationStatus.IN_PROGRESS.value]:
+                    context.user_data['waiting_cpf'] = True
+                    logger.debug(f"Flag waiting_cpf setado para usuário {user.id} com status {status_info['status']}")
+
                 await update.message.reply_text(
-                    "⚠️ Seu cadastro ainda está em análise.\n\n"
-                    "Aguarde a verificação ser concluída para usar os comandos.\n\n"
-                    "Digite /ajuda se precisar de mais informações.",
-                    parse_mode='HTML'
+                    status_info["message"],
+                    parse_mode='Markdown'
                 )
                 return
 
@@ -1183,9 +1568,16 @@ class TelegramBotHandler:
                 )
                 await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=False)
 
-            # Limpa estado de aguardando CPF
+            # Limpa estado de aguardando CPF e remove o job de lembrete
             if 'waiting_cpf' in context.user_data:
                 del context.user_data['waiting_cpf']
+            
+            job_name = f"cpf_reminder_{user.id}"
+            jobs = context.job_queue.get_jobs_by_name(job_name)
+            if jobs:
+                for job in jobs:
+                    job.schedule_removal()
+                logger.info(f"Job de lembrete de CPF '{job_name}' removido com sucesso.")
 
         except Exception as e:
             logger.error(f"Erro ao processar CPF: {e}", exc_info=True)
@@ -1759,6 +2151,29 @@ class TelegramBotHandler:
                 parse_mode='Markdown'
             )
 
+    async def _cpf_reminder_callback(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Envia um lembrete para o usuário que não enviou o CPF a tempo."""
+        job = context.job
+        user_id = job.data['user_id']
+        
+        logger.info(f"Executando lembrete de CPF para usuário {user_id}.")
+        
+        # Acessa o user_data específico do usuário
+        user_context = context.application.user_data.get(user_id, {})
+        
+        # Verifica se o usuário ainda está aguardando o CPF
+        if user_context.get('waiting_cpf'):
+            logger.info(f"Usuário {user_id} ainda não enviou o CPF. Enviando lembrete.")
+            await context.bot.send_message(
+                chat_id=job.chat_id,
+                text=(
+                    "👋 Olá! Só um lembrete amigável de que estou aguardando seu CPF para continuarmos com a verificação. "
+                    "Pode me enviar apenas os números, por favor? 😊"
+                )
+            )
+        else:
+            logger.info(f"Lembrete de CPF para {user_id} ignorado, pois o usuário não está mais aguardando CPF.")
+
     async def _is_admin(self, user_id: int) -> bool:
         """Verifica se usuário é administrador consultando o repositório."""
         # Garante que o repositório está inicializado
@@ -1804,10 +2219,23 @@ class TelegramBotHandler:
             if not update.chat_member:
                 return
 
-            new_member = update.chat_member.new_chat_member
-            old_member = update.chat_member.old_chat_member
+            new_member_status = update.chat_member.new_chat_member.status
+            old_member_status = update.chat_member.old_chat_member.status
             user = update.chat_member.from_user
             chat = update.effective_chat
+
+            # LÓGICA DE ATIVAÇÃO: Ativa usuário que estava pendente e acabou de entrar
+            if new_member_status in ['member', 'administrator', 'creator'] and old_member_status in ['left', 'kicked']:
+                try:
+                    user_repo = self._container.get("user_repository")
+                    domain_user = await user_repo.find_by_telegram_id(user.id)
+
+                    if domain_user and domain_user.status.value == "pending_verification":
+                        domain_user.activate()
+                        await user_repo.save(domain_user)
+                        logger.info(f"Usuário {user.id} ({user.first_name}) ativado com sucesso após entrar no grupo.")
+                except Exception as activation_error:
+                    logger.error(f"Falha ao tentar ativar o usuário {user.id} na entrada do grupo: {activation_error}")
 
             # Verifica se é um novo membro (não estava no grupo antes)
             if old_member.status in ['left', 'kicked'] and new_member.status == 'member':

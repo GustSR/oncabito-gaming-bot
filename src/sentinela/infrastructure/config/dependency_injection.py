@@ -421,10 +421,41 @@ def configure_dependencies() -> None:
     )
 
     container.register_singleton(StartCPFVerificationHandler, StartCPFVerificationHandler)
-    container.register_singleton(SubmitCPFForVerificationHandler, SubmitCPFForVerificationHandler)
+
+    # SubmitCPFForVerificationHandler precisa de HubSoftAPIService
+    def create_submit_cpf_handler():
+        from ...domain.services.cpf_validation_service import CPFValidationService
+        from ...domain.services.duplicate_cpf_service import DuplicateCPFService
+        from ..events.event_bus import EventBus
+        from ...domain.repositories.hubsoft_repository import HubSoftAPIRepository
+
+        return SubmitCPFForVerificationHandler(
+            verification_repository=container.get("cpf_verification_repository"),
+            user_repository=container.get("user_repository"),
+            cpf_validation_service=container.get(CPFValidationService),
+            duplicate_cpf_service=container.get(DuplicateCPFService),
+            event_bus=container.get(EventBus),
+            hubsoft_api_service=container.get(HubSoftAPIRepository)
+        )
+    container.register_factory(SubmitCPFForVerificationHandler, create_submit_cpf_handler)
+
     container.register_singleton(CancelCPFVerificationHandler, CancelCPFVerificationHandler)
     container.register_singleton(ProcessExpiredVerificationsHandler, ProcessExpiredVerificationsHandler)
-    container.register_singleton(ResolveCPFDuplicateHandler, ResolveCPFDuplicateHandler)
+
+    # ResolveCPFDuplicateHandler precisa de HubSoftAPIService
+    def create_resolve_duplicate_handler():
+        from ...domain.services.duplicate_cpf_service import DuplicateCPFService
+        from ..events.event_bus import EventBus
+        from ...domain.repositories.hubsoft_repository import HubSoftAPIRepository
+
+        return ResolveCPFDuplicateHandler(
+            duplicate_cpf_service=container.get(DuplicateCPFService),
+            verification_repository=container.get("cpf_verification_repository"),
+            user_repository=container.get("user_repository"),
+            event_bus=container.get(EventBus),
+            hubsoft_api_service=container.get(HubSoftAPIRepository)
+        )
+    container.register_factory(ResolveCPFDuplicateHandler, create_resolve_duplicate_handler)
 
     # Admin Handlers
     from ...application.command_handlers.admin_command_handlers import (
@@ -537,7 +568,8 @@ def configure_dependencies() -> None:
         from ..events.event_bus import EventBus
 
         event_bus = container.get(EventBus)
-        registry = EventHandlerRegistry(event_bus)
+        user_repo = container.get(UserRepository)
+        registry = EventHandlerRegistry(event_bus, user_repo)
         registry.register_all_handlers()
         logger.info("✅ Event handlers registered successfully")
     except Exception as e:

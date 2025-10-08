@@ -66,22 +66,55 @@ class User(AggregateRoot[UserId]):
     def __init__(
         self,
         user_id: UserId,
+        telegram_user_id: int,
         username: str,
+        first_name: str,
+        last_name: Optional[str],
         cpf: CPF,
         client_name: str,
-        service_info: Optional[ServiceInfo] = None
+        service_info: Optional[ServiceInfo] = None,
+        is_banned: bool = False,
+        ban_reason: Optional[str] = None,
+        roles: list = None,
+        last_activity_at: Optional[datetime] = None,
+        metadata: dict = None,
+        expires_at: Optional[datetime] = None
     ):
         super().__init__(user_id)
+        self._telegram_user_id = telegram_user_id
         self._username = username
+        self._first_name = first_name
+        self._last_name = last_name
         self._cpf = cpf
         self._client_name = client_name
         self._service_info = service_info
         self._status = UserStatus.PENDING_VERIFICATION
         self._last_verification = None
         self._is_admin = False
+        self._is_banned = is_banned
+        self._ban_reason = ban_reason
+        self._roles = roles or []
+        self._last_activity_at = last_activity_at
+        self._metadata = metadata or {}
+        self._expires_at = expires_at
 
         # Adiciona evento de registro
         self._add_event(UserRegistered(user_id, cpf, client_name))
+
+    @property
+    def telegram_user_id(self) -> int:
+        """ID do usuário no Telegram."""
+        return self._telegram_user_id
+
+    @property
+    def first_name(self) -> str:
+        """Primeiro nome do usuário."""
+        return self._first_name
+
+    @property
+    def last_name(self) -> Optional[str]:
+        """Sobrenome do usuário."""
+        return self._last_name
 
     @property
     def username(self) -> str:
@@ -117,6 +150,36 @@ class User(AggregateRoot[UserId]):
     def is_admin(self) -> bool:
         """Se o usuário é administrador."""
         return self._is_admin
+
+    @property
+    def is_banned(self) -> bool:
+        """Se o usuário está banido."""
+        return self._is_banned
+
+    @property
+    def ban_reason(self) -> Optional[str]:
+        """Motivo do banimento."""
+        return self._ban_reason
+
+    @property
+    def roles(self) -> list:
+        """Lista de roles do usuário."""
+        return self._roles
+
+    @property
+    def last_activity_at(self) -> Optional[datetime]:
+        """Data da última atividade."""
+        return self._last_activity_at
+
+    @property
+    def metadata(self) -> dict:
+        """Metadados do usuário."""
+        return self._metadata
+
+    @property
+    def expires_at(self) -> Optional[datetime]:
+        """Data de expiração do registro pendente."""
+        return self._expires_at
 
     def update_username(self, new_username: str) -> None:
         """

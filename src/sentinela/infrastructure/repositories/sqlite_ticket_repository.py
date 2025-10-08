@@ -25,59 +25,9 @@ logger = logging.getLogger(__name__)
 class SQLiteTicketRepository(TicketRepository):
     """Implementação SQLite do repositório de tickets."""
 
-    def __init__(self, db_path: str = "data/oncabo.db"):
+    def __init__(self, db_path: str = "data/database/sentinela.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_tables()
-
-    def _init_tables(self) -> None:
-        """Inicializa tabelas do banco."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tickets (
-                    id INTEGER PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    telegram_user_id INTEGER NOT NULL,
-                    category_type TEXT NOT NULL,
-                    category_display_name TEXT NOT NULL,
-                    game_type TEXT NOT NULL,
-                    game_display_name TEXT NOT NULL,
-                    timing_type TEXT NOT NULL,
-                    timing_display_name TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    urgency_level TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    protocol_local TEXT NOT NULL,
-                    protocol_hubsoft TEXT,
-                    assigned_technician TEXT,
-                    resolution_notes TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    closed_at TEXT,
-                    hubsoft_synced BOOLEAN DEFAULT FALSE,
-                    hubsoft_sync_at TEXT,
-                    metadata TEXT
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_tickets_user_id ON tickets(user_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_tickets_protocol_local ON tickets(protocol_local)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_tickets_protocol_hubsoft ON tickets(protocol_hubsoft)
-            """)
-
-            conn.commit()
 
     async def save(self, ticket: Ticket) -> None:
         """Salva um ticket."""
@@ -451,7 +401,7 @@ class SQLiteTicketRepository(TicketRepository):
         """Deserializa metadados do JSON."""
         import json
         try:
-            return json.loads(metadata_str) if metadata_str else {}
+            return json.loads(metadata_str) if data_str else {}
         except:
             return {}
 

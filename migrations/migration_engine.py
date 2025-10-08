@@ -73,30 +73,36 @@ class MigrationEngine:
         counts = {}
         try:
             with self.get_db_connection() as conn:
-                # Conta usuários com CPF (dado mais crítico)
-                cursor = conn.execute("SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL AND cpf IS NOT NULL")
-                counts['users_with_cpf'] = cursor.fetchone()[0]
+                # Tenta contar usuários com CPF
+                try:
+                    cursor = conn.execute("SELECT COUNT(*) FROM users WHERE user_id IS NOT NULL AND cpf IS NOT NULL")
+                    counts['users_with_cpf'] = cursor.fetchone()[0]
+                except sqlite3.OperationalError:
+                    counts['users_with_cpf'] = 0
 
-                # Conta total de usuários
-                cursor = conn.execute("SELECT COUNT(*) FROM users")
-                counts['total_users'] = cursor.fetchone()[0]
+                # Tenta contar total de usuários
+                try:
+                    cursor = conn.execute("SELECT COUNT(*) FROM users")
+                    counts['total_users'] = cursor.fetchone()[0]
+                except sqlite3.OperationalError:
+                    counts['total_users'] = 0
 
-                # Conta tickets de suporte
+                # Tenta contar tickets de suporte
                 try:
                     cursor = conn.execute("SELECT COUNT(*) FROM support_tickets")
                     counts['support_tickets'] = cursor.fetchone()[0]
-                except:
-                    counts['support_tickets'] = 0  # Tabela pode não existir ainda
+                except sqlite3.OperationalError:
+                    counts['support_tickets'] = 0
 
-                # Conta estados de usuários
+                # Tenta contar estados de usuários
                 try:
                     cursor = conn.execute("SELECT COUNT(*) FROM user_states")
                     counts['user_states'] = cursor.fetchone()[0]
-                except:
-                    counts['user_states'] = 0  # Tabela pode não existir ainda
+                except sqlite3.OperationalError:
+                    counts['user_states'] = 0
 
         except Exception as e:
-            logger.warning(f"Erro ao contar registros: {e}")
+            logger.warning(f"Erro geral ao contar registros: {e}")
             counts = {'error': str(e)}
 
         return counts

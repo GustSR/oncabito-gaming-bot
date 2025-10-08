@@ -72,6 +72,7 @@ class VerificationCompleted(DomainEvent):
         username: Nome de usuário
         verification_type: Tipo de verificação
         cpf_number: CPF verificado (mascarado)
+        client_data: Dados do cliente retornados pelo HubSoft
         success: Se foi bem-sucedida
         occurred_at: Timestamp do evento
     """
@@ -80,6 +81,7 @@ class VerificationCompleted(DomainEvent):
     username: str
     verification_type: str
     cpf_number: str
+    client_data: dict
     success: bool
     occurred_at: datetime = field(default_factory=datetime.now)
 

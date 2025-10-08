@@ -339,6 +339,43 @@ class CPFVerificationUseCase(UseCase):
                 error_code="system_error"
             )
 
+    async def cancel_verification_by_id(
+        self,
+        verification_id: str,
+        reason: str = "user_cancelled"
+    ) -> CPFVerificationResult:
+        """Cancela uma verificação pendente pelo seu ID."""
+        try:
+            from ...domain.entities.cpf_verification import VerificationId
+            
+            verification = await self.verification_repository.find_by_id(VerificationId(verification_id))
+
+            if not verification:
+                return CPFVerificationResult(
+                    success=False,
+                    message="Verificação não encontrada",
+                    error_code="verification_not_found"
+                )
+
+            verification.cancel_verification(reason)
+            await self.verification_repository.save(verification)
+
+            logger.info(f"Verificação {verification_id} cancelada. Motivo: {reason}")
+
+            return CPFVerificationResult(
+                success=True,
+                message="Verificação cancelada com sucesso",
+                status="cancelled"
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao cancelar verificação {verification_id}: {e}")
+            return CPFVerificationResult(
+                success=False,
+                message=f"Erro ao cancelar: {str(e)}",
+                error_code="cancel_error"
+            )
+
     async def get_verification_status(self, user_id: int) -> CPFVerificationResult:
         """
         Obtém status atual da verificação do usuário.
