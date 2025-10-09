@@ -17,7 +17,14 @@ from ...application.use_cases.cpf_verification_use_case import CPFVerificationUs
 from ...domain.value_objects.identifiers import UserId
 from ...core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID
 from .cpf_verification_handler import CPFVerificationHandler
-from .support_form_handler import SupportFormHandler, init_support_state, get_support_state, clear_support_state
+from .support_form_handler import (
+    SupportFormHandler,
+    SupportState,
+    init_support_state,
+    get_support_state,
+    clear_support_state,
+    get_progress_bar
+)
 
 logger = logging.getLogger(__name__)
 
