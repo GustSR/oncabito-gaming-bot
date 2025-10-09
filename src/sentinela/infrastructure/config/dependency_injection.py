@@ -357,15 +357,6 @@ def configure_dependencies() -> None:
 
     container.register_factory(CPFVerificationRepository, create_cpf_verification_repository)
 
-    # Ticket Repository
-    from ...domain.repositories.ticket_repository import TicketRepository
-    from ..repositories.sqlite_ticket_repository import SQLiteTicketRepository
-
-    def create_ticket_repository() -> SQLiteTicketRepository:
-        return SQLiteTicketRepository(DATABASE_FILE)
-
-    container.register_factory(TicketRepository, create_ticket_repository)
-
     # HubSoft Integration Repository
     from ...domain.repositories.hubsoft_repository import HubSoftIntegrationRepository
     from ..repositories.sqlite_hubsoft_integration_repository import SQLiteHubSoftIntegrationRepository
@@ -457,21 +448,6 @@ def configure_dependencies() -> None:
         )
     container.register_factory(ResolveCPFDuplicateHandler, create_resolve_duplicate_handler)
 
-    # Admin Handlers
-    from ...application.command_handlers.admin_command_handlers import (
-        ListTicketsHandler,
-        AssignTicketHandler,
-        UpdateTicketStatusHandler,
-        BanUserHandler,
-        GetSystemStatsHandler
-    )
-
-    container.register_singleton(ListTicketsHandler, ListTicketsHandler)
-    container.register_singleton(AssignTicketHandler, AssignTicketHandler)
-    container.register_singleton(UpdateTicketStatusHandler, UpdateTicketStatusHandler)
-    container.register_singleton(BanUserHandler, BanUserHandler)
-    container.register_singleton(GetSystemStatsHandler, GetSystemStatsHandler)
-
     # === Domain Services ===
 
     from ...domain.services.cpf_validation_service import CPFValidationService
@@ -513,10 +489,6 @@ def configure_dependencies() -> None:
     from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
     container.register_singleton(HubSoftIntegrationUseCase, HubSoftIntegrationUseCase)
 
-    # Admin Operations Use Case
-    from ...application.use_cases.admin_operations_use_case import AdminOperationsUseCase
-    container.register_singleton(AdminOperationsUseCase, AdminOperationsUseCase)
-
     # Member Verification Use Case
     from ...application.use_cases.member_verification_use_case import MemberVerificationUseCase
     container.register_singleton(MemberVerificationUseCase, MemberVerificationUseCase)
@@ -548,14 +520,12 @@ def configure_dependencies() -> None:
     container.register_alias("user_repository", UserRepository)
     container.register_alias("admin_repository", AdminRepository)
     container.register_alias("cpf_verification_repository", CPFVerificationRepository)
-    container.register_alias("ticket_repository", TicketRepository)
     container.register_alias("hubsoft_integration_repository", HubSoftIntegrationRepository)
     container.register_alias("group_member_repository", GroupMemberRepository)
 
     # Use Cases
     container.register_alias("cpf_verification_use_case", CPFVerificationUseCase)
     container.register_alias("hubsoft_integration_use_case", HubSoftIntegrationUseCase)
-    container.register_alias("admin_operations_use_case", AdminOperationsUseCase)
     container.register_alias("member_verification_use_case", MemberVerificationUseCase)
     container.register_alias("welcome_management_use_case", WelcomeManagementUseCase)
 

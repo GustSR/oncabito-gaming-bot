@@ -14,7 +14,6 @@ from telegram.ext import ContextTypes
 from ...infrastructure.config.dependency_injection import get_container
 from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
 from ...application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
-from ...application.use_cases.admin_operations_use_case import AdminOperationsUseCase
 from ...domain.value_objects.identifiers import UserId
 from ...core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID
 
@@ -89,9 +88,7 @@ class TelegramBotHandler:
         self._container = None
         self._hubsoft_use_case: Optional[HubSoftIntegrationUseCase] = None
         self._cpf_use_case: Optional[CPFVerificationUseCase] = None
-        self._admin_use_case: Optional[AdminOperationsUseCase] = None
         self._welcome_use_case = None  # WelcomeManagementUseCase
-        self._admin_repo = None  # AdminRepository
 
     async def _ensure_initialized(self) -> None:
         """Garante que o handler está inicializado."""
@@ -99,9 +96,7 @@ class TelegramBotHandler:
             self._container = get_container()
             self._hubsoft_use_case = self._container.get("hubsoft_integration_use_case")
             self._cpf_use_case = self._container.get("cpf_verification_use_case")
-            self._admin_use_case = self._container.get("admin_operations_use_case")
             self._welcome_use_case = self._container.get("welcome_management_use_case")
-            self._admin_repo = self._container.get("admin_repository")
 
     async def _user_already_interacted(self, user_id: int) -> bool:
         """
@@ -849,49 +844,7 @@ class TelegramBotHandler:
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Processa comandos administrativos."""
-        try:
-            await self._ensure_initialized()
-
-            user = update.effective_user
-            if not user:
-                return
-
-            # Verifica se é admin (implementar validação real)
-            if not await self._is_admin(user.id):
-                await update.message.reply_text("❌ Acesso negado.")
-                return
-
-            # Menu administrativo
-            keyboard = [
-                [
-                    InlineKeyboardButton("📋 Listar Tickets", callback_data="admin_list_tickets"),
-                    InlineKeyboardButton("📊 Estatísticas", callback_data="admin_stats")
-                ],
-                [
-                    InlineKeyboardButton("🔄 Sync HubSoft", callback_data="admin_sync"),
-                    InlineKeyboardButton("⚙️ Configurações", callback_data="admin_config")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            message = (
-                "⚙️ **Painel Administrativo**\n\n"
-                "Selecione uma opção:"
-            )
-
-            await update.message.reply_text(
-                message,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-
-            logger.info(f"Admin {user.id} acessou painel administrativo")
-
-        except Exception as e:
-            logger.error(f"Erro no comando admin: {e}")
-            await update.message.reply_text(
-                "❌ Erro no painel administrativo."
-            )
+        await update.message.reply_text("Funcionalidade de administração em manutenção.")
 
     async def _handle_start_flow_support_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Inicia o fluxo de suporte a partir de um botão de callback, replicando /suporte."""
@@ -1108,8 +1061,6 @@ class TelegramBotHandler:
                 await self._handle_accept_rules_callback(query, context, callback_data)
             elif callback_data.startswith("cat_"):
                 await self._handle_category_selection(query, callback_data)
-            elif callback_data.startswith("admin_"):
-                await self._handle_admin_callback(query, callback_data)
             elif callback_data == "start_flow_support":
                 await self._handle_start_flow_support_callback(query, context)
             elif callback_data == "start_flow_status":
@@ -1235,70 +1186,6 @@ class TelegramBotHandler:
         # Aqui registraria o contexto da conversa para próximas mensagens
         # TODO: Implementar state management para conversas
 
-    async def _handle_admin_callback(self, query, callback_data: str) -> None:
-        """Processa callbacks administrativos."""
-        user = query.from_user
-
-        if not await self._is_admin(user.id):
-            await query.edit_message_text("❌ Acesso negado.")
-            return
-
-        if callback_data == "admin_list_tickets":
-            # Lista tickets via admin use case
-            result = await self._admin_use_case.list_tickets_with_filters(
-                admin_user_id=user.id,
-                status_filter=None,
-                limit=10
-            )
-
-            if result.success:
-                message = (
-                    "📋 **Tickets Recentes**\n\n"
-                    f"✅ Encontrados {result.affected_items} tickets\n\n"
-                    "⚠️ Visualização detalhada em desenvolvimento"
-                )
-            else:
-                message = f"❌ Erro: {result.message}"
-
-        elif callback_data == "admin_stats":
-            # Obtém estatísticas via admin use case
-            result = await self._admin_use_case.get_comprehensive_stats(
-                admin_user_id=user.id,
-                include_details=False,
-                date_range_days=7
-            )
-
-            if result.success and result.data:
-                message = (
-                    "📊 **Estatísticas do Sistema**\n\n"
-                    f"📅 Últimos {result.data.get('period_days', 7)} dias\n\n"
-                    "⚠️ Dados detalhados em desenvolvimento"
-                )
-            else:
-                message = f"❌ Erro: {result.message}"
-
-        elif callback_data == "admin_sync":
-            message = (
-                "🔄 **Sincronização HubSoft**\n\n"
-                "Funcionalidade de sync disponível em breve.\n\n"
-                "🚧 Sistema em migração para nova arquitetura"
-            )
-
-        elif callback_data == "admin_config":
-            message = (
-                "⚙️ **Configurações do Sistema**\n\n"
-                "Painel de configurações em desenvolvimento.\n\n"
-                "📋 Use comandos administrativos por enquanto"
-            )
-
-        else:
-            message = "❓ Opção não reconhecida."
-
-        await query.edit_message_text(
-            message,
-            parse_mode='Markdown'
-        )
-
     async def handle_text_message(
         self,
         update: Update,
@@ -1356,30 +1243,32 @@ class TelegramBotHandler:
                 await self._start_welcome_flow(update, context)
                 return
 
-            # Usuário já interagiu - Verifica se está verificado
-            status_info = await self._get_verification_status_message(user.id)
-            if not status_info["is_verified"]:
-                # Se está aguardando CPF (PENDING ou IN_PROGRESS), seta flag para processar próxima mensagem
-                from ...domain.entities.cpf_verification import VerificationStatus
-                if status_info["status"] in [VerificationStatus.PENDING.value, VerificationStatus.IN_PROGRESS.value]:
-                    context.user_data['waiting_cpf'] = True
-                    logger.debug(f"Flag waiting_cpf setado para usuário {user.id} com status {status_info['status']}")
-
-                await update.message.reply_text(
-                    status_info["message"],
-                    parse_mode='Markdown'
+            # Usuário já interagiu - Verifica se está realmente ativo
+            is_active = await self._check_user_verified(user.id)
+            if is_active:
+                # Usuário verificado e ativo - outras mensagens de texto
+                message = (
+                    "💬 Mensagem recebida!\n\n"
+                    "Para criar um atendimento, use /suporte\n"
+                    "Para verificar status, use /status\n\n"
+                    "📋 Digite /ajuda para ver todos os comandos."
                 )
+                await update.message.reply_text(message)
                 return
 
-            # Usuário verificado - outras mensagens de texto
-            message = (
-                "💬 Mensagem recebida!\n\n"
-                "Para criar um atendimento, use /suporte\n"
-                "Para verificar status, use /status\n\n"
-                "📋 Digite /ajuda para ver todos os comandos."
-            )
+            # Se não está ativo, busca a mensagem de status contextualizada
+            status_info = await self._get_verification_status_message(user.id)
+            
+            # Garante que a flag para receber o CPF seja setada se o status for pendente
+            from ...domain.entities.cpf_verification import VerificationStatus
+            if status_info["status"] in [VerificationStatus.PENDING.value, VerificationStatus.IN_PROGRESS.value]:
+                context.user_data['waiting_cpf'] = True
+                logger.debug(f"Flag waiting_cpf setado para usuário {user.id} com status {status_info['status']}")
 
-            await update.message.reply_text(message)
+            await update.message.reply_text(
+                status_info["message"],
+                parse_mode='Markdown'
+            )
 
         except Exception as e:
             logger.error(f"Erro ao processar mensagem de texto: {e}")

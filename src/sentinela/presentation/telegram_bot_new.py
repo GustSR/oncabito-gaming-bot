@@ -30,9 +30,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("suporte", handler.handle_support_command))
     app.add_handler(CommandHandler("status", handler.handle_status_command))
 
-    # Comandos de admin
-    app.add_handler(CommandHandler("admin", handler.handle_admin_command))
-
     # Callbacks de botões
     app.add_handler(CallbackQueryHandler(handler.handle_callback_query))
 

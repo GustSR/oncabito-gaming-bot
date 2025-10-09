@@ -369,7 +369,7 @@ class SQLiteUserRepository(UserRepository):
 
     def _row_to_user(self, row: sqlite3.Row) -> User:
         """Converte linha do banco para User."""
-        from ...domain.entities.user import ServiceInfo
+        from ...domain.entities.user import ServiceInfo, UserStatus
         from ...domain.value_objects.cpf import CPF
         from datetime import datetime
         import json
@@ -398,7 +398,10 @@ class SQLiteUserRepository(UserRepository):
         # Cria a instância do usuário
         user = User(
             user_id=user_id,
+            telegram_user_id=row["telegram_user_id"],
             username=username,
+            first_name=row["first_name"],
+            last_name=row["last_name"],
             cpf=cpf_obj,
             client_name=client_name,
             service_info=service_info
