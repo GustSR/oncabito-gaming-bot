@@ -323,7 +323,11 @@ def configure_dependencies() -> None:
     from ..external_services.invite_client_impl import InviteClientImpl
 
     container.register_singleton(HubSoftClient, HubSoftClientImpl)
-    container.register_singleton(GroupClient, GroupClientImpl)
+    def create_group_client() -> GroupClientImpl:
+        member_repo = container.get(GroupMemberRepository)
+        return GroupClientImpl(member_repository=member_repo)
+
+    container.register_factory(GroupClient, create_group_client)
     container.register_singleton(InviteClient, InviteClientImpl)
 
     # === Event System ===
@@ -371,9 +375,19 @@ def configure_dependencies() -> None:
     from ..repositories.sqlite_group_member_repository import SQLiteGroupMemberRepository
 
     def create_group_member_repository() -> SQLiteGroupMemberRepository:
-        return SQLiteGroupMemberRepository(DATABASE_FILE)
+        user_repo = container.get(UserRepository)
+        return SQLiteGroupMemberRepository(user_repository=user_repo)
 
     container.register_factory(GroupMemberRepository, create_group_member_repository)
+
+    # Duplicate Conflict Repository
+    from ...domain.repositories.duplicate_conflict_repository import DuplicateConflictRepository
+    from ..repositories.sqlite_duplicate_conflict_repository import SQLiteDuplicateConflictRepository
+
+    def create_duplicate_conflict_repository() -> SQLiteDuplicateConflictRepository:
+        return SQLiteDuplicateConflictRepository(DATABASE_FILE)
+
+    container.register_factory(DuplicateConflictRepository, create_duplicate_conflict_repository)
 
     # === Command Handlers ===
 
@@ -500,11 +514,13 @@ def configure_dependencies() -> None:
     def create_welcome_management_use_case() -> WelcomeManagementUseCase:
         user_repo = container.get(UserRepository)
         member_repo = container.get(GroupMemberRepository)
+        admin_repo = container.get(AdminRepository)
         event_bus = container.get(EventBus)
 
         return WelcomeManagementUseCase(
             user_repository=user_repo,
             member_repository=member_repo,
+            admin_repository=admin_repo,
             event_bus=event_bus,
             group_id=int(TELEGRAM_GROUP_ID),
             welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None,
@@ -522,6 +538,7 @@ def configure_dependencies() -> None:
     container.register_alias("cpf_verification_repository", CPFVerificationRepository)
     container.register_alias("hubsoft_integration_repository", HubSoftIntegrationRepository)
     container.register_alias("group_member_repository", GroupMemberRepository)
+    container.register_alias("duplicate_conflict_repository", DuplicateConflictRepository)
 
     # Use Cases
     container.register_alias("cpf_verification_use_case", CPFVerificationUseCase)

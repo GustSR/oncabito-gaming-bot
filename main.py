@@ -8,6 +8,8 @@ from src.sentinela.presentation.telegram_bot_new import application, register_ha
 from migrations.migration_engine import MigrationEngine
 from src.sentinela.core.config import DATABASE_FILE
 
+from telegram.constants import UpdateType
+
 def run_migrations():
     """Executa migrations se disponíveis."""
     logger = logging.getLogger(__name__)
@@ -57,7 +59,8 @@ def main() -> None:
 
         # 5. Inicia o bot
         logger.info("--- Iniciando o bot Sentinela com a NOVA ARQUITETURA ---")
-        application.run_polling()
+        all_updates = [t for t in UpdateType]
+        application.run_polling(allowed_updates=all_updates)
         logger.info("--- Bot Sentinela foi encerrado ---")
 
     except Exception as e:

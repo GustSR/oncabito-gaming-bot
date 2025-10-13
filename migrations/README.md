@@ -86,7 +86,7 @@ UPDATE users SET nova_coluna = 'valor_padrao' WHERE nova_coluna IS NULL;
 ### **3. Testar Migration:**
 ```bash
 # Backup antes do teste
-./scripts/backup_database.sh manual
+./scripts/db/backup_database.sh manual
 
 # Executar migration
 docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
@@ -131,8 +131,7 @@ O sistema está integrado com os scripts de deploy:
 
 ### **Deploy Seguro:**
 ```bash
-# Usa o novo script que inclui migrations
-./scripts/deploy_safe.sh
+./scripts/deploy/deploy_safe.sh
 ```
 
 ### **Fluxo do Deploy Seguro:**
@@ -184,4 +183,4 @@ conn.commit()
 
 ---
 
-**💡 Dica**: Use sempre o script `./scripts/deploy_safe.sh` para deploys em produção. Ele cuida de tudo automaticamente!
+**💡 Dica**: Use sempre o script `./scripts/deploy/deploy_safe.sh` para deploys em produção. Ele cuida de tudo automaticamente!

@@ -131,7 +131,7 @@ print_status "Backup concluído com sucesso! 💾"
 if [ "$BACKUP_TYPE" != "auto" ]; then
     echo ""
     echo "🔧 Comandos úteis:"
-    echo "  • Backup automático: ./scripts/backup_database.sh auto"
+    echo "  • Backup automático: ./scripts/db/backup_database.sh auto"
     echo "  • Restaurar backup: ./scripts/restore_database.sh $DEST_DIR/$BACKUP_NAME"
     echo "  • Listar backups: ls -la $BACKUP_DIR/"
 fi

@@ -50,7 +50,9 @@ class SQLiteUserRepository(UserRepository):
                         updated_at = ?,
                         last_activity_at = ?,
                         metadata = ?,
-                        expires_at = ?
+                        expires_at = ?,
+                        rules_accepted = ?,
+                        rules_accepted_at = ?
                     WHERE id = ?
                 """, (
                     user.telegram_user_id,
@@ -64,6 +66,8 @@ class SQLiteUserRepository(UserRepository):
                     user.last_activity_at.isoformat() if user.last_activity_at else None,
                     self._serialize_metadata(user.metadata),
                     user.expires_at.isoformat() if user.expires_at else None,
+                    user.rules_accepted,
+                    user.rules_accepted_at.isoformat() if user.rules_accepted_at else None,
                     user.id.value
                 ))
             else:
@@ -72,8 +76,8 @@ class SQLiteUserRepository(UserRepository):
                     INSERT INTO users (
                         id, telegram_user_id, username, first_name, last_name,
                         cpf, client_name, is_banned, ban_reason, roles, created_at, updated_at,
-                        last_activity_at, metadata, status, expires_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        last_activity_at, metadata, status, expires_at, rules_accepted, rules_accepted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user.id.value,
                     user.telegram_user_id,
@@ -90,7 +94,9 @@ class SQLiteUserRepository(UserRepository):
                     user.last_activity_at.isoformat() if user.last_activity_at else None,
                     self._serialize_metadata(user.metadata),
                     user.status.value,
-                    user.expires_at.isoformat() if user.expires_at else None
+                    user.expires_at.isoformat() if user.expires_at else None,
+                    user.rules_accepted,
+                    user.rules_accepted_at.isoformat() if user.rules_accepted_at else None
                 ))
 
             await db.commit()
@@ -266,6 +272,20 @@ class SQLiteUserRepository(UserRepository):
 
             return None
 
+    async def find_active_users_without_cpf(self) -> List[User]:
+        """Busca usuários ativos que não possuem CPF."""
+        import aiosqlite
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM users 
+                WHERE (status = 'active' OR status = 'pending_verification') 
+                AND (cpf IS NULL OR cpf = '')
+            """)
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
+
     async def find_users_without_cpf(self) -> List[User]:
         """
         Busca todos os usuários que NÃO têm CPF vinculado.
@@ -404,7 +424,9 @@ class SQLiteUserRepository(UserRepository):
             last_name=row["last_name"],
             cpf=cpf_obj,
             client_name=client_name,
-            service_info=service_info
+            service_info=service_info,
+            rules_accepted=bool(row["rules_accepted"]) if "rules_accepted" in row.keys() else False,
+            rules_accepted_at=datetime.fromisoformat(row["rules_accepted_at"]) if row["rules_accepted_at"] else None
         )
 
         # Recarrega o estado do usuário a partir do banco de dados

@@ -305,3 +305,110 @@ class DuplicateCPFService:
             "duplicate_count": len(verifications),
             "user_ids": [v.user_id for v in verifications]
         }
+
+    async def find_and_flag_new_duplicates(
+        self,
+        conflict_repository: 'DuplicateConflictRepository'
+    ) -> List['DuplicateConflict']:
+        """
+        Detecta CPFs duplicados entre usuários ativos e cria conflitos.
+
+        Esta é a função principal de detecção proativa de duplicatas.
+        Varre todos os usuários com CPF, agrupa por hash do CPF, e para
+        cada CPF usado por múltiplos usuários, cria um registro de conflito.
+
+        Args:
+            conflict_repository: Repositório para salvar conflitos
+
+        Returns:
+            List[DuplicateConflict]: Lista de novos conflitos criados
+        """
+        from ..entities.duplicate_conflict import DuplicateConflict, ConflictId
+
+        logger.info("Iniciando detecção de duplicatas...")
+        new_conflicts = []
+
+        try:
+            # 1. Busca todos os usuários ativos com CPF
+            all_users = await self.user_repository.find_active_users()
+            users_with_cpf = [u for u in all_users if u.cpf]
+
+            if not users_with_cpf:
+                logger.info("Nenhum usuário com CPF encontrado")
+                return []
+
+            logger.info(f"Encontrados {len(users_with_cpf)} usuários com CPF para verificar")
+
+            # 2. Agrupa usuários por CPF hash
+            cpf_groups: Dict[str, List] = {}
+            for user in users_with_cpf:
+                cpf_hash = user.cpf.hashed  # Hash do CPF
+                if cpf_hash not in cpf_groups:
+                    cpf_groups[cpf_hash] = []
+                cpf_groups[cpf_hash].append(user)
+
+            # 3. Identifica duplicatas (CPFs com mais de um usuário)
+            duplicate_groups = {
+                cpf_hash: users
+                for cpf_hash, users in cpf_groups.items()
+                if len(users) > 1
+            }
+
+            if not duplicate_groups:
+                logger.info("✅ Nenhuma duplicata encontrada")
+                return []
+
+            logger.warning(f"🚨 Encontrados {len(duplicate_groups)} CPFs duplicados!")
+
+            # 4. Para cada duplicata, cria ou atualiza conflito
+            for cpf_hash, users in duplicate_groups.items():
+                # Verifica se já existe conflito pendente para este CPF
+                if await conflict_repository.exists_pending_for_cpf(cpf_hash):
+                    logger.info(f"Conflito pendente já existe para CPF hash {cpf_hash[:8]}... Pulando.")
+                    continue
+
+                # Ordena usuários por data de criação (mais recente primeiro)
+                sorted_users = sorted(users, key=lambda u: u.created_at, reverse=True)
+                user_ids = [u.id.value for u in sorted_users]
+                notified_user_id = user_ids[0]  # Mais recente
+
+                # Monta dados do conflito para contexto
+                conflict_data = {
+                    "users": [
+                        {
+                            "user_id": u.id.value,
+                            "username": u.username,
+                            "first_name": u.first_name,
+                            "created_at": u.created_at.isoformat()
+                        }
+                        for u in sorted_users
+                    ],
+                    "detected_at": datetime.now().isoformat(),
+                    "detection_source": "daily_checkup"
+                }
+
+                # Cria novo conflito
+                conflict = DuplicateConflict(
+                    conflict_id=ConflictId.generate(),
+                    cpf_hash=cpf_hash,
+                    user_ids=user_ids,
+                    notified_user_id=notified_user_id,
+                    conflict_data=conflict_data,
+                    resolution_timeout_hours=24  # 24h para resolver
+                )
+
+                # Salva no repositório
+                await conflict_repository.save(conflict)
+                new_conflicts.append(conflict)
+
+                logger.warning(
+                    f"🔔 Novo conflito criado: CPF hash {cpf_hash[:8]}... "
+                    f"({len(user_ids)} usuários) - ID: {conflict.id.value}"
+                )
+
+            logger.info(f"✅ Detecção concluída. {len(new_conflicts)} novos conflitos criados.")
+            return new_conflicts
+
+        except Exception as e:
+            logger.error(f"❌ Erro ao detectar duplicatas: {e}", exc_info=True)
+            return []

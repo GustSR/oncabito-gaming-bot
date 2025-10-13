@@ -1,8 +1,7 @@
 """
 SQLite implementation of GroupMemberRepository.
 
-Implementa persistência de membros do grupo usando SQLite.
-Usa a tabela user_rules existente para controlar aceitação de regras.
+Implementa a visão de "Membro do Grupo" lendo da tabela principal 'users'.
 """
 
 import logging
@@ -12,6 +11,7 @@ from datetime import datetime, timedelta
 
 from ...domain.entities.group_member import GroupMember, MemberStatus, MemberRole
 from ...domain.repositories.group_member_repository import GroupMemberRepository
+from ...domain.repositories.user_repository import UserRepository
 from ...domain.value_objects.identifiers import UserId
 from ...core.config import DATABASE_FILE
 
@@ -22,248 +22,132 @@ class SQLiteGroupMemberRepository(GroupMemberRepository):
     """
     Implementação SQLite do repositório de membros.
 
-    Usa tabela user_rules para controlar estado de novos membros.
+    Este repositório atua como uma "view" sobre a tabela 'users',
+    adaptando os dados da entidade User para a entidade GroupMember.
     """
 
-    def __init__(self, db_path: str = DATABASE_FILE):
+    def __init__(self, user_repository: UserRepository):
         """
-        Inicializa repositório.
+        Inicializa o repositório.
 
         Args:
-            db_path: Caminho do arquivo SQLite
+            user_repository: O repositório de usuário principal, usado como fonte de dados.
         """
-        self.db_path = db_path
+        self.user_repository = user_repository
 
     async def save(self, member: GroupMember) -> GroupMember:
-        """Salva ou atualiza membro."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                # Verifica se já existe
-                cursor = await db.execute(
-                    "SELECT user_id FROM user_rules WHERE user_id = ?",
-                    (member.telegram_id,)
-                )
-                exists = await cursor.fetchone()
-
-                if exists:
-                    # Atualiza
-                    await db.execute(
-                        """
-                        UPDATE user_rules
-                        SET username = ?,
-                            rules_accepted = ?,
-                            rules_accepted_at = ?,
-                            status = ?
-                        WHERE user_id = ?
-                        """,
-                        (
-                            member.username,
-                            1 if member.is_verified else 0,
-                            member.joined_at.isoformat() if member.is_verified else None,
-                            'accepted' if member.is_verified else 'pending',
-                            member.telegram_id
-                        )
-                    )
-                else:
-                    # Insere novo
-                    expires_at = datetime.now() + timedelta(hours=24)
-                    await db.execute(
-                        """
-                        INSERT INTO user_rules
-                        (user_id, username, joined_at, rules_accepted, expires_at, status)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            member.telegram_id,
-                            member.username,
-                            member.joined_at.isoformat(),
-                            0,
-                            expires_at.isoformat(),
-                            'pending'
-                        )
-                    )
-
-                await db.commit()
-                logger.info(f"Membro {member.telegram_id} salvo com sucesso")
-                return member
-
-        except Exception as e:
-            logger.error(f"Erro ao salvar membro {member.telegram_id}: {e}")
-            raise
+        """Salva ou atualiza membro através do UserRepository."""
+        # A lógica de salvar um membro agora é tratada pelo fluxo normal do UserRepository.
+        # Esta implementação previne a escrita em tabelas defasadas.
+        logger.warning("SQLiteGroupMemberRepository.save() não deve ser usado diretamente. Use UserRepository.")
+        user = await self.user_repository.find_by_telegram_id(member.telegram_id)
+        if not user:
+            # A criação de usuário deve ser feita pelo fluxo de use case apropriado.
+            raise NotImplementedError("A criação de novos usuários deve passar pelo UserRepository.")
+        
+        # Apenas retorna o membro, assumindo que a modificação foi feita na entidade User e salva pelo UserRepository
+        return member
 
     async def find_by_telegram_id(self, telegram_id: int) -> Optional[GroupMember]:
-        """Busca membro por ID do Telegram."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT user_id, username, joined_at, rules_accepted,
-                           rules_accepted_at, status
-                    FROM user_rules
-                    WHERE user_id = ?
-                    """,
-                    (telegram_id,)
-                )
-                row = await cursor.fetchone()
-
-                if not row:
-                    return None
-
-                # Converte para GroupMember
-                joined_at = datetime.fromisoformat(row[2]) if row[2] else datetime.now()
-                is_verified = bool(row[3])
-
-                return GroupMember(
-                    id=None,  # Não usado neste contexto
-                    user_id=UserId(row[0]),
-                    telegram_id=row[0],
-                    username=row[1],
-                    first_name=row[1] or "Usuário",
-                    joined_at=joined_at,
-                    is_verified=is_verified,
-                    role=MemberRole.GAMER_VERIFIED if is_verified else MemberRole.NEW_MEMBER,
-                    status=MemberStatus.MEMBER
-                )
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar membro {telegram_id}: {e}")
-            return None
+        """Busca membro por ID do Telegram usando o UserRepository."""
+        user = await self.user_repository.find_by_telegram_id(telegram_id)
+        if user:
+            return self._user_to_group_member(user)
+        return None
 
     async def find_by_user_id(self, user_id: UserId) -> Optional[GroupMember]:
-        """Busca membro por UserID."""
-        return await self.find_by_telegram_id(user_id.value)
+        """Busca membro por UserID delegando para o UserRepository."""
+        user = await self.user_repository.find_by_id(user_id)
+        if user:
+            return self._user_to_group_member(user)
+        return None
 
     async def find_all_active(self) -> List[GroupMember]:
-        """Busca todos os membros ativos."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT user_id, username, joined_at, rules_accepted
-                    FROM user_rules
-                    WHERE status IN ('pending', 'accepted')
-                    """
-                )
-                rows = await cursor.fetchall()
-
-                members = []
-                for row in rows:
-                    joined_at = datetime.fromisoformat(row[2]) if row[2] else datetime.now()
-                    is_verified = bool(row[3])
-
-                    member = GroupMember(
-                        id=None,
-                        user_id=UserId(row[0]),
-                        telegram_id=row[0],
-                        username=row[1],
-                        first_name=row[1] or "Usuário",
-                        joined_at=joined_at,
-                        is_verified=is_verified,
-                        role=MemberRole.GAMER_VERIFIED if is_verified else MemberRole.NEW_MEMBER,
-                        status=MemberStatus.MEMBER
-                    )
-                    members.append(member)
-
-                return members
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar membros ativos: {e}")
-            return []
+        """Busca todos os membros ativos delegando para o UserRepository."""
+        active_users = await self.user_repository.find_active_users()
+        return [self._user_to_group_member(user) for user in active_users]
 
     async def find_by_status(self, status: MemberStatus) -> List[GroupMember]:
-        """Busca membros por status."""
-        # Implementação simplificada
-        return await self.find_all_active()
+        """Busca membros por status (não implementado, retorna lista vazia)."""
+        logger.warning("find_by_status não implementado completamente no SQLiteGroupMemberRepository.")
+        # Esta lógica precisaria de um mapeamento de MemberStatus para UserStatus
+        return []
 
     async def find_inactive_members(self, days: int) -> List[GroupMember]:
-        """Busca membros inativos há X dias."""
-        # Não implementado neste contexto simples
+        """Busca membros inativos (não implementado, retorna lista vazia)."""
+        logger.warning("find_inactive_members não implementado no SQLiteGroupMemberRepository.")
         return []
 
     async def find_unverified_members(self) -> List[GroupMember]:
-        """Busca membros não verificados (não aceitaram regras)."""
+        """Busca membros não verificados (não aceitaram regras) a partir da tabela users."""
+        import aiosqlite
+        from ...core.config import DATABASE_FILE # Import local para evitar problemas de import circular
+
+        members = []
         try:
-            async with aiosqlite.connect(self.db_path) as db:
+            async with aiosqlite.connect(DATABASE_FILE) as db:
+                db.row_factory = aiosqlite.Row
+                # Busca usuários que não aceitaram as regras e não estão banidos
                 cursor = await db.execute(
                     """
-                    SELECT user_id, username, joined_at, expires_at
-                    FROM user_rules
-                    WHERE rules_accepted = 0
-                    AND status = 'pending'
-                    """
+                    SELECT telegram_user_id, username, first_name, created_at 
+                    FROM users 
+                    WHERE rules_accepted = FALSE AND is_banned = FALSE
+                    """,
                 )
                 rows = await cursor.fetchall()
 
-                members = []
                 for row in rows:
-                    joined_at = datetime.fromisoformat(row[2]) if row[2] else datetime.now()
-
+                    # Converte a linha para um objeto GroupMember simplificado, pois não temos todos os dados de User aqui
+                    joined_at = datetime.fromisoformat(row["created_at"]) if row["created_at"] else datetime.now()
                     member = GroupMember(
                         id=None,
-                        user_id=UserId(row[0]),
-                        telegram_id=row[0],
-                        username=row[1],
-                        first_name=row[1] or "Usuário",
+                        user_id=UserId(row["telegram_user_id"]),
+                        telegram_id=row["telegram_user_id"],
+                        username=row["username"],
+                        first_name=row["first_name"],
                         joined_at=joined_at,
-                        is_verified=False,
+                        is_verified=False, # Por definição, se não aceitou as regras, não é verificado
                         role=MemberRole.NEW_MEMBER,
                         status=MemberStatus.MEMBER
                     )
                     members.append(member)
-
-                logger.info(f"Encontrados {len(members)} membros não verificados")
-                return members
+                
+                logger.info(f"Encontrados {len(members)} membros que não aceitaram as regras.")
 
         except Exception as e:
-            logger.error(f"Erro ao buscar membros não verificados: {e}")
-            return []
+            logger.error(f"Erro ao buscar membros não verificados: {e}", exc_info=True)
+        
+        return members
 
     async def find_members_without_contract(self) -> List[GroupMember]:
-        """Busca membros sem contrato ativo."""
-        # Não implementado neste contexto
+        """Busca membros sem contrato (não implementado, retorna lista vazia)."""
+        logger.warning("find_members_without_contract não implementado no SQLiteGroupMemberRepository.")
         return []
 
     async def count_active_members(self) -> int:
-        """Conta membros ativos."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT COUNT(*) FROM user_rules WHERE status IN ('pending', 'accepted')"
-                )
-                count = await cursor.fetchone()
-                return count[0] if count else 0
-
-        except Exception as e:
-            logger.error(f"Erro ao contar membros ativos: {e}")
-            return 0
+        """Conta membros ativos delegando para o UserRepository."""
+        return await self.user_repository.count_active_users()
 
     async def delete(self, member_id: UserId) -> bool:
-        """Remove membro do repositório."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    "UPDATE user_rules SET status = 'removed' WHERE user_id = ?",
-                    (member_id.value,)
-                )
-                await db.commit()
-                logger.info(f"Membro {member_id.value} removido")
-                return True
-
-        except Exception as e:
-            logger.error(f"Erro ao remover membro {member_id.value}: {e}")
-            return False
+        """Remove membro delegando para o UserRepository."""
+        return await self.user_repository.delete(member_id)
 
     async def exists(self, telegram_id: int) -> bool:
-        """Verifica se membro existe."""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT 1 FROM user_rules WHERE user_id = ?",
-                    (telegram_id,)
-                )
-                exists = await cursor.fetchone()
-                return exists is not None
+        """Verifica se membro existe usando o UserRepository."""
+        user = await self.user_repository.find_by_telegram_id(telegram_id)
+        return user is not None
 
-        except Exception as e:
-            logger.error(f"Erro ao verificar existência do membro {telegram_id}: {e}")
-            return False
+    def _user_to_group_member(self, user) -> GroupMember:
+        """Converte uma entidade User para uma entidade GroupMember."""
+        return GroupMember(
+            id=user.id,
+            user_id=user.id,
+            telegram_id=user.telegram_user_id,
+            username=user.username,
+            first_name=user.first_name,
+            joined_at=user.created_at, # Aproximação, idealmente teríamos um campo joined_at em User
+            is_verified=user.is_active(), # Considera verificado se o usuário está ativo
+            role=MemberRole.GAMER_VERIFIED if user.is_active() else MemberRole.NEW_MEMBER,
+            status=MemberStatus.MEMBER if user.is_active() else MemberStatus.PENDING
+        )

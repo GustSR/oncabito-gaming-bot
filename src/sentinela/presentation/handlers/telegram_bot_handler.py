@@ -15,6 +15,7 @@ from ...infrastructure.config.dependency_injection import get_container
 from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
 from ...application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
 from ...domain.value_objects.identifiers import UserId
+from ...domain.entities.cpf_verification import VerificationStatus
 from ...core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID
 from .cpf_verification_handler import CPFVerificationHandler
 from .support_form_handler import (
@@ -308,6 +309,17 @@ class TelegramBotHandler:
                 )
 
                 if not verification_result.success:
+                    # Primeiro, trata o caso de limite de tentativas
+                    if hasattr(verification_result, 'error_code') and verification_result.error_code == "rate_limited":
+                        logger.warning(f"Usuário {user.id} atingiu o limite de tentativas de verificação. Mensagem: {verification_result.message}")
+                        await update.message.reply_text(
+                            "⚠️ **Limite de Tentativas Atingido**\n\n"
+                            "Você realizou muitas tentativas de verificação nas últimas 24 horas. "
+                            "Por favor, aguarde e tente novamente amanhã ou entre em contato com o suporte se acreditar que isso é um erro.",
+                            parse_mode='Markdown'
+                        )
+                        return
+
                     # A única falha que não ignoramos é uma que não seja 'already pending'.
                     if "já existe" not in verification_result.message.lower() and "already pending" not in verification_result.message.lower():
                         logger.error(f"Erro ao criar verificação: {verification_result.message}")
@@ -897,6 +909,9 @@ class TelegramBotHandler:
                 await self._handle_support_callback(query, context, callback_data)
             elif callback_data.startswith("dup_resolve_"):
                 await self._handle_duplicate_resolution_callback(query, context, callback_data)
+            elif callback_data.startswith("resolve_dup:") or callback_data.startswith("resolve:"):
+                # Novo callback de resolução proativa de duplicatas
+                await self._handle_duplicate_resolution_callback(query, context, callback_data)
             elif callback_data.startswith("accept_rules_"):
                 await self._handle_accept_rules_callback(query, context, callback_data)
             elif callback_data.startswith("cat_"):
@@ -969,16 +984,29 @@ class TelegramBotHandler:
 
             text = update.message.text
 
+            # Verifica se está aguardando CPF (contexto de verificação ativa)
+            # PRIMEIRO, checa o estado em memória (fluxo normal)
+            if context.user_data.get('waiting_cpf'):
+                # Validação simples para garantir que é um CPF
+                if text and text.isdigit() and len(text) in [11, 14]:
+                    await self._handle_cpf_input(update, context, text)
+                    return
+
+            # SEGUNDO, checa o banco de dados (fluxo proativo via checkup)
+            status_info = await self._cpf_use_case.get_verification_status(user.id)
+            if status_info.status == VerificationStatus.PENDING.value:
+                logger.info(f"Verificação PENDENTE encontrada no DB para usuário {user.id}. Tratando texto como CPF.")
+                if text and text.isdigit() and len(text) in [11, 14]:
+                    await self._handle_cpf_input(update, context, text)
+                    return
+
+            # Se não está aguardando CPF, continua o fluxo normal...
+
             # Verifica se está em fluxo de suporte - delega para SupportFormHandler
             if 'support' in context.user_data:
                 handled = await self._support_handler.handle_description_input(update, context, text)
                 if handled:
                     return
-
-            # Verifica se está aguardando CPF (contexto de verificação ativa)
-            if context.user_data.get('waiting_cpf') and text and text.isdigit() and len(text) == 11:
-                await self._handle_cpf_input(update, context, text)
-                return
 
             # PRIMEIRA INTERAÇÃO? → Inicia fluxo automático
             already_interacted = await self._user_already_interacted(user.id)
@@ -1002,17 +1030,26 @@ class TelegramBotHandler:
 
             # Se não está ativo, busca a mensagem de status contextualizada
             status_info = await self._get_verification_status_message(user.id)
-            
+
             # Garante que a flag para receber o CPF seja setada se o status for pendente
-            from ...domain.entities.cpf_verification import VerificationStatus
             if status_info["status"] in [VerificationStatus.PENDING.value, VerificationStatus.IN_PROGRESS.value]:
                 context.user_data['waiting_cpf'] = True
                 logger.debug(f"Flag waiting_cpf setado para usuário {user.id} com status {status_info['status']}")
 
-            await update.message.reply_text(
-                status_info["message"],
-                parse_mode='Markdown'
-            )
+            # BUG FIX: Verifica se a mensagem não está vazia antes de enviar
+            if status_info["message"]:
+                await update.message.reply_text(
+                    status_info["message"],
+                    parse_mode='Markdown'
+                )
+            else:
+                # Caso de borda: usuário não está ativo mas tem verificação completa antiga.
+                logger.warning(f"Usuário {user.id} em estado inconsistente (não ativo, mas com verificação completa). Guiando para /start.")
+                await update.message.reply_text(
+                    "Olá! Vejo que você já se verificou antes, mas algo parece estar errado com seu acesso. "
+                    "Por favor, use /start para reiniciar o processo ou contate o suporte.",
+                    parse_mode='Markdown'
+                )
 
         except Exception as e:
             logger.error(f"Erro ao processar mensagem de texto: {e}")
@@ -1225,11 +1262,10 @@ class TelegramBotHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Processa entrada de novos membros no grupo."""
+        """Processa entrada e saída de novos membros no grupo."""
         try:
             await self._ensure_initialized()
 
-            # Pega informações do chat member update
             if not update.chat_member:
                 return
 
@@ -1238,90 +1274,68 @@ class TelegramBotHandler:
             user = update.chat_member.from_user
             chat = update.effective_chat
 
-            # LÓGICA DE ATIVAÇÃO: Ativa usuário que estava pendente e acabou de entrar
-            if new_member_status in ['member', 'administrator', 'creator'] and old_member_status in ['left', 'kicked']:
+            # LÓGICA DE DESATIVAÇÃO: Usuário saiu ou foi removido
+            if new_member_status in ['left', 'kicked'] and old_member_status not in ['left', 'kicked']:
                 try:
+                    logger.warning(f"Usuário {user.first_name} ({user.id}) saiu ou foi removido do grupo.")
                     user_repo = self._container.get("user_repository")
                     domain_user = await user_repo.find_by_telegram_id(user.id)
 
-                    if domain_user and domain_user.status.value == "pending_verification":
-                        domain_user.activate()
+                    if domain_user:
+                        reason = f"User left group or was kicked. Status: {new_member_status}"
+                        domain_user.deactivate(reason)
                         await user_repo.save(domain_user)
-                        logger.info(f"Usuário {user.id} ({user.first_name}) ativado com sucesso após entrar no grupo.")
-                except Exception as activation_error:
-                    logger.error(f"Falha ao tentar ativar o usuário {user.id} na entrada do grupo: {activation_error}")
+                        logger.info(f"Usuário {user.id} desativado e status de regras resetado no banco de dados.")
+                except Exception as deactivation_error:
+                    logger.error(f"Falha ao desativar o usuário {user.id} na saída do grupo: {deactivation_error}")
 
-            # Verifica se é um novo membro (não estava no grupo antes)
-            if old_member.status in ['left', 'kicked'] and new_member.status == 'member':
-                logger.info(f"Novo membro detectado: {user.first_name} ({user.id})")
+            # LÓGICA DE BOAS-VINDAS: Usuário entrou no grupo
+            elif new_member_status == 'member' and old_member_status in ['left', 'kicked']:
+                logger.info(f"Novo membro detectado ou retornando: {user.first_name} ({user.id})")
+                
+                user_repo = self._container.get("user_repository")
+                domain_user = await user_repo.find_by_telegram_id(user.id)
 
-                # Usa WelcomeManagementUseCase se disponível
-                if hasattr(self, '_welcome_use_case') and self._welcome_use_case:
-                    from ...domain.value_objects.welcome_message import WelcomeMessage
-                    from ...core.config import WELCOME_TOPIC_ID, RULES_TOPIC_ID
-                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                # Inicia o fluxo de boas-vindas apenas se o usuário for novo ou se suas regras não estiverem aceitas
+                if not domain_user or not domain_user.rules_accepted:
+                    logger.info(f"Iniciando fluxo de boas-vindas para {user.first_name} (ID: {user.id}). Usuário novo ou regras não aceitas.")
+                    
+                    if hasattr(self, '_welcome_use_case') and self._welcome_use_case:
+                        from ...domain.value_objects.welcome_message import WelcomeMessage
+                        from ...core.config import WELCOME_TOPIC_ID, RULES_TOPIC_ID
+                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-                    # Cria mensagem de boas-vindas
-                    welcome_msg = WelcomeMessage.create_initial_welcome(
-                        welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None
-                    )
-
-                    # Formata menção HTML
-                    user_mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
-                    welcome_text = welcome_msg.format_for_user(
-                        user_mention=user_mention,
-                        username=user.first_name
-                    )
-
-                    # Envia mensagem de boas-vindas no tópico correto
-                    await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=welcome_text,
-                        parse_mode='HTML',
-                        message_thread_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None
-                    )
-
-                    # Envia mensagem de regras com botão
-                    if RULES_TOPIC_ID:
-                        rules_msg = WelcomeMessage.create_rules_reminder(
-                            rules_topic_id=int(RULES_TOPIC_ID),
-                            user_id=user.id
+                        await self._welcome_use_case.handle_new_member(
+                            user_id=user.id,
+                            username=user.username or user.first_name,
+                            first_name=user.first_name,
+                            last_name=user.last_name
                         )
 
-                        rules_text = rules_msg.format_for_user(
-                            user_mention=user_mention,
-                            username=user.first_name
-                        )
-
-                        # Cria botão inline
-                        keyboard = [[
-                            InlineKeyboardButton(
-                                rules_msg.button_text,
-                                callback_data=rules_msg.button_callback
-                            )
-                        ]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-
+                        welcome_msg = WelcomeMessage.create_initial_welcome(welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None)
+                        user_mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+                        welcome_text = welcome_msg.format_for_user(user_mention=user_mention, username=user.first_name)
                         await context.bot.send_message(
                             chat_id=chat.id,
-                            text=rules_text,
+                            text=welcome_text,
                             parse_mode='HTML',
-                            message_thread_id=int(RULES_TOPIC_ID),
-                            reply_markup=reply_markup
+                            message_thread_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None
                         )
 
-                    # Registra no use case
-                    result = await self._welcome_use_case.handle_new_member(
-                        user_id=user.id,
-                        username=user.username or user.first_name,
-                        first_name=user.first_name,
-                        last_name=user.last_name
-                    )
-
-                    if result.success:
-                        logger.info(f"Novo membro {user.first_name} processado com sucesso")
-                    else:
-                        logger.error(f"Erro ao processar novo membro: {result.message}")
+                        if RULES_TOPIC_ID:
+                            rules_msg = WelcomeMessage.create_rules_reminder(rules_topic_id=int(RULES_TOPIC_ID), user_id=user.id)
+                            rules_text = rules_msg.format_for_user(user_mention=user_mention, username=user.first_name)
+                            keyboard = [[InlineKeyboardButton(rules_msg.button_text, callback_data=rules_msg.button_callback)]]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                            await context.bot.send_message(
+                                chat_id=chat.id,
+                                text=rules_text,
+                                parse_mode='HTML',
+                                message_thread_id=int(RULES_TOPIC_ID),
+                                reply_markup=reply_markup
+                            )
+                else:
+                    logger.info(f"Membro {user.first_name} ({user.id}) já tem as regras aceitas. Pulando boas-vindas.")
 
         except Exception as e:
             logger.error(f"Erro ao processar novo membro: {e}")

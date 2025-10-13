@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from ..use_cases.base import UseCase, UseCaseResult
 from ...domain.repositories.user_repository import UserRepository
 from ...domain.repositories.group_member_repository import GroupMemberRepository
+from ...domain.repositories.admin_repository import AdminRepository
 from ...domain.value_objects.welcome_message import WelcomeMessage, WelcomeMessageType
 from ...domain.value_objects.identifiers import UserId
 from ...infrastructure.events.event_bus import EventBus
@@ -57,6 +58,7 @@ class WelcomeManagementUseCase(UseCase):
         self,
         user_repository: UserRepository,
         member_repository: GroupMemberRepository,
+        admin_repository: AdminRepository,
         event_bus: EventBus,
         group_id: int,
         welcome_topic_id: Optional[int] = None,
@@ -69,6 +71,7 @@ class WelcomeManagementUseCase(UseCase):
         Args:
             user_repository: Repositório de usuários
             member_repository: Repositório de membros
+            admin_repository: Repositório de administradores
             event_bus: Event bus para publicar eventos
             group_id: ID do grupo no Telegram
             welcome_topic_id: ID do tópico de boas-vindas (opcional)
@@ -77,6 +80,7 @@ class WelcomeManagementUseCase(UseCase):
         """
         self.user_repository = user_repository
         self.member_repository = member_repository
+        self.admin_repository = admin_repository
         self.event_bus = event_bus
         self.group_id = group_id
         self.welcome_topic_id = welcome_topic_id
@@ -131,7 +135,6 @@ class WelcomeManagementUseCase(UseCase):
 
             await self.event_bus.publish(
                 NewMemberJoinedEvent(
-                    aggregate_id=str(user_id),
                     user_id=user_id,
                     username=username,
                     first_name=first_name,
@@ -206,7 +209,6 @@ class WelcomeManagementUseCase(UseCase):
 
             await self.event_bus.publish(
                 RulesAcceptedEvent(
-                    aggregate_id=str(user_id),
                     user_id=user_id,
                     username=username,
                     access_granted=access_granted,
@@ -250,6 +252,11 @@ class WelcomeManagementUseCase(UseCase):
             removed_users = []
 
             for member in unverified:
+                # Ignora administradores
+                if await self.admin_repository.is_administrator(member.telegram_id):
+                    logger.info(f"⏭️ Pulando verificação de regras para o administrador {member.username} (ID: {member.telegram_id})")
+                    continue
+
                 # Verifica se expirou prazo
                 if self._is_rules_acceptance_expired(member.joined_at):
                     # Remove do grupo
@@ -332,7 +339,6 @@ class WelcomeManagementUseCase(UseCase):
 
             await self.event_bus.publish(
                 GamingAccessRequestedEvent(
-                    aggregate_id=str(user_id),
                     user_id=user_id,
                     username=username,
                     requested_at=datetime.now()

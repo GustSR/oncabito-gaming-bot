@@ -106,7 +106,6 @@ oncabito-bot/
 │   ├── install.sh             # Instalador automático
 │   ├── deploy.sh              # Deploy do bot
 │   └── run_checkup.sh         # Checkup manual
-├── 📁 tools/                  # Utilitários e testes
 ├── 📁 docs/                   # Documentação completa
 ├── 📁 data/                   # Banco de dados (criado automaticamente)
 ├── 📁 logs/                   # Logs do sistema
@@ -217,10 +216,7 @@ docker exec -it oncabito-bot /bin/bash
 ./deployment/run_checkup.sh
 
 # Teste do cron
-./tools/test_cron.sh
-
-# Validação do sistema
-python scripts/validate_checkup.py
+./scripts/test_cron.sh
 ```
 
 ### 🧪 **Testes e Debug**
@@ -229,7 +225,7 @@ python scripts/validate_checkup.py
 python3 scripts/test_cpf_verification.py
 
 # Teste de configuração
-./tools/test_config_final.sh
+./scripts/test_config_final.sh
 
 # Verificação manual de integridade
 python3 scripts/verify_data_integrity.py
@@ -256,10 +252,10 @@ print(f'Sucessos últimas 24h: {stats[\"last_24h\"][\"successful\"]}')
 
 ### ⏰ **Cron Jobs Configurados (Automático)**
 ```bash
-# Setup automático via scripts/setup_monitoring.sh
+# Setup automático via scripts/setup/setup_monitoring.sh
 
 # Backup diário às 3:00 AM
-0 3 * * * ./scripts/backup_database.sh auto
+0 3 * * * ./scripts/db/backup_database.sh auto
 
 # Checkup completo às 6:00 AM (contratos + CPF + integridade)
 0 6 * * * python3 ./scripts/daily_checkup.py
@@ -300,7 +296,7 @@ sudo chown -R $USER:$USER data/ logs/
 
 # Cron não executa
 crontab -l
-./tools/test_cron.sh
+./scripts/test_cron.sh
 ```
 
 ### 📞 **Onde Buscar Ajuda**

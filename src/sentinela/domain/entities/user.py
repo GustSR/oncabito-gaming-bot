@@ -78,7 +78,9 @@ class User(AggregateRoot[UserId]):
         roles: list = None,
         last_activity_at: Optional[datetime] = None,
         metadata: dict = None,
-        expires_at: Optional[datetime] = None
+        expires_at: Optional[datetime] = None,
+        rules_accepted: bool = False,
+        rules_accepted_at: Optional[datetime] = None
     ):
         super().__init__(user_id)
         self._telegram_user_id = telegram_user_id
@@ -97,6 +99,8 @@ class User(AggregateRoot[UserId]):
         self._last_activity_at = last_activity_at
         self._metadata = metadata or {}
         self._expires_at = expires_at
+        self._rules_accepted = rules_accepted
+        self._rules_accepted_at = rules_accepted_at
 
         # Adiciona evento de registro
         self._add_event(UserRegistered(user_id, cpf, client_name))
@@ -181,6 +185,25 @@ class User(AggregateRoot[UserId]):
         """Data de expiração do registro pendente."""
         return self._expires_at
 
+    @property
+    def rules_accepted(self) -> bool:
+        """Se o usuário aceitou as regras."""
+        return self._rules_accepted
+
+    @property
+    def rules_accepted_at(self) -> Optional[datetime]:
+        """Data de aceitação das regras."""
+        return self._rules_accepted_at
+
+    def mark_rules_accepted(self) -> None:
+        """Marca que o usuário aceitou as regras."""
+        if self._rules_accepted:
+            return  # Já aceitou
+        self._rules_accepted = True
+        self._rules_accepted_at = datetime.now()
+        # self._add_event(RulesAcceptedEvent(self.id)) # Futuro: Adicionar evento de domínio
+        self._touch()
+
     def update_username(self, new_username: str) -> None:
         """
         Atualiza o username do usuário.
@@ -227,6 +250,8 @@ class User(AggregateRoot[UserId]):
             return  # Já inativo
 
         self._status = UserStatus.INACTIVE
+        self._rules_accepted = False
+        self._rules_accepted_at = None
         self._add_event(UserDeactivated(self.id, reason))
         self._increment_version()
 

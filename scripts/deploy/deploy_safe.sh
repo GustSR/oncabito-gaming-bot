@@ -40,7 +40,7 @@ fi
 # 1. Backup automático antes de qualquer coisa
 echo "💾 FASE 1: Backup de segurança..."
 if [ -f "data/database/sentinela.db" ]; then
-    if ./scripts/backup_database.sh auto; then
+    if ./scripts/db/backup_database.sh auto; then
         print_status "Backup de segurança criado"
     else
         print_error "Falha no backup de segurança. Deploy cancelado por segurança."
@@ -187,11 +187,7 @@ fi
 # 13. Teste básico de funcionalidade
 echo ""
 echo "🧪 FASE 13: Teste básico de funcionalidade..."
-USER_COUNT=$(docker exec oncabito-bot python3 -c "
-import sys; sys.path.append('/app/src')
-from sentinela.clients.db_client import get_all_active_users
-print(len(get_all_active_users()))
-" 2>/dev/null || echo "0")
+USER_COUNT=$(docker exec oncabito-bot python3 /app/scripts/diagnostics/health_check.py 2>/dev/null || echo "-1")
 
 if [ "$USER_COUNT" -ge 0 ]; then
     print_status "Database acessível - $USER_COUNT usuário(s) ativo(s)"
@@ -214,7 +210,7 @@ echo ""
 echo "🔧 Comandos úteis:"
 echo "  • Ver logs: docker-compose logs -f"
 echo "  • Status: docker-compose ps"
-echo "  • Backup manual: ./scripts/backup_database.sh"
+echo "  • Backup manual: ./scripts/db/backup_database.sh"
 echo "  • Verificar migrations: docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db"
 
 echo ""

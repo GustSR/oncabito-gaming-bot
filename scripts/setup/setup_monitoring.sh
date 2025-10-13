@@ -63,7 +63,7 @@ crontab -l 2>/dev/null | grep -v "backup_database.sh\|verify_data_integrity.py\|
 print_info "Configurando novos cron jobs..."
 
 # Backup diário às 3h
-BACKUP_CRON="0 3 * * * cd $PROJECT_DIR && ./scripts/backup_database.sh auto >> logs/backup_cron.log 2>&1"
+BACKUP_CRON="0 3 * * * cd $PROJECT_DIR && ./scripts/db/backup_database.sh auto >> logs/backup_cron.log 2>&1"
 
 # Verificação de integridade às 6h
 INTEGRITY_CRON="0 6 * * * cd $PROJECT_DIR && python3 ./scripts/verify_data_integrity.py >> logs/integrity_cron.log 2>&1"
@@ -89,7 +89,7 @@ print_status "Arquivos de log criados"
 print_info "Testando scripts..."
 
 echo "📦 Testando backup manual..."
-if ./scripts/backup_database.sh manual; then
+if ./scripts/db/backup_database.sh manual; then
     print_status "Script de backup funcionando"
 else
     print_warning "Script de backup teve problemas"
@@ -126,7 +126,7 @@ echo "  • Logs de cron: logs/*_cron.log"
 echo ""
 echo "🔧 COMANDOS ÚTEIS:"
 echo "  • Ver cron jobs: crontab -l"
-echo "  • Backup manual: ./scripts/backup_database.sh manual"
+echo "  • Backup manual: ./scripts/db/backup_database.sh manual"
 echo "  • Verificação manual: python3 ./scripts/verify_data_integrity.py"
 echo "  • Export manual: python3 ./scripts/export_critical_data.py"
 echo "  • Ver logs: tail -f logs/backup_cron.log"

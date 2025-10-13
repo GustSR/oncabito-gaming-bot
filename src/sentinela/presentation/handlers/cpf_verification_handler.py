@@ -290,12 +290,183 @@ class CPFVerificationHandler:
         context: ContextTypes.DEFAULT_TYPE,
         callback_data: str
     ) -> None:
-        """Processa a escolha do usuário na resolução de CPF duplicado."""
+        """
+        Processa a escolha do usuário na resolução de CPF duplicado.
+
+        Suporta dois fluxos:
+        1. Fluxo reativo (verificação): dup_resolve_merge_{verification_id} ou dup_resolve_cancel_{verification_id}
+        2. Fluxo proativo (checkup): resolve_dup:{conflict_id}:{chosen_user_id} ou resolve:{short_id}:{chosen_user_id}
+        """
+        await query.edit_message_text("⏳ Processando sua escolha...", parse_mode='Markdown')
+
+        # Detecta qual fluxo está sendo usado
+        if callback_data.startswith("resolve_dup:") or callback_data.startswith("resolve:"):
+            # NOVO FLUXO: Resolução proativa (via checkup diário)
+            await self._handle_proactive_duplicate_resolution(query, callback_data)
+        else:
+            # FLUXO ANTIGO: Resolução reativa (via verificação de CPF)
+            await self._handle_reactive_duplicate_resolution(query, context, callback_data)
+
+    async def _handle_proactive_duplicate_resolution(
+        self,
+        query,
+        callback_data: str
+    ) -> None:
+        """Processa resolução de duplicata proativa (detectada no checkup)."""
+        try:
+            # Parse callback: resolve_dup:{conflict_id}:{chosen_user_id} ou resolve:{short_id}:{chosen_user_id}
+            parts = callback_data.split(':')
+            if len(parts) != 3:
+                await query.edit_message_text(
+                    "❌ Formato de callback inválido. Por favor, contate o suporte.",
+                    parse_mode='Markdown'
+                )
+                return
+
+            conflict_id = parts[1]
+            chosen_user_id = int(parts[2])
+
+            logger.info(f"Resolução proativa: usuário {query.from_user.id} escolheu manter conta {chosen_user_id} (conflict: {conflict_id})")
+
+            # Carrega o conflito do repositório
+            from ...domain.entities.duplicate_conflict import ConflictId
+            conflict_repo = self._container.get("duplicate_conflict_repository")
+            conflict = await conflict_repo.find_by_id(ConflictId(conflict_id))
+
+            if not conflict:
+                await query.edit_message_text(
+                    "❌ Conflito não encontrado. Talvez já tenha sido resolvido.\n\n"
+                    "Se o problema persistir, contate o suporte.",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Verifica se o conflito ainda está pendente
+            from ...domain.entities.duplicate_conflict import ConflictStatus
+            if conflict.status != ConflictStatus.PENDING:
+                await query.edit_message_text(
+                    f"⚠️ Este conflito já foi resolvido anteriormente (status: {conflict.status.value}).\n\n"
+                    "Nenhuma ação adicional é necessária.",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Valida que o escolhido está na lista de usuários do conflito
+            if chosen_user_id not in conflict.user_ids:
+                await query.edit_message_text(
+                    "❌ Usuário escolhido não faz parte deste conflito. Por favor, contate o suporte.",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Resolve o conflito
+            conflict.resolve_by_user_choice(
+                chosen_user_id=chosen_user_id,
+                resolved_by=query.from_user.id
+            )
+
+            # Identifica os usuários a serem removidos
+            users_to_remove = [uid for uid in conflict.user_ids if uid != chosen_user_id]
+
+            # Remove os outros usuários do grupo
+            user_repo = self._container.get("user_repository")
+            from ...domain.value_objects.identifiers import UserId
+
+            for user_id in users_to_remove:
+                try:
+                    # Remove do grupo do Telegram
+                    await query.get_bot().ban_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=user_id)
+                    await query.get_bot().unban_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=user_id)
+
+                    # Desativa o usuário no banco
+                    user = await user_repo.find_by_id(UserId(user_id))
+                    if user:
+                        reason = f"CPF transferido para a conta {chosen_user_id} por escolha do usuário"
+                        user.deactivate(reason)
+                        await user_repo.save(user)
+                        logger.info(f"Usuário {user_id} removido e desativado (resolução proativa)")
+
+                    # Envia DM explicando a remoção
+                    try:
+                        await query.get_bot().send_message(
+                            chat_id=user_id,
+                            text=(
+                                "⚠️ **Atualização de Conta**\n\n"
+                                f"Seu CPF foi transferido para outra conta do Telegram (ID: {chosen_user_id}).\n\n"
+                                "Como resultado, você foi removido do grupo OnCabo Gaming.\n\n"
+                                "Se você acredita que isso foi um erro, por favor entre em contato com o suporte."
+                            ),
+                            parse_mode='Markdown'
+                        )
+                    except Exception as dm_error:
+                        logger.warning(f"Não foi possível enviar DM para usuário {user_id}: {dm_error}")
+
+                except Exception as removal_error:
+                    logger.error(f"Erro ao remover usuário {user_id}: {removal_error}")
+
+            # Salva o conflito resolvido
+            await conflict_repo.save(conflict)
+
+            # Cria link de convite para a conta escolhida (se não for ele mesmo)
+            client_name = query.from_user.first_name
+            invite_message = ""
+
+            if chosen_user_id != query.from_user.id:
+                # A conta escolhida é diferente da conta que está respondendo
+                # (caso improvável, mas possível se admin responder)
+                invite_message = (
+                    f"\n\n⚠️ **Nota:** A conta mantida é o ID {chosen_user_id}, não a sua. "
+                    f"Um link de convite foi enviado para o usuário correspondente."
+                )
+            else:
+                # A conta escolhida é a mesma que respondeu - gera link de convite
+                try:
+                    invite_link = await query.get_bot().create_chat_invite_link(
+                        chat_id=int(TELEGRAM_GROUP_ID),
+                        member_limit=1,
+                        name=f"Link para {client_name} (pós-resolução)"
+                    )
+                    invite_message = (
+                        f"\n\n🔗 **Seu link de acesso ao grupo:**\n"
+                        f"{invite_link.invite_link}\n\n"
+                        f"⏰ Este link é pessoal e pode ser usado apenas 1 vez!"
+                    )
+                except Exception as link_error:
+                    logger.error(f"Erro ao criar link de convite: {link_error}")
+                    invite_message = (
+                        "\n\n⚠️ Houve um erro ao gerar seu link de convite. "
+                        "Por favor, contate o suporte."
+                    )
+
+            # Mensagem de sucesso
+            success_message = (
+                f"✅ **Conflito Resolvido com Sucesso!**\n\n"
+                f"A conta escolhida (ID: {chosen_user_id}) foi mantida com o CPF.\n"
+                f"As outras {len(users_to_remove)} conta(s) foram removidas do grupo."
+                f"{invite_message}"
+            )
+
+            await query.edit_message_text(success_message, parse_mode='Markdown', disable_web_page_preview=True)
+            logger.info(f"Conflito {conflict_id} resolvido com sucesso por usuário {query.from_user.id}")
+
+        except Exception as e:
+            logger.error(f"Erro ao processar resolução proativa de duplicata: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Ocorreu um erro ao processar sua escolha.\n\n"
+                "Por favor, contate o suporte.",
+                parse_mode='Markdown'
+            )
+
+    async def _handle_reactive_duplicate_resolution(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE,
+        callback_data: str
+    ) -> None:
+        """Processa resolução de duplicata reativa (durante verificação de CPF)."""
         parts = callback_data.split('_')
         action = parts[2]
         verification_id = parts[3]
-
-        await query.edit_message_text("⏳ Processando sua escolha...", parse_mode='Markdown')
 
         if action == "merge":
             logger.info(f"Usuário {query.from_user.id} escolheu 'merge' para a verificação {verification_id}.")
