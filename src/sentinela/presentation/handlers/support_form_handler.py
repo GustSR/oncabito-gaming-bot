@@ -3,15 +3,20 @@ Support Form Handler.
 
 Handler especializado para fluxos conversacionais de suporte,
 incluindo categorização, coleta de informações e criação de tickets.
+
+NOVO: Sistema de persistência de sessões - o progresso do formulário
+é salvo no banco de dados, permitindo que usuários retomem o preenchimento
+mesmo após reinicializações do bot.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
+from ...domain.repositories.support_session_repository import SupportSessionRepository
 from ...core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID
 
 logger = logging.getLogger(__name__)
@@ -49,35 +54,6 @@ def get_step_status(step: int, current: int) -> str:
         return "⏳"
 
 
-def init_support_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Inicializa estado do suporte no context.user_data."""
-    context.user_data['support'] = {
-        'state': SupportState.IDLE,
-        'category': None,
-        'category_name': None,
-        'game': None,
-        'game_name': None,
-        'timing': None,
-        'timing_name': None,
-        'description': None,
-        'attachments': [],
-        'current_step': 0
-    }
-
-
-def get_support_state(context: ContextTypes.DEFAULT_TYPE) -> Dict[str, Any]:
-    """Obtém estado do suporte."""
-    if 'support' not in context.user_data:
-        init_support_state(context)
-    return context.user_data['support']
-
-
-def clear_support_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Limpa estado do suporte."""
-    if 'support' in context.user_data:
-        del context.user_data['support']
-
-
 class SupportFormHandler:
     """Handler para gerenciar o fluxo conversacional de suporte."""
 
@@ -90,12 +66,129 @@ class SupportFormHandler:
         """
         self._container = container
         self._hubsoft_use_case: HubSoftIntegrationUseCase = None
+        self._support_session_repository: SupportSessionRepository = None
 
     def _ensure_hubsoft_use_case(self) -> HubSoftIntegrationUseCase:
         """Garante que o HubSoft use case está inicializado."""
         if self._hubsoft_use_case is None:
             self._hubsoft_use_case = self._container.get("hubsoft_integration_use_case")
         return self._hubsoft_use_case
+
+    def _ensure_support_session_repository(self) -> SupportSessionRepository:
+        """Garante que o repositório de sessões está inicializado."""
+        if self._support_session_repository is None:
+            self._support_session_repository = self._container.get("support_session_repository")
+        return self._support_session_repository
+
+    def _create_initial_state(self) -> Dict[str, Any]:
+        """
+        Cria estrutura inicial do estado de suporte.
+
+        Returns:
+            Dict com estado limpo do formulário
+        """
+        return {
+            'state': SupportState.IDLE,
+            'category': None,
+            'category_name': None,
+            'game': None,
+            'game_name': None,
+            'timing': None,
+            'timing_name': None,
+            'description': None,
+            'attachments': [],
+            'current_step': 0
+        }
+
+    async def _get_support_state(self, user_id: int) -> Dict[str, Any]:
+        """
+        Obtém estado do suporte para o usuário do banco de dados.
+
+        Args:
+            user_id: ID do Telegram do usuário
+
+        Returns:
+            Dict[str, Any]: Estado do formulário (cria novo se não existir)
+        """
+        repository = self._ensure_support_session_repository()
+        session_data = await repository.find_session(user_id)
+
+        if session_data:
+            # Retorna o estado deserializado do banco
+            return session_data['state_json']
+
+        # Se não existe, cria um novo estado
+        return self._create_initial_state()
+
+    async def _save_support_state(self, user_id: int, state: Dict[str, Any]) -> bool:
+        """
+        Salva estado do suporte no banco de dados.
+
+        Args:
+            user_id: ID do Telegram do usuário
+            state: Estado completo do formulário
+
+        Returns:
+            bool: True se salvou com sucesso
+        """
+        repository = self._ensure_support_session_repository()
+        current_step = state.get('state', SupportState.IDLE)
+
+        success = await repository.save_session(
+            user_id=user_id,
+            state_json=state,
+            current_step=current_step
+        )
+
+        if success:
+            logger.debug(f"Estado de suporte salvo para usuário {user_id} (passo: {current_step})")
+        else:
+            logger.error(f"Falha ao salvar estado de suporte para usuário {user_id}")
+
+        return success
+
+    async def _clear_support_state(self, user_id: int) -> bool:
+        """
+        Remove estado do suporte do banco de dados.
+
+        Args:
+            user_id: ID do Telegram do usuário
+
+        Returns:
+            bool: True se removeu com sucesso
+        """
+        repository = self._ensure_support_session_repository()
+        success = await repository.delete_session(user_id)
+
+        if success:
+            logger.debug(f"Estado de suporte limpo para usuário {user_id}")
+
+        return success
+
+    async def start_support_flow(self, user_id: int) -> bool:
+        """
+        Inicia uma nova sessão de suporte para o usuário.
+
+        Cria um estado inicial e salva no banco de dados.
+
+        Args:
+            user_id: ID do Telegram do usuário
+
+        Returns:
+            bool: True se iniciou com sucesso
+        """
+        state = self._create_initial_state()
+        state['state'] = SupportState.CATEGORY
+        state['current_step'] = 1
+
+        success = await self._save_support_state(user_id, state)
+
+        if success:
+            logger.info(f"Fluxo de suporte iniciado para usuário {user_id}")
+        else:
+            logger.error(f"Falha ao iniciar fluxo de suporte para usuário {user_id}")
+
+        return success
 
     async def handle_support_callback(
         self,
@@ -133,7 +226,7 @@ class SupportFormHandler:
 
     async def handle_support_cancel(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Cancela o fluxo de suporte."""
-        clear_support_state(context)
+        await self._clear_support_state(query.from_user.id)
         await query.edit_message_text(
             "❌ **Formulário Cancelado**\n\n"
             "Você pode iniciar um novo chamado a qualquer momento usando /suporte",
@@ -143,7 +236,8 @@ class SupportFormHandler:
 
     async def handle_support_back(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Volta para etapa anterior."""
-        state = get_support_state(context)
+        user_id = query.from_user.id
+        state = await self._get_support_state(user_id)
         current_state = state['state']
 
         # Define para onde voltar
@@ -151,21 +245,25 @@ class SupportFormHandler:
             # Volta para categoria
             state['state'] = SupportState.CATEGORY
             state['current_step'] = 1
+            await self._save_support_state(user_id, state)
             await self.show_category_step(query, context)
         elif current_state == SupportState.TIMING:
             # Volta para jogo
             state['state'] = SupportState.GAME
             state['current_step'] = 2
+            await self._save_support_state(user_id, state)
             await self.show_game_step(query, context)
         elif current_state == SupportState.ATTACHMENTS:
             # Volta para timing
             state['state'] = SupportState.TIMING
             state['current_step'] = 3
+            await self._save_support_state(user_id, state)
             await self.show_timing_step(query, context)
         elif current_state == SupportState.CONFIRMATION:
             # Volta para attachments
             state['state'] = SupportState.ATTACHMENTS
             state['current_step'] = 5
+            await self._save_support_state(user_id, state)
             await self.show_attachments_step(query, context)
         else:
             await query.answer("Não é possível voltar nesta etapa")
@@ -177,6 +275,7 @@ class SupportFormHandler:
         callback_data: str
     ) -> None:
         """Processa seleção de categoria."""
+        user_id = query.from_user.id
         category_key = callback_data.replace("sup_cat_", "")
 
         category_names = {
@@ -187,18 +286,20 @@ class SupportFormHandler:
             "others": "📞 Outros"
         }
 
-        state = get_support_state(context)
+        state = await self._get_support_state(user_id)
         state['category'] = category_key
         state['category_name'] = category_names.get(category_key, "Outros")
         state['state'] = SupportState.GAME
         state['current_step'] = 2
 
+        await self._save_support_state(user_id, state)
         await self.show_game_step(query, context)
-        logger.info(f"Usuário {query.from_user.id} selecionou categoria: {category_key}")
+        logger.info(f"Usuário {user_id} selecionou categoria: {category_key}")
 
     async def show_game_step(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra etapa de seleção de jogo."""
-        state = get_support_state(context)
+        user_id = query.from_user.id
+        state = await self._get_support_state(user_id)
 
         keyboard = [
             [
@@ -278,6 +379,7 @@ class SupportFormHandler:
         callback_data: str
     ) -> None:
         """Processa seleção de jogo."""
+        user_id = query.from_user.id
         game_key = callback_data.replace("sup_game_", "")
 
         game_names = {
@@ -291,18 +393,20 @@ class SupportFormHandler:
             "other": "🎪 Outro jogo"
         }
 
-        state = get_support_state(context)
+        state = await self._get_support_state(user_id)
         state['game'] = game_key
         state['game_name'] = game_names.get(game_key, "Outro")
         state['state'] = SupportState.TIMING
         state['current_step'] = 3
 
+        await self._save_support_state(user_id, state)
         await self.show_timing_step(query, context)
-        logger.info(f"Usuário {query.from_user.id} selecionou jogo: {game_key}")
+        logger.info(f"Usuário {user_id} selecionou jogo: {game_key}")
 
     async def show_timing_step(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra etapa de seleção de timing."""
-        state = get_support_state(context)
+        user_id = query.from_user.id
+        state = await self._get_support_state(user_id)
 
         keyboard = [
             [
@@ -348,6 +452,7 @@ class SupportFormHandler:
         callback_data: str
     ) -> None:
         """Processa seleção de timing."""
+        user_id = query.from_user.id
         timing_key = callback_data.replace("sup_timing_", "")
 
         timing_names = {
@@ -359,11 +464,13 @@ class SupportFormHandler:
             "always": "♾️ Sempre Foi Assim"
         }
 
-        state = get_support_state(context)
+        state = await self._get_support_state(user_id)
         state['timing'] = timing_key
         state['timing_name'] = timing_names.get(timing_key, "Não informado")
         state['state'] = SupportState.DESCRIPTION
         state['current_step'] = 4
+
+        await self._save_support_state(user_id, state)
 
         # Remove o teclado e pede descrição
         progress = get_progress_bar(4)
@@ -389,11 +496,17 @@ class SupportFormHandler:
             parse_mode='Markdown'
         )
 
-        logger.info(f"Usuário {query.from_user.id} selecionou timing: {timing_key}")
+        logger.info(f"Usuário {user_id} selecionou timing: {timing_key}")
 
     async def show_attachments_step(self, query_or_message, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra etapa de anexos opcionais."""
-        state = get_support_state(context)
+        # Extrai user_id dependendo se é query ou message
+        if hasattr(query_or_message, 'from_user'):
+            user_id = query_or_message.from_user.id
+        else:
+            user_id = query_or_message.message.from_user.id if hasattr(query_or_message, 'message') else query_or_message.chat.id
+
+        state = await self._get_support_state(user_id)
         attachments_count = len(state.get('attachments', []))
 
         keyboard = [
@@ -446,14 +559,17 @@ class SupportFormHandler:
     ) -> None:
         """Processa ações de anexos."""
         if callback_data == "sup_att_skip" or callback_data == "sup_att_continue":
-            state = get_support_state(context)
+            user_id = query.from_user.id
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.CONFIRMATION
             state['current_step'] = 6
+            await self._save_support_state(user_id, state)
             await self.show_confirmation_step(query, context)
 
     async def show_confirmation_step(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra etapa de confirmação."""
-        state = get_support_state(context)
+        user_id = query.from_user.id
+        state = await self._get_support_state(user_id)
         attachments_count = len(state.get('attachments', []))
 
         keyboard = [
@@ -507,6 +623,8 @@ class SupportFormHandler:
         callback_data: str
     ) -> None:
         """Processa edição de campos."""
+        user_id = query.from_user.id
+
         if callback_data == "sup_edit_menu":
             # Mostra menu de edição
             keyboard = [
@@ -525,33 +643,38 @@ class SupportFormHandler:
                 parse_mode='Markdown'
             )
         elif callback_data == "sup_edit_category":
-            state = get_support_state(context)
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.CATEGORY
             state['current_step'] = 1
+            await self._save_support_state(user_id, state)
             await self.show_category_step(query, context)
         elif callback_data == "sup_edit_game":
-            state = get_support_state(context)
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.GAME
             state['current_step'] = 2
+            await self._save_support_state(user_id, state)
             await self.show_game_step(query, context)
         elif callback_data == "sup_edit_timing":
-            state = get_support_state(context)
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.TIMING
             state['current_step'] = 3
+            await self._save_support_state(user_id, state)
             await self.show_timing_step(query, context)
         elif callback_data == "sup_edit_description":
-            state = get_support_state(context)
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.DESCRIPTION
             state['current_step'] = 4
+            await self._save_support_state(user_id, state)
 
             await query.edit_message_text(
                 "📝 Digite a nova descrição do problema:",
                 parse_mode='Markdown'
             )
         elif callback_data == "sup_edit_attachments":
-            state = get_support_state(context)
+            state = await self._get_support_state(user_id)
             state['state'] = SupportState.ATTACHMENTS
             state['current_step'] = 5
+            await self._save_support_state(user_id, state)
             await self.show_attachments_step(query, context)
 
     async def create_ticket_from_support_flow(
@@ -563,8 +686,9 @@ class SupportFormHandler:
         Cria ticket a partir do fluxo de suporte, usando a nova arquitetura
         e o endpoint correto do HubSoft.
         """
-        state = get_support_state(context)
         user = query.from_user
+        user_id = user.id
+        state = await self._get_support_state(user_id)
 
         try:
             await query.edit_message_text(
@@ -574,7 +698,7 @@ class SupportFormHandler:
             )
 
             # 1. Montar a descrição enriquecida
-            user_mention = f"@{user.username}" if user.username else f"ID: {user.id}"
+            user_mention = f"@{user.username}" if user.username else f"ID: {user_id}"
             now_str = datetime.now().strftime('%d/%m/%Y às %H:%M')
 
             enhanced_description = (
@@ -587,7 +711,7 @@ class SupportFormHandler:
 
             # 2. Montar os dados do ticket
             ticket_data = {
-                "user_id": user.id,
+                "user_id": user_id,
                 "user_name": user.first_name,
                 "user_telegram": user_mention,
                 "category": state['category'],
@@ -598,7 +722,7 @@ class SupportFormHandler:
             }
 
             # 3. Chamar o Use Case correto
-            logger.info(f"Iniciando criação de ticket para usuário {user.id} via Use Case...")
+            logger.info(f"Iniciando criação de ticket para usuário {user_id} via Use Case...")
             hubsoft_use_case = self._ensure_hubsoft_use_case()
             hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data)
 
@@ -610,7 +734,7 @@ class SupportFormHandler:
                     "Por favor, tente novamente em alguns minutos."
                 )
                 await query.edit_message_text(error_message, parse_mode='Markdown')
-                logger.error(f"Falha ao criar ticket para usuário {user.id}: {hubsoft_result.message}")
+                logger.error(f"Falha ao criar ticket para usuário {user_id}: {hubsoft_result.message}")
                 return
 
             # 4. Montar mensagem de sucesso com o protocolo real
@@ -649,8 +773,8 @@ class SupportFormHandler:
             except Exception as e:
                 logger.error(f"Erro ao enviar notificação de novo ticket ao grupo: {e}")
 
-            clear_support_state(context)
-            logger.info(f"Ticket {hubsoft_protocol} criado com sucesso para usuário {user.id}")
+            await self._clear_support_state(user_id)
+            logger.info(f"Ticket {hubsoft_protocol} criado com sucesso para usuário {user_id}")
 
         except Exception as e:
             logger.error(f"Erro crítico ao criar ticket: {e}", exc_info=True)
@@ -672,11 +796,16 @@ class SupportFormHandler:
         Returns:
             bool: True se a mensagem foi processada, False caso contrário.
         """
-        # Verifica se está em fluxo de suporte (usuário verificado)
-        if 'support' not in context.user_data:
+        user_id = update.effective_user.id
+
+        # Verifica se está em fluxo de suporte
+        repository = self._ensure_support_session_repository()
+        has_session = await repository.session_exists(user_id)
+
+        if not has_session:
             return False
 
-        state = get_support_state(context)
+        state = await self._get_support_state(user_id)
 
         # Se está aguardando descrição
         if state['state'] == SupportState.DESCRIPTION:
@@ -698,9 +827,11 @@ class SupportFormHandler:
             state['state'] = SupportState.ATTACHMENTS
             state['current_step'] = 5
 
+            await self._save_support_state(user_id, state)
+
             # Mostra etapa de anexos
             await self.show_attachments_step(update.message, context)
-            logger.info(f"Usuário {update.effective_user.id} enviou descrição ({len(text)} chars)")
+            logger.info(f"Usuário {user_id} enviou descrição ({len(text)} chars)")
             return True
 
         return False
@@ -717,12 +848,16 @@ class SupportFormHandler:
             bool: True se a foto foi processada, False caso contrário.
         """
         user = update.effective_user
+        user_id = user.id
 
-        # Verifica se está em fluxo de suporte e aguardando anexos
-        if 'support' not in context.user_data:
+        # Verifica se está em fluxo de suporte
+        repository = self._ensure_support_session_repository()
+        has_session = await repository.session_exists(user_id)
+
+        if not has_session:
             return False
 
-        state = get_support_state(context)
+        state = await self._get_support_state(user_id)
 
         # Só aceita fotos na etapa de anexos
         if state['state'] != SupportState.ATTACHMENTS:
@@ -752,6 +887,8 @@ class SupportFormHandler:
         attachments.append(attachment_info)
         state['attachments'] = attachments
 
+        await self._save_support_state(user_id, state)
+
         attachments_count = len(attachments)
 
         # Mensagem de confirmação
@@ -763,5 +900,5 @@ class SupportFormHandler:
             parse_mode='Markdown'
         )
 
-        logger.info(f"Usuário {user.id} enviou anexo {attachments_count}/3")
+        logger.info(f"Usuário {user_id} enviou anexo {attachments_count}/3")
         return True

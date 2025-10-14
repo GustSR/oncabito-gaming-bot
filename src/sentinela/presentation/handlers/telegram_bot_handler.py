@@ -21,9 +21,6 @@ from .cpf_verification_handler import CPFVerificationHandler
 from .support_form_handler import (
     SupportFormHandler,
     SupportState,
-    init_support_state,
-    get_support_state,
-    clear_support_state,
     get_progress_bar
 )
 
@@ -357,6 +354,41 @@ class TelegramBotHandler:
                 "❌ Ocorreu um erro inesperado. Tente novamente mais tarde."
             )
 
+    async def _check_and_redirect_unverified_group_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Verifica se o usuário não é verificado em um grupo e o redireciona para o privado."""
+        user = update.effective_user
+        is_group = update.effective_chat.id != user.id
+
+        if is_group and not await self._check_user_verified(user.id):
+            try:
+                # Deleta o comando do grupo para não poluir
+                await update.message.delete()
+
+                # Envia instrução no privado
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=(
+                        "Olá! Para usar os comandos do bot no grupo, você precisa primeiro verificar seu CPF.\n\n"
+                        "Vamos fazer isso agora! Por favor, me envie seu CPF (apenas números) aqui no privado."
+                    )
+                )
+                
+                # Inicia o fluxo de verificação silenciosamente
+                await self._cpf_use_case.start_verification(
+                    user_id=user.id,
+                    username=user.username or user.first_name,
+                    user_mention=user.mention_html,
+                    source_action="unverified_group_command"
+                )
+                context.user_data['waiting_cpf'] = True
+                logger.info(f"Usuário não verificado {user.id} tentou usar comando no grupo. Redirecionado para o privado.")
+                return False  # Indica que a execução do handler principal deve parar
+            except Exception as e:
+                logger.error(f"Erro ao redirecionar usuário não verificado: {e}")
+                return False # Impede a continuação em caso de erro
+
+        return True # Indica que o usuário está verificado ou no privado, pode continuar
+
     async def handle_support_command(
         self,
         update: Update,
@@ -365,137 +397,57 @@ class TelegramBotHandler:
         """Processa comando /suporte - Inicia fluxo conversacional."""
         try:
             await self._ensure_initialized()
-
             user = update.effective_user
-            chat_id = update.effective_chat.id
-            is_group = chat_id != user.id
-
             if not user:
                 return
 
-            # VALIDAÇÃO CRÍTICA: Verifica se usuário tem CPF verificado
-            is_verified = await self._check_user_verified(user.id)
-            if not is_verified:
-                # Usuário não verificado - inicia fluxo de boas-vindas automaticamente
-                await self._start_welcome_flow(update, context)
-                logger.info(f"Usuário {user.id} tentou usar /suporte sem estar verificado - iniciado fluxo de boas-vindas")
+            # Guarda de verificação: redireciona se for usuário não verificado no grupo
+            if not await self._check_and_redirect_unverified_group_user(update, context):
                 return
 
-            # VALIDAÇÃO: No grupo, só funciona no tópico Suporte Gamer
-            if is_group:
-                from ...core.config import SUPPORT_TOPIC_ID
-                message_thread_id = update.effective_message.message_thread_id
-
-                if SUPPORT_TOPIC_ID and str(message_thread_id) != str(SUPPORT_TOPIC_ID):
-                    # Comando usado fora do tópico correto - ignora silenciosamente
-                    logger.debug(f"Comando /suporte ignorado - tópico errado (recebido: {message_thread_id}, esperado: {SUPPORT_TOPIC_ID})")
-                    return
+            # A partir daqui, o usuário ou está no privado ou já é verificado
+            chat_id = update.effective_chat.id
+            is_group = chat_id != user.id
 
             # VALIDAÇÃO: Verifica se já tem ticket ativo
-            # ADR-001: Busca tickets ativos direto do HubSoft (Single Source of Truth)
             active_result = await self._hubsoft_use_case.get_user_active_tickets(user.id)
-
             if active_result.success and active_result.data.get('has_active'):
-                # Já tem atendimento ativo - não pode abrir outro
-                active_tickets = active_result.data.get('tickets', [])
-                active_ticket = active_tickets[0] if active_tickets else None
-
-                if not active_ticket:
-                    logger.error(f"HubSoft retornou has_active=True mas sem tickets para user {user.id}")
-                    await update.message.reply_text("❌ Erro ao verificar tickets ativos. Tente novamente.")
-                    return
-
-                protocol = active_ticket.get('protocol') or active_ticket.get('hubsoft_protocol') or f"HS-{active_ticket.get('id', 'UNKNOWN')}"
-
-                category_names = {
-                    'connectivity': '🌐 Conectividade/Ping',
-                    'performance': '⚡ Performance/FPS',
-                    'game_issues': '🎮 Problemas no Jogo',
-                    'configuration': '💻 Configuração',
-                    'others': '📞 Outros'
-                }
-                category = category_names.get(active_ticket['category'], active_ticket['category'])
-                status_pt = self._get_status_name_pt(active_ticket['status'])
-
-                # Menção ao usuário
-                user_mention = user.mention_markdown() if user.username else user.first_name
-
-                message = (
-                    f"Olá, {user_mention}! 😊\n\n"
-                    f"🎮 Vejo que você já está sendo atendido pela nossa equipe!\n\n"
-                    f"📋 **Protocolo:** `{protocol}`\n"
-                    f"📂 **Categoria:** {category}\n"
-                    f"📅 **Status:** {status_pt}\n\n"
-                    f"⏰ **Nossos técnicos já estão trabalhando no seu caso!**\n\n"
-                    f"💡 Use /status para acompanhar o andamento\n"
-                    f"🙏 Agradecemos sua paciência e confiança!"
+                active_ticket = active_result.data.get('tickets', [])[0]
+                protocol = active_ticket.get('protocol') or f"HS-{active_ticket.get('id', 'N/A')}"
+                status_display = active_ticket.get('status_display', 'N/A')
+                message_text = (
+                    f"Olá, {user.mention_markdown()}! 😊\n\n"
+                    f"🎮 Vejo que você já tem um atendimento em andamento (Protocolo: `{protocol}`, Status: {status_display}).\n\n"
+                    f"Por favor, aguarde a resolução antes de abrir um novo chamado."
                 )
-
-                # Se for no grupo, envia no tópico de Suporte Gamer
-                send_params = {
-                    'chat_id': chat_id,
-                    'text': message,
-                    'parse_mode': 'Markdown'
-                }
-
-                if is_group:
-                    from ...core.config import SUPPORT_TOPIC_ID
-                    if SUPPORT_TOPIC_ID:
-                        send_params['message_thread_id'] = int(SUPPORT_TOPIC_ID)
-
-                await context.bot.send_message(**send_params)
-
-                logger.info(f"Usuário {user.id} tentou abrir ticket mas já tem ativo: {protocol} (enviado no {'grupo/tópico' if is_group else 'privado'})")
+                await update.message.reply_text(message_text, parse_mode='Markdown')
                 return
 
-            # Se foi enviado no grupo, envia notificação ao tópico
+            # Se foi enviado no grupo, notifica e sai
             if is_group:
-                try:
-                    # Deleta o comando do grupo
-                    await update.message.delete()
+                await update.message.delete()
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    message_thread_id=int(SUPPORT_TOPIC_ID) if SUPPORT_TOPIC_ID else None,
+                    text=f"👋 Olá, {user.mention_markdown()}! Recebi seu pedido de suporte e já estou te chamando no privado para começarmos! 🚀",
+                    parse_mode='Markdown'
+                )
+            
+            # Inicia o fluxo de suporte no privado
+            await self._support_handler.start_support_flow(user.id)
+            state = await self._support_handler._get_support_state(user.id)
 
-                    # Envia notificação ao tópico de suporte
-                    await context.bot.send_message(
-                        chat_id=int(TELEGRAM_GROUP_ID),
-                        message_thread_id=int(SUPPORT_TOPIC_ID),
-                        text=(
-                            f"👋 Olá @{user.username or user.first_name}!\n\n"
-                            f"Recebi seu pedido de suporte! Vou te atender no **privado** para "
-                            f"entender melhor seu problema e te ajudar da melhor forma possível. 😊\n\n"
-                            f"📱 Por favor, confira suas **mensagens diretas** comigo!\n\n"
-                            f"💬 Te vejo lá! Já estou te aguardando..."
-                        ),
-                        parse_mode='Markdown'
-                    )
-                except Exception as e:
-                    logger.warning(f"Erro ao enviar notificação no tópico: {e}")
-
-            # Inicializa estado do suporte
-            init_support_state(context)
-            state = get_support_state(context)
-            state['state'] = SupportState.CATEGORY
-            state['current_step'] = 1
-
-            # Monta teclado de categorias
             keyboard = [
-                [
-                    InlineKeyboardButton("🌐 Conectividade/Ping", callback_data="sup_cat_connectivity"),
-                    InlineKeyboardButton("⚡ Performance/FPS", callback_data="sup_cat_performance")
-                ],
-                [
-                    InlineKeyboardButton("🎮 Problemas no Jogo", callback_data="sup_cat_game_issues"),
-                    InlineKeyboardButton("💻 Configuração", callback_data="sup_cat_configuration")
-                ],
-                [
-                    InlineKeyboardButton("📞 Outros", callback_data="sup_cat_others")
-                ],
-                [
-                    InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")
-                ]
+                [InlineKeyboardButton("🌐 Conectividade/Ping", callback_data="sup_cat_connectivity"),
+                 InlineKeyboardButton("⚡ Performance/FPS", callback_data="sup_cat_performance")],
+                [InlineKeyboardButton("🎮 Problemas no Jogo", callback_data="sup_cat_game_issues"),
+                 InlineKeyboardButton("💻 Configuração", callback_data="sup_cat_configuration")],
+                [InlineKeyboardButton("📞 Outros", callback_data="sup_cat_others")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            progress = get_progress_bar(1)
+            progress = get_progress_bar(state.get('current_step', 1))
             message = (
                 f"🎮 **SUPORTE GAMER ONCABO**\n\n"
                 f"Olá! Fico feliz em te ajudar! 😊\n\n"
@@ -504,191 +456,132 @@ class TelegramBotHandler:
                 f"Primeiro, me conta: qual dessas opções descreve melhor o que está acontecendo?"
             )
 
-            # SEMPRE responde no privado do usuário
             await context.bot.send_message(
                 chat_id=user.id,
                 text=message,
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
-
-            logger.info(f"Usuário {user.id} iniciou fluxo de suporte - Step 1 (Categoria)")
+            logger.info(f"Usuário {user.id} iniciou fluxo de suporte.")
 
         except Exception as e:
-            logger.error(f"Erro no comando /suporte: {e}")
-            try:
-                await context.bot.send_message(
-                    chat_id=user.id,
-                    text="❌ Erro ao iniciar suporte. Tente novamente."
-                )
-            except Exception as e:
-                # Ignora falhas ao enviar mensagem de erro (último recurso)
-                logger.error(f"Failed to send error message: {e}")
-                pass
+            logger.error(f"Erro no comando /suporte: {e}", exc_info=True)
+            if update.effective_user:
+                await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Erro ao iniciar suporte. Tente novamente.")
 
     async def handle_status_command(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Processa comando /status."""
+        """Processa o comando /status com lógica contextual (grupo vs. privado)."""
         try:
             await self._ensure_initialized()
-
             user = update.effective_user
             if not user:
                 return
 
-            # VALIDAÇÃO CRÍTICA: Verifica se usuário tem CPF verificado
-            is_verified = await self._check_user_verified(user.id)
-            if not is_verified:
-                # Usuário não verificado - inicia fluxo de boas-vindas automaticamente
-                await self._start_welcome_flow(update, context)
-                logger.info(f"Usuário {user.id} tentou usar /status sem estar verificado - iniciado fluxo de boas-vindas")
+            # Guarda de verificação: redireciona se for usuário não verificado no grupo
+            if not await self._check_and_redirect_unverified_group_user(update, context):
                 return
 
-            # VALIDAÇÃO: No grupo, só funciona no tópico Suporte Gamer
             chat_id = update.effective_chat.id
             is_group = chat_id != user.id
 
+            # Lógica para quando o comando é usado em um grupo
             if is_group:
-                from ...core.config import SUPPORT_TOPIC_ID
-                message_thread_id = update.effective_message.message_thread_id
+                await update.message.delete()
+                active_tickets = await self._get_user_active_tickets(user.id)
 
-                if SUPPORT_TOPIC_ID and str(message_thread_id) != str(SUPPORT_TOPIC_ID):
-                    # Comando usado fora do tópico correto - ignora silenciosamente
-                    logger.debug(f"Comando /status ignorado - tópico errado (recebido: {message_thread_id}, esperado: {SUPPORT_TOPIC_ID})")
-                    return
-
-            # ADR-001: Busca tickets direto do HubSoft (Single Source of Truth)
-            tickets_result = await self._hubsoft_use_case.get_user_tickets(user.id)
-
-            if not tickets_result.success or tickets_result.data.get('count', 0) == 0:
-                # Usuário não tem nenhum atendimento
-                message = (
-                    "📋 **Seus Atendimentos**\n\n"
-                    "👋 Olá! Você ainda não tem nenhum atendimento aberto.\n\n"
-                    "💡 **Precisa de ajuda?**\n"
-                    "Use o comando /suporte para abrir um novo chamado!\n\n"
-                    "Nossa equipe está sempre pronta para te ajudar! 😊"
-                )
-                await update.message.reply_text(message, parse_mode='Markdown')
-                logger.info(f"Usuário {user.id} verificou status - sem atendimentos")
-                return
-
-            # Extrai lista de tickets do resultado
-            tickets = tickets_result.data.get('tickets', [])
-
-            # Separa tickets ativos e finalizados
-            active_statuses = ['pending', 'open', 'in_progress']
-            active_tickets = [t for t in tickets if t.get('status') in active_statuses]
-            finished_tickets = [t for t in tickets if t.get('status') not in active_statuses]
-
-            # Monta mensagem com lista de atendimentos
-            message_parts = ["📋 **Seus Atendimentos**\n"]
-
-            # Resumo geral
-            total = len(tickets)
-            active_count = len(active_tickets)
-            finished_count = len(finished_tickets)
-
-            message_parts.append(
-                f"📊 **Resumo:** {total} atendimento(s) no total\n"
-                f"🟢 Ativos: {active_count} | ✅ Finalizados: {finished_count}\n"
-            )
-
-            # Mapeia categorias para nomes amigáveis
-            category_names = {
-                'connectivity': '🌐 Conectividade/Ping',
-                'performance': '⚡ Performance/FPS',
-                'game_issues': '🎮 Problemas no Jogo',
-                'configuration': '💻 Configuração',
-                'others': '📞 Outros'
-            }
-
-            # Lista atendimentos ativos
-            if active_tickets:
-                message_parts.append("\n🔴 **ATENDIMENTOS ATIVOS**\n")
-                for ticket in active_tickets:
-                    status_emoji = self._get_status_emoji(ticket['status'])
-                    status_name = self._get_status_name_pt(ticket['status'])
-                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
-                    category = category_names.get(ticket['category'], ticket['category'])
-
-                    # Calcula dias abertos
-                    if isinstance(ticket['created_at'], str):
-                        created_date = datetime.fromisoformat(ticket['created_at'].replace(' ', 'T'))
-                    else:
-                        created_date = ticket['created_at']
-                    days_open = (datetime.now() - created_date).days
-
-                    message_parts.append(
-                        f"\n{status_emoji} **{protocol}**\n"
-                        f"   📂 {category}\n"
-                        f"   📅 {status_name} • Aberto há {days_open} dia(s)\n"
+                if not active_tickets:
+                    message = f"👋 Olá, {user.mention_markdown()}! Você não possui atendimentos ativos no momento."
+                    reply_markup = None
+                else:
+                    latest_ticket = active_tickets[0]
+                    protocol = latest_ticket.get('protocol', 'N/A')
+                    status_display = latest_ticket.get('status_display', 'N/A')
+                    message = (
+                        f"👋 Olá, {user.mention_markdown()}!\n\n"
+                        f"Seu chamado mais recente (`{protocol}`) está com o status: **{status_display}**."
                     )
+                    keyboard = [[InlineKeyboardButton("📋 Ver histórico completo", callback_data=f"status_show_all:{user.id}")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
-                    if ticket.get('affected_game'):
-                        message_parts.append(f"   🎮 {ticket['affected_game']}\n")
-
-            # Lista últimos 3 atendimentos finalizados
-            if finished_tickets:
-                message_parts.append("\n✅ **ÚLTIMOS ATENDIMENTOS FINALIZADOS**\n")
-                recent_finished = finished_tickets[:3]
-
-                for ticket in recent_finished:
-                    status_emoji = self._get_status_emoji(ticket['status'])
-                    status_name = self._get_status_name_pt(ticket['status'])
-                    protocol = ticket.get('protocol') or f"#{ticket['id']:06d}"
-                    category = category_names.get(ticket['category'], ticket['category'])
-
-                    message_parts.append(
-                        f"\n{status_emoji} **{protocol}**\n"
-                        f"   📂 {category}\n"
-                        f"   🏁 Status: {status_name}\n"
-                    )
-
-                if len(finished_tickets) > 3:
-                    message_parts.append(f"\n_... e mais {len(finished_tickets) - 3} finalizado(s)_\n")
-
-            # Rodapé com dicas
-            if not active_tickets:
-                # Só mostra opção de abrir atendimento se NÃO tiver atendimentos ativos
-                message_parts.append(
-                    "\n💡 **Precisa de ajuda?**\n"
-                    "• Use /suporte para abrir um atendimento\n"
-                    "• Nossa equipe trabalha 24/7 para te atender!\n\n"
-                    "🙏 Estamos aqui para ajudar!"
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    message_thread_id=int(SUPPORT_TOPIC_ID) if SUPPORT_TOPIC_ID else None,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
                 )
+
+            # Lógica para quando o comando é usado no privado
             else:
-                message_parts.append(
-                    "\n💡 **Dicas:**\n"
-                    "• Nossa equipe está trabalhando no seu atendimento\n"
-                    "• Aguarde o retorno em breve!\n\n"
-                    "🙏 Agradecemos sua paciência e confiança!"
-                )
+                full_status_message = await self._get_full_status_message(user.id)
+                await update.message.reply_text(full_status_message, parse_mode='Markdown')
 
-            message = "".join(message_parts)
+    async def _get_user_active_tickets(self, user_id: int) -> List[Dict[str, Any]]:
+        """Busca e retorna apenas os tickets ativos de um usuário."""
+        tickets_result = await self._hubsoft_use_case.get_user_tickets(user_id)
+        if not tickets_result.success:
+            return []
+        
+        all_tickets = tickets_result.data.get('tickets', [])
+        return [t for t in all_tickets if t.get('closed_at') is None]
 
-            # NÃO exibe botões - apenas mensagem informativa
-            await update.message.reply_text(
-                message,
-                parse_mode='Markdown'
-            )
+    async def _get_full_status_message(self, user_id: int) -> str:
+        """Monta a mensagem completa de status com todos os tickets."""
+        tickets_result = await self._hubsoft_use_case.get_user_tickets(user_id)
 
-            logger.info(
-                f"Usuário {user.id} verificou status: "
-                f"{active_count} ativos, {finished_count} finalizados"
-            )
+        if not tickets_result.success or not tickets_result.data.get('tickets'):
+            return ("📋 **Seus Atendimentos**\n\n"
+                    "👋 Olá! Você ainda não tem nenhum atendimento aberto.\n\n"
+                    "💡 **Precisa de ajuda?**\nUse o comando /suporte para abrir um novo chamado!")
 
-        except Exception as e:
-            logger.error(f"Erro no comando /status: {e}", exc_info=True)
-            await update.message.reply_text(
-                "❌ **Ops! Algo deu errado...**\n\n"
-                "Não consegui buscar seus tickets no momento.\n"
-                "Por favor, tente novamente em alguns instantes.\n\n"
-                "Se o problema persistir, entre em contato com nossa equipe! 🙏"
-            )
+        tickets = tickets_result.data.get('tickets', [])
+        active_tickets = [t for t in tickets if t.get('closed_at') is None]
+        finished_tickets = [t for t in tickets if t.get('closed_at') is not None]
+
+        message_parts = ["📋 **Seus Atendimentos**\n"]
+        message_parts.append(f"📊 **Resumo:** {len(tickets)} atendimento(s) no total\n"
+                           f"🟢 Ativos: {len(active_tickets)} | ✅ Finalizados: {len(finished_tickets)}\n")
+
+        category_names = {
+            'connectivity': '🌐 Conectividade/Ping',
+            'performance': '⚡ Performance/FPS',
+            'game_issues': '🎮 Problemas no Jogo',
+            'configuration': '💻 Configuração',
+            'others': '📞 Outros'
+        }
+
+        if active_tickets:
+            message_parts.append("\n🔴 **ATENDIMENTOS ATIVOS**\n")
+            for ticket in active_tickets:
+                days_open = 'N/A'
+                if isinstance(ticket.get('created_at'), str):
+                    try:
+                        created_date = datetime.fromisoformat(ticket['created_at'].replace(' ', 'T'))
+                        days_open = (datetime.now() - created_date).days
+                    except (ValueError, TypeError): pass
+                
+                message_parts.append(f"\n{self._get_status_emoji(ticket.get('status_key'))} **{ticket.get('protocol', 'N/A')}**\n"
+                                   f"   📂 {category_names.get(ticket['category'], ticket['category'])} | 📅 {ticket.get('status_display', 'N/A')} • Aberto há {days_open} dia(s)\n")
+
+        if finished_tickets:
+            message_parts.append("\n✅ **ÚLTIMOS ATENDIMENTOS FINALIZADOS**\n")
+            for ticket in finished_tickets[:3]:
+                message_parts.append(f"\n{self._get_status_emoji(ticket.get('status_key'))} **{ticket.get('protocol', 'N/A')}**\n"
+                                   f"   📂 {category_names.get(ticket['category'], ticket['category'])} | 🏁 Status: {ticket.get('status_display', 'N/A')}\n")
+                if ticket.get('closure_description'):
+                    message_parts.append(f"   💬 **Solução:** _{ticket['closure_description']}_\n")
+            
+            if len(finished_tickets) > 3:
+                message_parts.append(f"\n_... e mais {len(finished_tickets) - 3} finalizado(s)_\n")
+
+        if not active_tickets:
+            message_parts.append("\n💡 **Precisa de ajuda?**\nUse o comando /suporte para abrir um novo chamado!")
+
+        return "".join(message_parts)
 
     async def handle_admin_command(
         self,
@@ -747,11 +640,8 @@ class TelegramBotHandler:
                 logger.info(f"Usuário {user.id} tentou abrir ticket via callback mas já tem ativo: {protocol}")
                 return
 
-            # Inicia o fluxo de suporte (formulário)
-            init_support_state(context)
-            state = get_support_state(context)
-            state['state'] = SupportState.CATEGORY
-            state['current_step'] = 1
+            # Inicia o fluxo de suporte (formulário) - agora no banco de dados
+            await self._support_handler.start_support_flow(user.id)
 
             keyboard = [
                 [
@@ -920,6 +810,8 @@ class TelegramBotHandler:
                 await self._handle_start_flow_support_callback(query, context)
             elif callback_data == "start_flow_status":
                 await self._handle_start_flow_status_callback(query, context)
+            elif callback_data.startswith("status_show_all:"):
+                await self._handle_show_all_tickets_callback(query, context, callback_data)
             else:
                 logger.warning(f"Callback não reconhecido: {callback_data}")
 
@@ -929,6 +821,36 @@ class TelegramBotHandler:
                 await update.callback_query.edit_message_text(
                     "❌ Erro inesperado. Tente novamente."
                 )
+
+    async def _handle_show_all_tickets_callback(self, query: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str) -> None:
+        """Envia a lista completa de tickets para o usuário no privado."""
+        try:
+            user_id = int(callback_data.split(':')[1])
+
+            # Medida de segurança: apenas o usuário que solicitou pode acionar o botão
+            if query.from_user.id != user_id:
+                await query.answer("Este botão não é para você.", show_alert=True)
+                return
+
+            await query.answer("Buscando seu histórico completo...")
+
+            # Gera a mensagem completa e envia no privado
+            full_status_message = await self._get_full_status_message(user_id)
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=full_status_message,
+                parse_mode='Markdown'
+            )
+
+            # Edita a mensagem original no grupo para remover o botão
+            await query.edit_message_text(
+                text=query.message.text + "\n\n✅ *O histórico completo foi enviado no seu privado.*",
+                parse_mode='Markdown'
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao mostrar todos os tickets via callback: {e}", exc_info=True)
+            await query.answer("❌ Erro ao buscar seu histórico.", show_alert=True)
 
     async def _handle_duplicate_resolution_callback(self, query, context: ContextTypes.DEFAULT_TYPE, callback_data: str) -> None:
         """
@@ -1003,10 +925,10 @@ class TelegramBotHandler:
             # Se não está aguardando CPF, continua o fluxo normal...
 
             # Verifica se está em fluxo de suporte - delega para SupportFormHandler
-            if 'support' in context.user_data:
-                handled = await self._support_handler.handle_description_input(update, context, text)
-                if handled:
-                    return
+            # O handler agora verifica internamente se há sessão ativa no banco
+            handled = await self._support_handler.handle_description_input(update, context, text)
+            if handled:
+                return
 
             # PRIMEIRA INTERAÇÃO? → Inicia fluxo automático
             already_interacted = await self._user_already_interacted(user.id)
@@ -1071,10 +993,10 @@ class TelegramBotHandler:
                 return
 
             # Verifica se está em fluxo de suporte - delega para SupportFormHandler
-            if 'support' in context.user_data:
-                handled = await self._support_handler.handle_photo_attachment(update, context)
-                if handled:
-                    return
+            # O handler agora verifica internamente se há sessão ativa no banco
+            handled = await self._support_handler.handle_photo_attachment(update, context)
+            if handled:
+                return
 
             # Se não está em suporte, informa o usuário
             await update.message.reply_text(
@@ -1233,29 +1155,18 @@ class TelegramBotHandler:
         
         return await self._admin_repo.is_administrator(user_id)
 
-    def _get_status_emoji(self, status: str) -> str:
-        """Retorna emoji correspondente ao status do atendimento."""
+    def _get_status_emoji(self, status_key: str) -> str:
+        """Retorna emoji correspondente ao prefixo do status do Hubsoft."""
         status_emojis = {
-            "pending": "⏳",
-            "open": "🔵",
-            "in_progress": "🔄",
-            "resolved": "✅",
-            "closed": "🔒",
-            "cancelled": "❌"
+            "pendente": "⏳",
+            "aguardando_analise": "🔵",
+            "em_atendimento": "🔄",
+            "resolvido": "✅",
+            "fechado": "🔒",
+            "cancelado": "❌",
+            # Adicione outros prefixos conforme necessário
         }
-        return status_emojis.get(status, "❓")
-
-    def _get_status_name_pt(self, status: str) -> str:
-        """Retorna nome do status em português amigável."""
-        status_names = {
-            "pending": "Aguardando Atendimento",
-            "open": "Em Análise",
-            "in_progress": "Em Atendimento",
-            "resolved": "Resolvido",
-            "closed": "Fechado",
-            "cancelled": "Cancelado"
-        }
-        return status_names.get(status, status.title())
+        return status_emojis.get(status_key, "❓")
 
     async def handle_new_member(
         self,

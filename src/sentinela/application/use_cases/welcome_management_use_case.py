@@ -296,27 +296,21 @@ class WelcomeManagementUseCase(UseCase):
         first_name: str,
         last_name: Optional[str]
     ) -> None:
-        """Marca usuário como pendente de aceitar regras."""
-        # Busca ou cria usuário
+        """Garante que o usuário seja marcado como pendente de aceitar as regras, sem alterar seu status de verificação."""
         user = await self.user_repository.find_by_telegram_id(user_id)
 
-        if not user:
-            from ...domain.entities.user import User
-
-            user = User(
-                id=UserId(user_id),
-                telegram_id=user_id,
-                telegram_username=username,
-                cpf=None,
-                is_verified=False,
-                is_banned=False
-            )
-
-        # Marca como pendente (não verificado)
-        user.is_verified = False
-        await self.user_repository.save(user)
-
-        logger.info(f"Usuário {username} marcado como pendente de regras")
+        if user:
+            # Se o usuário já existe (verificou CPF), apenas reseta o status das regras.
+            # Não mexe no status de verificação (ativo/inativo).
+            user.rules_accepted = False
+            user.rules_accepted_at = None
+            await self.user_repository.save(user)
+            logger.info(f"Usuário existente {username} teve seu status de regras resetado ao entrar no grupo.")
+        else:
+            # Este caso é raro, para alguém que entrou no grupo sem passar pelo bot.
+            # O fluxo normal de verificação de CPF irá criar o usuário corretamente depois.
+            logger.warning(f"Usuário {username} entrou no grupo sem um registro prévio no banco. Ele será tratado pelo fluxo de verificação.")
+            # Não criamos mais um usuário incompleto aqui.
 
     async def _try_grant_gaming_access(
         self,

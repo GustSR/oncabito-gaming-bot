@@ -389,6 +389,15 @@ def configure_dependencies() -> None:
 
     container.register_factory(DuplicateConflictRepository, create_duplicate_conflict_repository)
 
+    # Support Session Repository
+    from ...domain.repositories.support_session_repository import SupportSessionRepository
+    from ..repositories.sqlite_support_session_repository import SQLiteSupportSessionRepository
+
+    def create_support_session_repository() -> SQLiteSupportSessionRepository:
+        return SQLiteSupportSessionRepository(DATABASE_FILE)
+
+    container.register_factory(SupportSessionRepository, create_support_session_repository)
+
     # === Command Handlers ===
 
     # HubSoft Handlers
@@ -539,6 +548,7 @@ def configure_dependencies() -> None:
     container.register_alias("hubsoft_integration_repository", HubSoftIntegrationRepository)
     container.register_alias("group_member_repository", GroupMemberRepository)
     container.register_alias("duplicate_conflict_repository", DuplicateConflictRepository)
+    container.register_alias("support_session_repository", SupportSessionRepository)
 
     # Use Cases
     container.register_alias("cpf_verification_use_case", CPFVerificationUseCase)
