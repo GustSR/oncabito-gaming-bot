@@ -361,7 +361,28 @@ class TelegramBotHandler:
 
         if is_group and not await self._check_user_verified(user.id):
             try:
-                # Deleta o comando do grupo para não poluir
+                # VERIFICAÇÃO CRÍTICA: Checa se usuário já é membro do grupo
+                # Se já é membro, significa que está em processo de aceitar regras ou aguardando ativação
+                # Nesse caso, NÃO devemos criar nova verificação nem enviar mensagens de CPF
+                from telegram.error import BadRequest
+                try:
+                    member = await context.bot.get_chat_member(chat_id=TELEGRAM_GROUP_ID, user_id=user.id)
+                    if member and member.status in ['creator', 'administrator', 'member']:
+                        # Usuário JÁ ESTÁ no grupo - apenas bloqueia o comando sem criar verificação
+                        logger.info(f"Usuário {user.id} é membro do grupo (status: {member.status}) mas não está totalmente ativo. Bloqueando comando sem criar verificação.")
+                        await update.message.delete()
+                        # Não envia mensagem, não cria verificação, não agenda lembrete
+                        return False  # Para a execução do handler principal
+                except BadRequest:
+                    # Usuário NÃO é membro do grupo - continua com fluxo normal de redirecionamento
+                    logger.info(f"Usuário {user.id} não é membro do grupo. Iniciando fluxo de verificação.")
+                except Exception as member_check_error:
+                    logger.error(f"Erro ao verificar se usuário {user.id} é membro do grupo: {member_check_error}")
+                    # Em caso de erro, bloqueia por segurança
+                    await update.message.delete()
+                    return False
+
+                # Se chegou aqui, usuário NÃO é membro - cria verificação e redireciona
                 await update.message.delete()
 
                 # Envia instrução no privado
@@ -372,7 +393,7 @@ class TelegramBotHandler:
                         "Vamos fazer isso agora! Por favor, me envie seu CPF (apenas números) aqui no privado."
                     )
                 )
-                
+
                 # Inicia o fluxo de verificação silenciosamente
                 await self._cpf_use_case.start_verification(
                     user_id=user.id,
@@ -381,7 +402,7 @@ class TelegramBotHandler:
                     source_action="unverified_group_command"
                 )
                 context.user_data['waiting_cpf'] = True
-                logger.info(f"Usuário não verificado {user.id} tentou usar comando no grupo. Redirecionado para o privado.")
+                logger.info(f"Usuário {user.id} (NÃO membro do grupo) tentou usar comando. Verificação criada e redirecionado para o privado.")
                 return False  # Indica que a execução do handler principal deve parar
             except Exception as e:
                 logger.error(f"Erro ao redirecionar usuário não verificado: {e}")
