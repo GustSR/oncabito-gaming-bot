@@ -260,14 +260,14 @@ class TelegramBotHandler:
                     # Erro esperado se o usuário não estiver no grupo. Continua o fluxo normal.
                     logger.debug(f"Usuário {user.id} não é membro do grupo (BadRequest). Continuando com o fluxo de /start.")
                 except Exception as e:
-                    # Outros erros podem ser de configuração (e.g., bot não é admin).
-                    # Loga como erro e avisa o usuário, mas não continua o fluxo para evitar comportamento inesperado.
-                    logger.error(f"Erro inesperado ao verificar se usuário {user.id} é membro do grupo. Pode ser um problema de permissão ou configuração. Erro: {e}", exc_info=True)
-                    await update.message.reply_text(
-                        "🤖 Ops! Tive um problema para verificar suas informações. "
-                        "Por favor, tente novamente em alguns instantes ou contate o suporte se o erro persistir."
+                    # CORREÇÃO BUG #12: Não bloqueia o fluxo por erros de permissão/configuração
+                    # Assume que o usuário não é membro e continua com o fluxo de verificação
+                    logger.warning(
+                        f"⚠️ Erro ao verificar se usuário {user.id} é membro do grupo: {e}. "
+                        f"Assumindo que NÃO é membro e continuando com fluxo de verificação.",
+                        exc_info=True
                     )
-                    return
+                    # NÃO retorna aqui - continua o fluxo normal de verificação
 
                 # Apresentação do OnCabito e solicitação de CPF (FLUXO DE RESET)
                 # Esta parte agora é executada para qualquer usuário não-membro, resetando a conversa.
@@ -373,14 +373,32 @@ class TelegramBotHandler:
                         await update.message.delete()
                         # Não envia mensagem, não cria verificação, não agenda lembrete
                         return False  # Para a execução do handler principal
-                except BadRequest:
+                except BadRequest as bad_request_error:
                     # Usuário NÃO é membro do grupo - continua com fluxo normal de redirecionamento
-                    logger.info(f"Usuário {user.id} não é membro do grupo. Iniciando fluxo de verificação.")
+                    logger.info(f"Usuário {user.id} não é membro do grupo (BadRequest). Iniciando fluxo de verificação.")
                 except Exception as member_check_error:
-                    logger.error(f"Erro ao verificar se usuário {user.id} é membro do grupo: {member_check_error}")
-                    # Em caso de erro, bloqueia por segurança
-                    await update.message.delete()
-                    return False
+                    # CORREÇÃO BUG #4: Diferencia erros de permissão de outros erros
+                    error_msg = str(member_check_error).lower()
+
+                    # Erros de permissão são esperados se o bot não tiver acesso ao grupo
+                    if 'not enough rights' in error_msg or 'forbidden' in error_msg or 'bot was kicked' in error_msg:
+                        logger.warning(f"Bot não tem permissão para verificar membros do grupo. Erro: {member_check_error}")
+                        # Permite que o comando continue, assume que usuário não é membro
+                        logger.info(f"Assumindo que usuário {user.id} não é membro devido a erro de permissão.")
+                        # Não faz 'return False' - continua o fluxo normal
+                    else:
+                        # Outros erros inesperados - bloqueia por segurança
+                        logger.error(f"Erro inesperado ao verificar se usuário {user.id} é membro do grupo: {member_check_error}")
+                        await update.message.delete()
+                        # Notifica usuário sobre o erro temporário
+                        try:
+                            await context.bot.send_message(
+                                chat_id=user.id,
+                                text="⚠️ Erro temporário ao processar seu comando. Tente novamente em alguns instantes."
+                            )
+                        except Exception:
+                            pass  # Falha silenciosa se não conseguir enviar DM
+                        return False
 
                 # Se chegou aqui, usuário NÃO é membro - cria verificação e redireciona
                 await update.message.delete()
@@ -402,6 +420,10 @@ class TelegramBotHandler:
                     source_action="unverified_group_command"
                 )
                 context.user_data['waiting_cpf'] = True
+
+                # Agenda um lembrete para 5 minutos (300 segundos) via CPF handler
+                self._cpf_handler.schedule_cpf_reminder(context, user.id, delay_seconds=300)
+
                 logger.info(f"Usuário {user.id} (NÃO membro do grupo) tentou usar comando. Verificação criada e redirecionado para o privado.")
                 return False  # Indica que a execução do handler principal deve parar
             except Exception as e:
@@ -525,7 +547,7 @@ class TelegramBotHandler:
                         f"👋 Olá, {user.mention_markdown()}!\n\n"
                         f"Seu chamado mais recente (`{protocol}`) está com o status: **{status_display}**."
                     )
-                    keyboard = [[InlineKeyboardButton("📋 Ver histórico completo", callback_data=f"status_show_all:{user.id}")]]
+                    keyboard = [[InlineKeyboardButton("📋 Ver histórico completo", callback_data="status_show_all")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
 
                 await context.bot.send_message(
@@ -831,8 +853,8 @@ class TelegramBotHandler:
                 await self._handle_start_flow_support_callback(query, context)
             elif callback_data == "start_flow_status":
                 await self._handle_start_flow_status_callback(query, context)
-            elif callback_data.startswith("status_show_all:"):
-                await self._handle_show_all_tickets_callback(query, context, callback_data)
+            elif callback_data == "status_show_all":
+                await self._handle_show_all_tickets_callback(query, context)
             else:
                 logger.warning(f"Callback não reconhecido: {callback_data}")
 
@@ -843,15 +865,11 @@ class TelegramBotHandler:
                     "❌ Erro inesperado. Tente novamente."
                 )
 
-    async def _handle_show_all_tickets_callback(self, query: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: str) -> None:
+    async def _handle_show_all_tickets_callback(self, query: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Envia a lista completa de tickets para o usuário no privado."""
         try:
-            user_id = int(callback_data.split(':')[1])
-
-            # Medida de segurança: apenas o usuário que solicitou pode acionar o botão
-            if query.from_user.id != user_id:
-                await query.answer("Este botão não é para você.", show_alert=True)
-                return
+            # CORREÇÃO BUG #5: Usa query.from_user.id ao invés de expor no callback_data
+            user_id = query.from_user.id
 
             await query.answer("Buscando seu histórico completo...")
 

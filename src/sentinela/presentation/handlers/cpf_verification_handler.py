@@ -265,10 +265,16 @@ class CPFVerificationHandler:
                 )
                 await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=False)
 
-            # Limpa estado de aguardando CPF e remove o job de lembrete
+            # CORREÇÃO BUG #13: Limpa TODOS os contextos relacionados à verificação
             if 'waiting_cpf' in context.user_data:
                 del context.user_data['waiting_cpf']
 
+            # Limpa contexto de resolução de duplicatas (se existir)
+            if 'duplicate_resolution_context' in context.user_data:
+                del context.user_data['duplicate_resolution_context']
+                logger.debug(f"Contexto de resolução de duplicatas limpo para usuário {user.id}")
+
+            # Remove job de lembrete de CPF
             job_name = f"cpf_reminder_{user.id}"
             jobs = context.job_queue.get_jobs_by_name(job_name)
             if jobs:
@@ -371,9 +377,23 @@ class CPFVerificationHandler:
             # Remove os outros usuários do grupo
             user_repo = self._container.get("user_repository")
             from ...domain.value_objects.identifiers import UserId
+            from telegram.error import TelegramError
 
+            removal_failed_users = []
             for user_id in users_to_remove:
                 try:
+                    # CORREÇÃO BUG #11: Verifica se bot tem permissões antes de tentar remover
+                    try:
+                        bot_member = await query.get_bot().get_chat_member(int(TELEGRAM_GROUP_ID), query.get_bot().id)
+                        if not bot_member.can_restrict_members:
+                            logger.error(f"Bot não tem permissão 'can_restrict_members' para remover usuário {user_id}")
+                            removal_failed_users.append(user_id)
+                            continue
+                    except TelegramError as perm_error:
+                        logger.error(f"Erro ao verificar permissões do bot: {perm_error}")
+                        removal_failed_users.append(user_id)
+                        continue
+
                     # Remove do grupo do Telegram
                     await query.get_bot().ban_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=user_id)
                     await query.get_bot().unban_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=user_id)
@@ -401,8 +421,19 @@ class CPFVerificationHandler:
                     except Exception as dm_error:
                         logger.warning(f"Não foi possível enviar DM para usuário {user_id}: {dm_error}")
 
+                except TelegramError as removal_error:
+                    # Erros do Telegram ao remover usuário (permissões, usuário já saiu, etc.)
+                    logger.error(f"Erro do Telegram ao remover usuário {user_id}: {removal_error}")
+                    removal_failed_users.append(user_id)
                 except Exception as removal_error:
-                    logger.error(f"Erro ao remover usuário {user_id}: {removal_error}")
+                    logger.error(f"Erro inesperado ao remover usuário {user_id}: {removal_error}")
+                    removal_failed_users.append(user_id)
+
+            # Se houve falhas de remoção, marca conflito como erro e notifica
+            if removal_failed_users:
+                logger.error(f"⚠️ Falha ao remover {len(removal_failed_users)} usuários: {removal_failed_users}")
+                # Marca conflito como tendo erros
+                conflict.resolution_notes = f"Falha ao remover usuários: {removal_failed_users}"
 
             # Salva o conflito resolvido
             await conflict_repo.save(conflict)
@@ -547,9 +578,11 @@ class CPFVerificationHandler:
                     parse_mode='Markdown'
                 )
 
-            # Limpa o contexto da resolução
+            # Limpa o contexto da resolução e a flag waiting_cpf
             if 'duplicate_resolution_context' in context.user_data:
                 del context.user_data['duplicate_resolution_context']
+            if 'waiting_cpf' in context.user_data:
+                del context.user_data['waiting_cpf']
 
     async def cpf_reminder_callback(self, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Envia um lembrete para o usuário que não enviou o CPF a tempo."""
@@ -558,21 +591,35 @@ class CPFVerificationHandler:
 
         logger.info(f"Executando lembrete de CPF para usuário {user_id}.")
 
-        # Acessa o user_data específico do usuário
-        user_context = context.application.user_data.get(user_id, {})
+        try:
+            # CORREÇÃO BUG #2: Verifica status direto no banco de dados (fonte da verdade)
+            # ao invés de usar context.user_data que pode estar desatualizado
+            cpf_repo = self._container.get("cpf_verification_repository")
+            if not cpf_repo:
+                logger.warning(f"CPF repository não disponível. Cancelando lembrete para {user_id}.")
+                return
 
-        # Verifica se o usuário ainda está aguardando o CPF
-        if user_context.get('waiting_cpf'):
-            logger.info(f"Usuário {user_id} ainda não enviou o CPF. Enviando lembrete.")
-            await context.bot.send_message(
-                chat_id=job.chat_id,
-                text=(
-                    "👋 Olá! Só um lembrete amigável de que estou aguardando seu CPF para continuarmos com a verificação. "
-                    "Pode me enviar apenas os números, por favor? 😊"
+            # Busca verificações pendentes
+            from ...domain.entities.cpf_verification import VerificationStatus
+            verifications = await cpf_repo.find_by_user_id(user_id, limit=5)
+
+            # Verifica se existe alguma verificação PENDENTE (não processada ainda)
+            has_pending = any(v.status == VerificationStatus.PENDING for v in verifications)
+
+            if has_pending:
+                logger.info(f"Usuário {user_id} ainda tem verificação pendente. Enviando lembrete.")
+                await context.bot.send_message(
+                    chat_id=job.chat_id,
+                    text=(
+                        "👋 Olá! Só um lembrete amigável de que estou aguardando seu CPF para continuarmos com a verificação. "
+                        "Pode me enviar apenas os números, por favor? 😊"
+                    )
                 )
-            )
-        else:
-            logger.info(f"Lembrete de CPF para {user_id} ignorado, pois o usuário não está mais aguardando CPF.")
+            else:
+                logger.info(f"Lembrete de CPF para {user_id} ignorado. Verificação já foi processada ou não existe mais.")
+
+        except Exception as e:
+            logger.error(f"Erro ao processar lembrete de CPF para {user_id}: {e}", exc_info=True)
 
     def schedule_cpf_reminder(
         self,
