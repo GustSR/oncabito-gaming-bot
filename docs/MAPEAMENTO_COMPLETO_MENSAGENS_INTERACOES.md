@@ -375,43 +375,50 @@ Já mostrado acima. Usuário escolhe entre:
 
 ---
 
-#### **Passo 2: Seleção de Severidade**
+#### **Passo 2: Seleção de Jogo**
 
 **Mensagem**:
 ```markdown
-{barra_progresso} - **Severidade do Problema**
+▓▓░░░░ 2/6 - **Jogo Afetado**
 
-Para priorizar seu atendimento, qual o impacto do problema?
+✅ Categoria: {categoria}
+
+Ótimo! Agora me conta: qual desses jogos está te dando dor de cabeça? 🎮
 
 [Botões]
-🔴 Crítico - Não consigo jogar
-🟠 Alto - Jogo muito prejudicado
-🟡 Médio - Incômodo, mas jogável
-🟢 Baixo - Melhoria/Sugestão
+⚡️ Valorant | 🔫 CS:GO
+🎯 League of Legends | 🎮 Fortnite
+🏆 Apex Legends | 🌍 GTA V Online
+📱 Mobile Games | 🎪 Outro jogo
 ⬅️ Voltar | ❌ Cancelar
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~230)
+**Arquivo**: `support_form_handler.py:328-340`
 
 ---
 
-#### **Passo 3: Seleção de Jogo**
+#### **Passo 3: Quando Começou?**
 
 **Mensagem**:
 ```markdown
-{barra_progresso} - **Jogo Afetado**
+▓▓▓░░░ 3/6 - **Quando Começou?**
 
-Qual jogo está tendo o problema?
+✅ Categoria: {categoria}
+✅ Jogo: {jogo}
+
+Beleza! Agora me ajuda com uma informação importante: 🤔
+
+Quando você notou esse problema pela primeira vez?
+_(Isso me ajuda a entender melhor a situação!)_
 
 [Botões]
-CS2 | Valorant
-League of Legends | Fortnite
-Apex Legends | COD Warzone
-Rocket League | Outros
+🔴 Agora/Hoje | 📅 Ontem
+📆 Esta Semana | 🗓️ Semana Passada
+⏰ Há Muito Tempo | ♾️ Sempre Foi Assim
 ⬅️ Voltar | ❌ Cancelar
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~336)
+**Arquivo**: `support_form_handler.py:431-446`
 
 ---
 
@@ -419,103 +426,103 @@ Rocket League | Outros
 
 **Mensagem**:
 ```markdown
-{barra_progresso} - **Descrição do Problema**
+▓▓▓▓░░ 4/6 - **Detalhes do Problema**
 
-Agora me conte com detalhes o que está acontecendo:
+✅ Categoria: {categoria}
+✅ Jogo: {jogo}
+✅ Quando começou: {timing}
 
-• Quando começou?
-• Como o problema se manifesta?
-• Já tentou algo para resolver?
+📝 Perfeito! Agora preciso que você me conte o que está acontecendo.
 
-💡 Quanto mais detalhes, melhor conseguiremos te ajudar!
+Quanto mais detalhes você me der, mais rápido conseguirei te ajudar! 💪
 
-[Botões]
-⬅️ Voltar | ❌ Cancelar
+🔍 **Conta pra mim:**
+• O que exatamente você está sentindo/vendo?
+• É lag? Ping alto? Desconexões? Travamentos?
+• Em qual servidor/região você joga?
+• Já tentou reiniciar o roteador? Funcionou?
+• Outros jogos ou dispositivos têm o mesmo problema?
+
+✍️ Pode digitar sua mensagem agora, **sem pressa**! Estou aqui para te ouvir.
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~369)
+**Arquivo**: `support_form_handler.py:476-497`
 
 ---
 
-#### **Passo 5: Horário/Timing**
+#### **Passo 5: Anexos (Opcional)**
 
 **Mensagem**:
 ```markdown
-{barra_progresso} - **Quando acontece?**
+▓▓▓▓▓░ 5/6 - **Anexos (Opcional)**
 
-O problema ocorre:
+✅ Categoria: {categoria}
+✅ Jogo: {jogo}
+✅ Quando começou: {timing}
+✅ Descrição: "{descricao_preview}..."
+
+📸 **Quer enviar prints pra me ajudar a visualizar?**
+
+Você pode enviar até **3 imagens** (totalmente opcional!):
+• Screenshot do ping in-game 🎯
+• Foto do teste de velocidade 📊
+• Print de tela com erro/problema 🖼️
+
+Anexos enviados: **{count}/3**
+
+💡 Isso ajuda MUITO no diagnóstico, mas se não tiver, sem problemas!
+Pode pular e continuar. 😊
 
 [Botões]
-⏰ Sempre
-🕐 Em horários específicos
-📅 Em dias específicos
+⏭️ Pular Anexos
+➡️ Continuar
 ⬅️ Voltar | ❌ Cancelar
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~442)
-
----
-
-#### **Passo 6: Anexos (Opcional)**
-
-**Mensagem**:
-```markdown
-{barra_progresso} - **Prints/Evidências (Opcional)**
-
-Tem alguma captura de tela que possa ajudar?
-
-Você pode enviar até 5 imagens.
-
-[Botões]
-➡️ Pular esta etapa
-⬅️ Voltar | ❌ Cancelar
-```
-
-**Arquivo**: `support_form_handler.py` (linha ~541-548)
+**Arquivo**: `support_form_handler.py:522-552`
 
 **Mensagem ao receber foto**:
 ```markdown
-📸 **Imagem {número}/5 recebida!**
+✅ **Anexo {número}/3 recebido com sucesso!**
 
-Pode enviar mais {restante} imagem(ns) ou clicar em "Avançar".
-
-[Botões]
-➡️ Avançar
-⬅️ Voltar | ❌ Cancelar
+📸 Perfeito! Você ainda pode enviar mais **{restante} foto(s)** se quiser,
+ou clicar em **Continuar** para finalizar! 😊
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~814)
+**Arquivo**: `support_form_handler.py:197-202`
 
 ---
 
-#### **Passo 7: Confirmação**
+#### **Passo 6: Confirmação**
 
 **Mensagem**:
 ```markdown
-{barra_progresso} - **Confirmação dos Dados**
+▓▓▓▓▓▓ 6/6 - **Confirmação Final**
+
+🎯 **Pronto! Vamos revisar juntos antes de finalizar?**
 
 📋 **Resumo do seu chamado:**
 
-📂 **Categoria:** {categoria}
-🎮 **Jogo:** {jogo}
-🔴 **Severidade:** {severidade}
+🔸 **Categoria:** {categoria}
+🔸 **Jogo:** {jogo}
+🔸 **Quando começou:** {timing}
+🔸 **Anexos:** {quantidade} arquivo(s)
 
 📝 **Descrição:**
-{descricao}
+{descricao_preview}
 
-⏰ **Ocorrência:** {timing}
+💡 Dá uma olhada se está tudo certo. Se quiser mudar algo, é só clicar em "Editar"!
 
-📸 **Anexos:** {quantidade} imagem(ns)
-
-Tudo certo para enviar?
+✅ **Tudo certo?** Então pode confirmar! Vou encaminhar para nossa equipe técnica
+imediatamente e você terá retorno em até **24h úteis!** 🚀
 
 [Botões]
-✅ Confirmar e Enviar
-✏️ Editar Categoria | ✏️ Editar Descrição
-⬅️ Voltar | ❌ Cancelar
+✅ Confirmar e Criar
+✏️ Editar
+❌ Cancelar
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~603)
+**Arquivo**: `support_form_handler.py:588-607`
 
 ---
 
@@ -525,23 +532,21 @@ Tudo certo para enviar?
 
 **Mensagem**:
 ```markdown
-✅ **Chamado criado com sucesso!**
+🎉 **PRONTO! SEU CHAMADO FOI CRIADO COM SUCESSO!**
 
-📋 **Protocolo:** {protocolo}
-📂 **Categoria:** {categoria}
-🎮 **Jogo:** {jogo}
-🔴 **Prioridade:** {severidade}
+📋 **Protocolo:** `{protocolo}`
+📅 **Criado em:** {data_hora}
+📊 **Status:** Aguardando Atendimento
 
-📅 **Status:** Aguardando análise
+✅ Nossa equipe técnica já recebeu seu chamado e vai começar a análise.
 
-Nossa equipe técnica já foi notificada e em breve entrará em contato!
+Você receberá todas as atualizações aqui pelo Telegram.
+O tempo médio de primeira resposta é de **até 24h úteis**.
 
-💡 Use /status para acompanhar o andamento do seu chamado.
-
-Obrigado pela confiança! 🙏
+Obrigado pela paciência! 🙏
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~754)
+**Arquivo**: `support_form_handler.py:745-755`
 
 ---
 
@@ -549,17 +554,16 @@ Obrigado pela confiança! 🙏
 
 **Mensagem**:
 ```markdown
-❌ **Erro ao criar chamado**
+❌ **Não foi possível criar seu chamado**
 
-{mensagem_erro}
+Nosso sistema de suporte está temporariamente indisponível.
 
-Por favor, tente novamente ou entre em contato com o suporte.
+**Código do erro:** {error_code}
 
-[Botão]
-🔄 Tentar Novamente
+Por favor, tente novamente em alguns minutos.
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~736)
+**Arquivo**: `support_form_handler.py:730-738`
 
 ---
 
@@ -567,14 +571,12 @@ Por favor, tente novamente ou entre em contato com o suporte.
 
 **Mensagem**:
 ```markdown
-🚫 **Formulário de suporte cancelado**
+❌ **Formulário Cancelado**
 
-Seus dados foram descartados.
-
-Se precisar de ajuda, pode usar /suporte novamente a qualquer momento! 😊
+Você pode iniciar um novo chamado a qualquer momento usando /suporte
 ```
 
-**Arquivo**: `support_form_handler.py` (linha ~781)
+**Arquivo**: `support_form_handler.py:230-234`
 
 ---
 
@@ -955,7 +957,7 @@ Para criar um atendimento com anexos, use /suporte
 
 ### Fluxos Principais:
 1. ✅ Verificação de CPF (10 mensagens)
-2. 🎫 Formulário de Suporte (15 mensagens)
+2. 🎫 Formulário de Suporte (6 passos - sem severidade)
 3. 📊 Status de Tickets (5 mensagens)
 4. 👋 Boas-Vindas e Regras (4 mensagens)
 5. 🚫 Usuário Não Verificado (6 mensagens)

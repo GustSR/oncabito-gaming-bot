@@ -596,6 +596,185 @@ stateDiagram-v2
 
 ---
 
+### 8. Implementar Campo de Severidade no Fluxo de Suporte
+
+**Problema Identificado**: Documentação prevê campo de "Severidade" no formulário de suporte (Passo 2), mas o código atual não implementa esse passo.
+
+**Arquivo**: `src/sentinela/presentation/handlers/support_form_handler.py`
+
+**Impacto**:
+- 🎯 **Sem priorização de tickets** - Todos os tickets têm mesma prioridade
+- 📊 Equipe de suporte não consegue filtrar por urgência
+- 🔴 Problemas críticos misturados com sugestões
+- 📖 Divergência entre documentação e código
+
+**Esforço**: Médio-Alto (4-6 horas de implementação + testes)
+
+---
+
+#### Análise Técnica
+
+**Status Atual**:
+- ❌ Fluxo atual: Categoria → Jogo → Timing → Descrição → Anexos → Confirmação (6 passos)
+- ✅ Fluxo documentado: Categoria → **Severidade** → Jogo → Descrição → Timing → Anexos → Confirmação (7 passos)
+
+**Banco de Dados**:
+- ✅ Campo `severidade` **já existe** na tabela `support_sessions` (linha 22 da migration)
+- ✅ Não requer migration adicional
+
+**Riscos Identificados**:
+- 🟡 **Risco Médio**: Sessões ativas durante deploy terão estado inconsistente
+- 🟢 **Risco Baixo**: API HubSoft aceita parâmetros extras sem validação
+- 🟢 **Risco Baixo**: Estado JSON é flexível e aceita novos campos
+
+---
+
+#### Proposta de Solução
+
+**Opções Disponíveis**:
+
+| Opção | Descrição | Esforço | Benefício |
+|-------|-----------|---------|-----------|
+| **A) Implementar Severidade** | Adicionar passo completo de severidade | 4-6h | ✅ Priorização de tickets<br>✅ Melhor UX<br>✅ Alinhamento com documentação |
+| **B) Atualizar Documentação** | Remover severidade da documentação | 30min | ✅ Rápido<br>✅ Sem riscos |
+
+**Recomendação**: **Opção B** para resolver divergência rapidamente. **Opção A** pode ser implementada posteriormente como feature.
+
+---
+
+#### Implementação da Opção A (Futura)
+
+**Mudanças Necessárias**:
+
+1. **Adicionar Estado** (`support_form_handler.py:27-35`):
+```python
+class SupportState:
+    IDLE = "idle"
+    CATEGORY = "category"
+    SEVERITY = "severity"  # ← NOVO
+    GAME = "game"
+    TIMING = "timing"
+    DESCRIPTION = "description"
+    ATTACHMENTS = "attachments"
+    CONFIRMATION = "confirmation"
+```
+
+2. **Ajustar Estado Inicial** (`support_form_handler.py:90-100`):
+```python
+def _create_initial_state(self) -> Dict[str, Any]:
+    return {
+        # ...
+        'severity': None,          # ← NOVO
+        'severity_name': None,     # ← NOVO
+        # ...
+    }
+```
+
+3. **Criar Métodos Novos**:
+```python
+async def show_severity_step(self, query, context):
+    """Mostra etapa de seleção de severidade."""
+    keyboard = [
+        [InlineKeyboardButton("🔴 Crítico - Não consigo jogar",
+                            callback_data="sup_severity_critical")],
+        [InlineKeyboardButton("🟠 Alto - Jogo muito prejudicado",
+                            callback_data="sup_severity_high")],
+        [InlineKeyboardButton("🟡 Médio - Incômodo, mas jogável",
+                            callback_data="sup_severity_medium")],
+        [InlineKeyboardButton("🟢 Baixo - Melhoria/Sugestão",
+                            callback_data="sup_severity_low")],
+        [
+            InlineKeyboardButton("◀️ Voltar", callback_data="sup_back"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="sup_cancel")
+        ]
+    ]
+    # ... resto da implementação
+
+async def handle_support_severity(self, query, context, callback_data):
+    """Processa seleção de severidade."""
+    severity_key = callback_data.replace("sup_severity_", "")
+    severity_names = {
+        "critical": "🔴 Crítico",
+        "high": "🟠 Alto",
+        "medium": "🟡 Médio",
+        "low": "🟢 Baixo"
+    }
+
+    state = await self._get_support_state(user_id)
+    state['severity'] = severity_key
+    state['severity_name'] = severity_names.get(severity_key)
+    state['state'] = SupportState.GAME  # Próximo: Jogo
+    state['current_step'] = 3
+
+    await self._save_support_state(user_id, state)
+    await self.show_game_step(query, context)
+```
+
+4. **Ajustar Ordem dos Passos**:
+   - `handle_support_category()`: `state['state'] = SupportState.SEVERITY` (era `GAME`)
+   - `handle_support_severity()`: `state['state'] = SupportState.GAME`
+   - Resto permanece igual
+
+5. **Atualizar Progressos**:
+   - `total_steps = 7` (era 6)
+   - Ajustar todos os `current_step` (+1 após severidade)
+
+6. **Integração HubSoft** (`hubsoft_integration_use_case.py:229-238`):
+```python
+hubsoft_payload = {
+    # ...
+    "parametros": {
+        "origem": "telegram_bot",
+        "categoria_bot": category,
+        "severidade_bot": ticket_data.get('severity'),  # ← NOVO
+        "jogo_afetado": game_name,
+        # ...
+    }
+}
+```
+
+7. **Migração de Sessões Ativas**:
+```python
+async def _migrate_session_on_load(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    """Adiciona campos faltantes em sessões antigas."""
+    if 'severity' not in state:
+        state['severity'] = None
+        state['severity_name'] = '🔵 Não informado'
+        logger.info("Sessão migrada: adicionado campo severity")
+    return state
+```
+
+---
+
+#### Checklist de Implementação (Opção A)
+
+- [ ] Adicionar `SupportState.SEVERITY`
+- [ ] Adicionar campos `severity` no estado inicial
+- [ ] Implementar `show_severity_step()`
+- [ ] Implementar `handle_support_severity()`
+- [ ] Ajustar ordem em `handle_support_category()`
+- [ ] Atualizar `total_steps = 7`
+- [ ] Ajustar `current_step` em todos os métodos
+- [ ] Adicionar severidade no callback router
+- [ ] Adicionar severidade na confirmação
+- [ ] Adicionar severidade no payload HubSoft
+- [ ] Implementar migração de sessões antigas
+- [ ] Atualizar limite de anexos (3 → 5)
+- [ ] Testes unitários
+- [ ] Deploy em horário de baixo tráfego
+
+---
+
+#### Referências
+
+- Ver análise completa: `docs/DIVERGENCIAS_DOCUMENTACAO_vs_CODIGO.md`
+- Migration existente: `migrations/005_create_support_sessions_table.sql:22`
+- Documentação oficial: `docs/MAPEAMENTO_COMPLETO_MENSAGENS_INTERACOES.md`
+
+**Status**: Pendente de decisão - Implementar agora (Opção A) ou atualizar docs (Opção B)?
+
+---
+
 ## 📚 Referências e Recursos
 
 ### Documentos Relacionados
