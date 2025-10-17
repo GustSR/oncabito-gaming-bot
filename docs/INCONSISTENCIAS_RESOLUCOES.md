@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 5/19 revisadas | 5 resolvidas | 0 mantidas intencionalmente
+**Status**: 6/19 revisadas | 6 resolvidas | 0 mantidas intencionalmente
 
 ---
 
@@ -306,6 +306,77 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🟠 #6: Usuário Pode Ter Múltiplas Verificações PENDING
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Usuário podia usar `/start` múltiplas vezes sem completar verificação
+- Sistema tentava criar nova verificação PENDING, retornava erro "já existe"
+- Mas dependendo do timing, múltiplas PENDING podiam acumular no banco
+- Daily checkup podia expirar uma mas deixar outras órfãs
+- Acúmulo de lixo no banco de dados
+- Logs confusos (qual verificação está ativa?)
+
+**Solução Implementada** (Opção A - Use Case Cancela PENDING Antigas):
+
+1. **Repository interface atualizado** (`cpf_verification_repository.py`):
+   - Adicionado método abstrato `find_by_user_id_and_status(user_id, status)`
+   - Define contrato para buscar todas as verificações de um usuário com status específico
+
+2. **Repository SQLite atualizado** (`sqlite_cpf_verification_repository.py`):
+   - Implementado `find_by_user_id_and_status()`:
+     ```python
+     SELECT * FROM cpf_verifications
+     WHERE user_id = ? AND status = ?
+     ORDER BY created_at DESC
+     ```
+   - Retorna lista de verificações (vazia se nenhuma encontrada)
+
+3. **Command Handler modificado** (`cpf_verification_handlers.py:68-82`):
+   - Método `StartCPFVerificationHandler.handle()` modificado
+   - **ANTES**: Verificava se existe PENDING e retornava erro
+   - **AGORA**: Busca TODAS as PENDING e cancela automaticamente antes de criar nova
+   - Código implementado:
+     ```python
+     existing_pending = await self.verification_repository.find_by_user_id_and_status(
+         user_id.value,
+         VerificationStatus.PENDING
+     )
+
+     if existing_pending:
+         for old_verification in existing_pending:
+             old_verification.cancel_verification("Nova verificação iniciada")
+             await self.verification_repository.save(old_verification)
+             logger.info(f"Verificação PENDING antiga {old_verification.id} cancelada...")
+     ```
+
+**Arquivos Modificados**:
+- ✅ Modificado: `src/sentinela/domain/repositories/cpf_verification_repository.py`
+- ✅ Modificado: `src/sentinela/infrastructure/repositories/sqlite_cpf_verification_repository.py`
+- ✅ Modificado: `src/sentinela/application/command_handlers/cpf_verification_handlers.py`
+
+**Impacto**:
+- ✅ **Regra clara**: Apenas 1 PENDING por usuário por vez
+- 🧹 **Limpeza automática**: Verificações órfãs são canceladas automaticamente
+- 📊 **Logs claros**: Sempre trabalha com verificação mais recente
+- 🗄️ **Banco limpo**: Elimina acúmulo de lixo de verificações PENDING
+- ⚡ **Performance**: Query simples e rápida
+
+**Notas Técnicas**:
+- Múltiplos writes no banco se houver muitas PENDING (aceitável pois é caso raro)
+- Cancelamento automático registrado em logs para observabilidade
+- Motivo do cancelamento: "Nova verificação iniciada" (rastreável)
+- Handler cria nova verificação imediatamente após cancelar antigas
+
+**Alternativas Consideradas**:
+- Opção B (Reutilizar PENDING existente): Mais complexo, pode confundir usuário
+- Opção C (Constraint UNIQUE no banco): SQLite pode não suportar partial indexes
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 *(Nenhuma até o momento)*
@@ -369,16 +440,16 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
 | 🔴 Crítica | 3 | 3 | 0 | 0 |
-| 🟠 Alta | 5 | 2 | 0 | 3 |
+| 🟠 Alta | 5 | 3 | 0 | 2 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **5** | **0** | **14** |
+| **TOTAL** | **19** | **6** | **0** | **13** |
 
-**Progresso**: 26.3% completo (5/19) | ✅ **TODAS as críticas resolvidas!**
+**Progresso**: 31.6% completo (6/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #6 (Usuário Pode Ter Múltiplas Verificações PENDING)
-2. Continuar revisão sequencial das 14 inconsistências restantes
+1. ⏳ Revisar inconsistência #7 (Conflito Detectado DEPOIS de Verificação Completa)
+2. Continuar revisão sequencial das 13 inconsistências restantes

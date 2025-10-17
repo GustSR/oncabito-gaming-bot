@@ -215,6 +215,30 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             logger.error(f"Erro ao buscar verificação pendente do usuário {user_id}: {e}")
             return None
 
+    async def find_by_user_id_and_status(
+        self,
+        user_id: int,
+        status: VerificationStatus
+    ) -> List[CPFVerificationRequest]:
+        """Busca todas as verificações de um usuário com um status específico."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute("""
+                    SELECT * FROM cpf_verifications
+                    WHERE user_id = ? AND status = ?
+                    ORDER BY created_at DESC
+                """, (user_id, status.value))
+
+                rows = cursor.fetchall()
+                return [await self._row_to_verification(conn, row) for row in rows]
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar verificações do usuário {user_id} com status {status.value}: {e}")
+            return []
+
     async def find_by_status(self, status: VerificationStatus, limit: int = 50) -> List[CPFVerificationRequest]:
         """Busca verificações por status."""
         try:

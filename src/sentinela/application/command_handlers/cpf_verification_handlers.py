@@ -65,14 +65,21 @@ class StartCPFVerificationHandler(CommandHandler[StartCPFVerificationCommand]):
             # Novos membros podem iniciar verificação antes de terem um User criado
             # O User será criado no UserRepository após CPF validado com sucesso
 
-            # Verifica se já existe verificação pendente
-            existing = await self.verification_repository.find_pending_by_user(user_id.value)
-            if existing:
-                return CommandResult.failure(
-                    "verification_already_pending",
-                    "Já existe uma verificação pendente para este usuário",
-                    {"verification_id": str(existing.id)}
-                )
+            # CORREÇÃO INCONSISTÊNCIA #6: Cancela verificações PENDING antigas antes de criar nova
+            # Garante que usuário tenha apenas 1 PENDING por vez, evitando acúmulo de lixo no banco
+            existing_pending = await self.verification_repository.find_by_user_id_and_status(
+                user_id.value,
+                VerificationStatus.PENDING
+            )
+
+            if existing_pending:
+                for old_verification in existing_pending:
+                    old_verification.cancel_verification("Nova verificação iniciada")
+                    await self.verification_repository.save(old_verification)
+                    logger.info(
+                        f"Verificação PENDING antiga {old_verification.id} cancelada automaticamente "
+                        f"para usuário {user_id.value} (nova verificação solicitada)"
+                    )
 
             # Valida tipo de verificação
             try:
