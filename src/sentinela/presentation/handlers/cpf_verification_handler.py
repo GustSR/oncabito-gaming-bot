@@ -6,6 +6,7 @@ incluindo input de CPF, lembretes e resolução de duplicatas.
 """
 
 import logging
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -249,7 +250,8 @@ class CPFVerificationHandler:
                     try:
                         invite_link = await update.get_bot().create_chat_invite_link(
                             chat_id=int(TELEGRAM_GROUP_ID),
-                            member_limit=1,
+                            member_limit=3,
+                            expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
                             name=f"Link para {client_name}"
                         )
                         message = (
@@ -257,7 +259,8 @@ class CPFVerificationHandler:
                             "Seu plano OnCabo Gaming está ativo e verificado com sucesso!\n\n"
                             "🔗 **LINK DE ACESSO AO GRUPO:**\n"
                             f"{invite_link.invite_link}\n\n"
-                            "⏰ <b>Atenção:</b> Este link é pessoal e pode ser usado <b>apenas 1 vez</b>!\n\n"
+                            "⏰ <b>Atenção:</b> Este link é pessoal e expira em <b>1 hora</b>!\n"
+                            "Você tem <b>3 tentativas</b> para entrar no grupo.\n\n"
                             "Clique no link para entrar no grupo. Nos vemos lá! 🔥"
                         )
                         logger.info(f"Link temporário criado para {user.id} ({client_name})")
@@ -491,13 +494,14 @@ class CPFVerificationHandler:
                 try:
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
-                        member_limit=1,
+                        member_limit=3,
+                        expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
                         name=f"Link para {client_name} (pós-resolução)"
                     )
                     invite_message = (
                         f"\n\n🔗 **Seu link de acesso ao grupo:**\n"
                         f"{invite_link.invite_link}\n\n"
-                        f"⏰ Este link é pessoal e pode ser usado apenas 1 vez!"
+                        f"⏰ Este link expira em 1 hora e tem 3 tentativas de uso!"
                     )
                 except Exception as link_error:
                     logger.error(f"Erro ao criar link de convite: {link_error}")
@@ -584,14 +588,16 @@ class CPFVerificationHandler:
                     client_name = query.from_user.first_name
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
-                        member_limit=1,
+                        member_limit=3,
+                        expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
                         name=f"Link para {client_name}"
                     )
                     message = (
                         f"✅ **Conflito Resolvido!**\n\n"
                         f"O CPF foi associado à sua conta e removido da(s) conta(s) antiga(s).\n\n"
                         f"Seja bem-vindo(a) ao grupo!\n\n"
-                        f"🔗 **Seu novo link de acesso:**\n{invite_link.invite_link}"
+                        f"🔗 **Seu novo link de acesso:**\n{invite_link.invite_link}\n\n"
+                        f"⏰ Link válido por 1 hora | 3 tentativas de uso"
                     )
                     await query.edit_message_text(message, parse_mode='Markdown', disable_web_page_preview=True)
                 except Exception as e:

@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 4/19 revisadas | 4 resolvidas | 0 mantidas intencionalmente
+**Status**: 5/19 revisadas | 5 resolvidas | 0 mantidas intencionalmente
 
 ---
 
@@ -242,6 +242,70 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🟠 #5: Link de Convite de 1 Uso Pode Ser Desperdiçado
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Links de convite criados com `member_limit=1` (apenas 1 uso)
+- Usuário podia desperdiçar link ao:
+  - Clicar acidentalmente com dispositivo/conta errada
+  - Telegram ter bug e não adicionar ao grupo
+  - Preview do link consumi-lo inadvertidamente
+  - Trocar de dispositivo e perder acesso
+- Não havia comando para regenerar link
+- Admin precisava criar link manualmente para cada caso
+
+**Solução Implementada** (Opção A - 3 Usos + Expiração de 1h):
+
+1. **Handler atualizado** (`cpf_verification_handler.py`):
+   - Adicionado import de `datetime` e `timedelta` no topo
+   - Modificados **3 locais** onde links são criados:
+     - Linha ~251: Verificação bem-sucedida (caminho feliz)
+     - Linha ~495: Resolução proativa de duplicata
+     - Linha ~589: Resolução reativa de duplicata
+
+2. **Parâmetros do link atualizados**:
+   ```python
+   invite_link = await bot.create_chat_invite_link(
+       chat_id=int(TELEGRAM_GROUP_ID),
+       member_limit=3,  # ← ANTES: 1, AGORA: 3 tentativas
+       expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),  # ← NOVO: expira em 1h
+       name=f"Link para {client_name}"
+   )
+   ```
+
+3. **Mensagens atualizadas** para informar usuário:
+   - Caminho feliz: "⏰ Este link é pessoal e expira em **1 hora**! Você tem **3 tentativas** para entrar no grupo."
+   - Resolução proativa: "⏰ Este link expira em 1 hora e tem 3 tentativas de uso!"
+   - Resolução reativa: "⏰ Link válido por 1 hora | 3 tentativas de uso"
+
+**Arquivos Modificados**:
+- ✅ Modificado: `src/sentinela/presentation/handlers/cpf_verification_handler.py`
+
+**Impacto**:
+- ✅ **Tolerância a erros**: 3 tentativas permitem usuário corrigir erros
+- ⏰ **Segurança**: Expiração de 1h previne uso indefinido
+- 😊 **Melhor UX**: Usuário não fica bloqueado por erro simples
+- 📉 **Redução de suporte**: Menos chamados sobre "link não funciona"
+- ⚖️ **Balanceamento**: Mantém segurança sem prejudicar usabilidade
+
+**Notas Técnicas**:
+- Usa constante existente `INVITE_LINK_EXPIRE_TIME` (3600s = 1h) do config
+- 3 usos é suficiente para:
+  - Tentativa inicial
+  - 1-2 correções de erro (dispositivo errado, preview, etc.)
+- Expiração de 1h é tempo razoável para usuário entrar após verificação
+- Alternativa (comando `/link`) não foi necessária - Opção A é suficiente
+
+**Alternativas Consideradas**:
+- Opção B (Comando `/link`): Mais complexo, desnecessário com 3 usos
+- Opção C (A + B híbrida): Over-engineering para o problema
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 *(Nenhuma até o momento)*
@@ -305,16 +369,16 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
 | 🔴 Crítica | 3 | 3 | 0 | 0 |
-| 🟠 Alta | 5 | 1 | 0 | 4 |
+| 🟠 Alta | 5 | 2 | 0 | 3 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **4** | **0** | **15** |
+| **TOTAL** | **19** | **5** | **0** | **14** |
 
-**Progresso**: 21.1% completo (4/19) | ✅ **TODAS as críticas resolvidas!**
+**Progresso**: 26.3% completo (5/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #5 (Rate limit em /cancelar)
-2. Continuar revisão sequencial das 15 inconsistências restantes
+1. ⏳ Revisar inconsistência #6 (Usuário Pode Ter Múltiplas Verificações PENDING)
+2. Continuar revisão sequencial das 14 inconsistências restantes
