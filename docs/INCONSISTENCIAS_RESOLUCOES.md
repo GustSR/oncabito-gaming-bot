@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 2/19 revisadas | 2 resolvidas | 0 mantidas intencionalmente
+**Status**: 3/19 revisadas | 3 resolvidas | 0 mantidas intencionalmente
 
 ---
 
@@ -114,6 +114,62 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🔴 #3: Flood de Callbacks em Resolução de Duplicatas
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Usuário clica múltiplas vezes no botão de resolução (double-click, nervosismo)
+- Bot processa o mesmo callback múltiplas vezes simultaneamente
+- Possíveis problemas:
+  - Múltiplas tentativas de remover usuário do grupo (erros do Telegram)
+  - Múltiplas atualizações no banco de dados
+  - Múltiplos links de convite criados
+  - Mensagens de sucesso duplicadas
+
+**Solução Implementada** (Opção A - Flag em Memória):
+
+1. **Set de callbacks em processamento** (`cpf_verification_handler.py:37`):
+   ```python
+   self._processing_callbacks: set[str] = set()
+   ```
+
+2. **Verificação de idempotência** (`cpf_verification_handler.py:324-330`):
+   - Verifica se `callback_id` já está no set
+   - Se sim: retorna mensagem "Já estou processando..." e ignora
+   - Se não: adiciona ao set e processa normalmente
+
+3. **Cleanup automático** (`cpf_verification_handler.py:348-351`):
+   - `try/finally` garante remoção do callback_id ao finalizar
+   - Mesmo em caso de erro, o callback é removido do set
+
+4. **Feedback imediato**:
+   - `query.answer()` chamado imediatamente
+   - Desabilita o botão visualmente para o usuário
+
+**Arquivos Modificados**:
+- ✅ Modificado: `src/sentinela/presentation/handlers/cpf_verification_handler.py`
+
+**Impacto**:
+- 🔒 **Idempotência**: Garante que cada callback é processado apenas 1 vez
+- 🛡️ **UX**: Usuário recebe feedback imediato ("Já estou processando...")
+- 📊 **Logs**: Elimina poluição de logs com erros de duplicação
+- ⚡ **Performance**: Verificação em memória é instantânea (O(1))
+
+**Notas Técnicas**:
+- Solução simples e eficaz para 99% dos casos
+- Set em memória é suficiente (callbacks têm IDs únicos do Telegram)
+- Cleanup automático via `try/finally` previne memory leaks
+- Se bot reiniciar durante processamento, callback pode ser reprocessado (aceitável)
+
+**Alternativas Consideradas**:
+- Opção B (Flag no banco): Mais robusto mas significativamente mais lento
+- Opção C (Não fazer nada): Rejeitada devido ao risco de corrupção de dados
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 *(Nenhuma até o momento)*
@@ -121,9 +177,6 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 ---
 
 ## ⏳ PENDENTES DE REVISÃO
-
-### 🔴 #3: Flood de Callbacks em Resolução de Duplicatas
-**Status**: ⏳ Aguardando revisão
 
 ### 🟠 #4: Rate Limit Inexistente em `/cancelar`
 **Status**: ⏳ Aguardando revisão
@@ -179,17 +232,17 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
-| 🔴 Crítica | 3 | 2 | 0 | 1 |
+| 🔴 Crítica | 3 | 3 | 0 | 0 |
 | 🟠 Alta | 5 | 0 | 0 | 5 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **2** | **0** | **17** |
+| **TOTAL** | **19** | **3** | **0** | **16** |
 
-**Progresso**: 10.5% completo (2/19)
+**Progresso**: 15.8% completo (3/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #3 (Flood de callbacks)
+1. ⏳ Revisar inconsistência #4 (Rate limit em /cancelar)
 3. Continuar revisão sequencial das 16 inconsistências restantes

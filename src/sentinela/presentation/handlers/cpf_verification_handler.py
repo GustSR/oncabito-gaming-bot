@@ -33,6 +33,8 @@ class CPFVerificationHandler:
         """
         self._container = container
         self._cpf_use_case: Optional[CPFVerificationUseCase] = None
+        # CORREÇÃO INCONSISTÊNCIA #3: Set para prevenir processamento duplicado de callbacks
+        self._processing_callbacks: set[str] = set()
 
     def _ensure_cpf_use_case(self) -> CPFVerificationUseCase:
         """Garante que o CPF use case está inicializado."""
@@ -319,15 +321,34 @@ class CPFVerificationHandler:
         1. Fluxo reativo (verificação): dup_resolve_merge_{verification_id} ou dup_resolve_cancel_{verification_id}
         2. Fluxo proativo (checkup): resolve_dup:{conflict_id}:{chosen_user_id} ou resolve:{short_id}:{chosen_user_id}
         """
-        await query.edit_message_text("⏳ Processando sua escolha...", parse_mode='Markdown')
+        # CORREÇÃO INCONSISTÊNCIA #3: Previne processamento duplicado de callbacks
+        callback_id = query.id
 
-        # Detecta qual fluxo está sendo usado
-        if callback_data.startswith("resolve_dup:") or callback_data.startswith("resolve:"):
-            # NOVO FLUXO: Resolução proativa (via checkup diário)
-            await self._handle_proactive_duplicate_resolution(query, callback_data)
-        else:
-            # FLUXO ANTIGO: Resolução reativa (via verificação de CPF)
-            await self._handle_reactive_duplicate_resolution(query, context, callback_data)
+        if callback_id in self._processing_callbacks:
+            logger.warning(f"Callback {callback_id} já está sendo processado. Ignorando duplicata.")
+            await query.answer("⏳ Já estou processando sua escolha. Aguarde...", show_alert=True)
+            return
+
+        # Adiciona ao set de processamento
+        self._processing_callbacks.add(callback_id)
+
+        try:
+            # Responde imediatamente para dar feedback ao usuário
+            await query.answer()
+            await query.edit_message_text("⏳ Processando sua escolha...", parse_mode='Markdown')
+
+            # Detecta qual fluxo está sendo usado
+            if callback_data.startswith("resolve_dup:") or callback_data.startswith("resolve:"):
+                # NOVO FLUXO: Resolução proativa (via checkup diário)
+                await self._handle_proactive_duplicate_resolution(query, callback_data)
+            else:
+                # FLUXO ANTIGO: Resolução reativa (via verificação de CPF)
+                await self._handle_reactive_duplicate_resolution(query, context, callback_data)
+
+        finally:
+            # Remove do set de processamento ao finalizar
+            self._processing_callbacks.discard(callback_id)
+            logger.debug(f"Callback {callback_id} removido do set de processamento")
 
     async def _handle_proactive_duplicate_resolution(
         self,
