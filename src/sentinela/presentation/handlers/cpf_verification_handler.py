@@ -210,11 +210,27 @@ class CPFVerificationHandler:
                         ]]
                         reply_markup = InlineKeyboardMarkup(keyboard)
 
-                        # Salva o contexto para o callback
+                        # Salva o contexto para o callback (em memória E no banco)
                         context.user_data['duplicate_resolution_context'] = {
                             'verification_id': verification_id,
                             'conflicting_users': conflicting_users
                         }
+
+                        # CORREÇÃO INCONSISTÊNCIA #2: Persiste contexto no banco
+                        # para sobreviver reinicializações do bot
+                        try:
+                            from ...domain.entities.cpf_verification import VerificationId as VerId
+                            verification_repo = self._container.get("cpf_verification_repository")
+                            verification = await verification_repo.find_by_id(VerId(verification_id))
+                            if verification:
+                                verification.set_duplicate_resolution_context(
+                                    conflicting_users=conflicting_users,
+                                    verification_id=verification_id
+                                )
+                                await verification_repo.save(verification)
+                                logger.info(f"Contexto de resolução de duplicatas persistido no banco para verificação {verification_id}")
+                        except Exception as ctx_error:
+                            logger.error(f"Erro ao persistir contexto de resolução: {ctx_error}")
 
                         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
                         logger.info(f"Conflito de CPF para user {user.id}. Iniciando fluxo de resolução.")
@@ -502,13 +518,33 @@ class CPFVerificationHandler:
         if action == "merge":
             logger.info(f"Usuário {query.from_user.id} escolheu 'merge' para a verificação {verification_id}.")
 
-            # Pega os detalhes do conflito salvos no contexto
+            # CORREÇÃO INCONSISTÊNCIA #2: Tenta recuperar contexto da memória,
+            # mas se não encontrar, recupera do banco (para sobreviver restarts)
             resolution_context = context.user_data.get('duplicate_resolution_context')
+
             if not resolution_context or resolution_context.get('verification_id') != verification_id:
-                await query.edit_message_text(
-                    "❌ Ops! Perdi o contexto desta conversa. Por favor, tente verificar seu CPF novamente."
-                )
-                return
+                logger.warning(f"Contexto não encontrado em memória para verificação {verification_id}. Tentando recuperar do banco...")
+
+                try:
+                    from ...domain.entities.cpf_verification import VerificationId as VerId
+                    verification_repo = self._container.get("cpf_verification_repository")
+                    verification = await verification_repo.find_by_id(VerId(verification_id))
+
+                    if verification and verification.has_pending_duplicate_resolution():
+                        resolution_context = verification.duplicate_resolution_context
+                        logger.info(f"Contexto recuperado do banco para verificação {verification_id}")
+                    else:
+                        await query.edit_message_text(
+                            "❌ Ops! Perdi o contexto desta conversa e não consegui recuperá-lo. "
+                            "Por favor, tente verificar seu CPF novamente."
+                        )
+                        return
+                except Exception as e:
+                    logger.error(f"Erro ao recuperar contexto do banco: {e}")
+                    await query.edit_message_text(
+                        "❌ Ops! Perdi o contexto desta conversa. Por favor, tente verificar seu CPF novamente."
+                    )
+                    return
 
             duplicate_users = resolution_context.get('conflicting_users', [])
             duplicate_user_ids = [u.get('user_id') for u in duplicate_users]
@@ -550,9 +586,21 @@ class CPFVerificationHandler:
                     "Por favor, contate o suporte."
                 )
 
-            # Limpa o contexto da resolução
+            # CORREÇÃO INCONSISTÊNCIA #2: Limpa o contexto da resolução (memória + banco)
             if 'duplicate_resolution_context' in context.user_data:
                 del context.user_data['duplicate_resolution_context']
+
+            # Limpa do banco também
+            try:
+                from ...domain.entities.cpf_verification import VerificationId as VerId
+                verification_repo = self._container.get("cpf_verification_repository")
+                verification = await verification_repo.find_by_id(VerId(verification_id))
+                if verification and verification.has_pending_duplicate_resolution():
+                    verification.clear_duplicate_resolution_context()
+                    await verification_repo.save(verification)
+                    logger.info(f"Contexto de resolução limpo do banco para verificação {verification_id}")
+            except Exception as ctx_error:
+                logger.error(f"Erro ao limpar contexto do banco: {ctx_error}")
 
         elif action == "cancel":
             logger.info(f"Usuário {query.from_user.id} cancelou a resolução de conflito para a verificação {verification_id}.")
@@ -578,11 +626,23 @@ class CPFVerificationHandler:
                     parse_mode='Markdown'
                 )
 
-            # Limpa o contexto da resolução e a flag waiting_cpf
+            # CORREÇÃO INCONSISTÊNCIA #2: Limpa o contexto da resolução (memória + banco)
             if 'duplicate_resolution_context' in context.user_data:
                 del context.user_data['duplicate_resolution_context']
             if 'waiting_cpf' in context.user_data:
                 del context.user_data['waiting_cpf']
+
+            # Limpa do banco também
+            try:
+                from ...domain.entities.cpf_verification import VerificationId as VerId
+                verification_repo = self._container.get("cpf_verification_repository")
+                verification = await verification_repo.find_by_id(VerId(verification_id))
+                if verification and verification.has_pending_duplicate_resolution():
+                    verification.clear_duplicate_resolution_context()
+                    await verification_repo.save(verification)
+                    logger.info(f"Contexto de resolução limpo do banco para verificação {verification_id}")
+            except Exception as ctx_error:
+                logger.error(f"Erro ao limpar contexto do banco: {ctx_error}")
 
     async def cpf_reminder_callback(self, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Envia um lembrete para o usuário que não enviou o CPF a tempo."""

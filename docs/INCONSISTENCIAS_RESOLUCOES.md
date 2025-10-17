@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 1/19 revisadas | 1 resolvidas | 0 mantidas intencionalmente
+**Status**: 2/19 revisadas | 2 resolvidas | 0 mantidas intencionalmente
 
 ---
 
@@ -61,6 +61,59 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🔴 #2: Contexto `user_data` Perdido em Reinicialização
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Contexto de resolução de duplicatas armazenado apenas em `context.user_data` (volátil)
+- Reinicialização do bot (deploy/crash) limpava a memória
+- Usuários ficavam travados durante resolução de duplicatas após restart
+- Botões de "Manter conta atual" / "Usar conta antiga" paravam de funcionar
+
+**Solução Implementada**:
+
+1. **Migration de banco de dados** (`migrations/006_add_duplicate_resolution_context.sql`):
+   - Adicionado campo `duplicate_resolution_context TEXT` na tabela `cpf_verifications`
+   - Campo armazena JSON com `verification_id`, `conflicting_users` e `created_at`
+   - Índice criado para lookups rápidos de contextos pendentes
+
+2. **Entidade atualizada** (`cpf_verification.py`):
+   - Adicionado campo `_duplicate_resolution_context` opcional
+   - Métodos: `set_duplicate_resolution_context()`, `clear_duplicate_resolution_context()`, `has_pending_duplicate_resolution()`
+   - Propriedade: `duplicate_resolution_context` para leitura
+
+3. **Repository atualizado** (`sqlite_cpf_verification_repository.py`):
+   - Método `save()` persiste contexto serializado como JSON
+   - Método `_row_to_verification()` recupera contexto ao carregar entidade
+
+4. **Handler atualizado** (`cpf_verification_handler.py:219-233`):
+   - Ao detectar conflito: salva contexto em memória **E** no banco
+   - Ao processar callback: tenta memória primeiro, depois banco como fallback
+   - Ao resolver/cancelar: limpa contexto de memória **E** do banco
+
+**Arquivos Modificados**:
+- ✅ Criado: `migrations/006_add_duplicate_resolution_context.sql`
+- ✅ Modificado: `src/sentinela/domain/entities/cpf_verification.py`
+- ✅ Modificado: `src/sentinela/infrastructure/repositories/sqlite_cpf_verification_repository.py`
+- ✅ Modificado: `src/sentinela/presentation/handlers/cpf_verification_handler.py`
+
+**Impacto**:
+- 🔒 **Resiliência**: Contexto sobrevive a reinicializações do bot
+- 🛡️ **UX**: Usuários nunca mais ficam travados durante resolução
+- 📊 **Dados**: Contexto persistido com mesma garantia de durabilidade do resto do sistema
+- ⚡ **Performance**: Fallback rápido (memória primeiro, banco só se necessário)
+
+**Notas Técnicas**:
+- Context o armazenado como JSON para flexibilidade
+- Índice no banco para buscar rapidamente verificações com contextos pendentes
+- Cleanup automático quando resolução é completada
+- Workaround existente para CPFs mantido (reconhecimento de dígitos)
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 *(Nenhuma até o momento)*
@@ -68,9 +121,6 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 ---
 
 ## ⏳ PENDENTES DE REVISÃO
-
-### 🔴 #2: Contexto `user_data` Perdido em Reinicialização
-**Status**: ⏳ Aguardando revisão
 
 ### 🔴 #3: Flood de Callbacks em Resolução de Duplicatas
 **Status**: ⏳ Aguardando revisão
@@ -129,18 +179,17 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
-| 🔴 Crítica | 3 | 1 | 0 | 2 |
+| 🔴 Crítica | 3 | 2 | 0 | 1 |
 | 🟠 Alta | 5 | 0 | 0 | 5 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **1** | **0** | **18** |
+| **TOTAL** | **19** | **2** | **0** | **17** |
 
-**Progresso**: 5.3% completo (1/19)
+**Progresso**: 10.5% completo (2/19)
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #2 (Contexto perdido em restart)
-2. ⏳ Revisar inconsistência #3 (Flood de callbacks)
+1. ⏳ Revisar inconsistência #3 (Flood de callbacks)
 3. Continuar revisão sequencial das 16 inconsistências restantes

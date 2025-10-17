@@ -53,7 +53,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                             completed_at = ?,
                             verification_data = ?,
                             metadata = ?,
-                            client_data = ?
+                            client_data = ?,
+                            duplicate_resolution_context = ?
                         WHERE id = ?
                     """, (
                         verification.user_id.value,
@@ -68,6 +69,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         self._serialize_data(verification.verification_data),
                         self._serialize_data(verification.metadata),
                         self._serialize_data(verification.client_data) if verification.client_data else None,
+                        self._serialize_data(verification.duplicate_resolution_context) if verification.duplicate_resolution_context else None,
                         verification.id.value
                     ))
                 else:
@@ -76,8 +78,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         INSERT INTO cpf_verifications (
                             id, user_id, username, user_mention, cpf_hash, verification_type,
                             status, max_attempts, created_at, expires_at,
-                            completed_at, verification_data, metadata, client_data
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            completed_at, verification_data, metadata, client_data, duplicate_resolution_context
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         verification.id.value,
                         verification.user_id.value,
@@ -92,7 +94,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         verification.completed_at.isoformat() if verification.completed_at else None,
                         self._serialize_data(verification.verification_data),
                         self._serialize_data(verification.metadata),
-                        self._serialize_data(verification.client_data) if verification.client_data else None
+                        self._serialize_data(verification.client_data) if verification.client_data else None,
+                        self._serialize_data(verification.duplicate_resolution_context) if verification.duplicate_resolution_context else None
                     ))
 
                 # Salva tentativas
@@ -360,6 +363,11 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             )
             attempts.append(attempt)
 
+        # Recupera duplicate_resolution_context se existir
+        duplicate_context = None
+        if 'duplicate_resolution_context' in row.keys() and row['duplicate_resolution_context']:
+            duplicate_context = self._deserialize_data(row['duplicate_resolution_context'])
+
         # Cria verificação
         verification = CPFVerificationRequest(
             verification_id=VerificationId(row['id']),
@@ -368,7 +376,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             user_mention=f"@{row['username']}",  # Reconstruído a partir do username
             verification_type=VerificationType(row['verification_type']),
             source_action=None,  # Não persistido no banco
-            expires_at=datetime.fromisoformat(row['expires_at'])
+            expires_at=datetime.fromisoformat(row['expires_at']),
+            duplicate_resolution_context=duplicate_context
         )
 
         # Restaura estado
