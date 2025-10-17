@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 6/19 revisadas | 6 resolvidas | 0 mantidas intencionalmente
+**Status**: 7/19 revisadas | 6 resolvidas | 1 mantida intencionalmente
 
 ---
 
@@ -379,7 +379,60 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
-*(Nenhuma até o momento)*
+### 🟠 #8: Conflito Detectado DEPOIS de Verificação Completa
+
+**Status**: 🔄 **MANTIDA INTENCIONALMENTE**
+
+**Problema Original**:
+- Daily checkup detecta duplicatas **DEPOIS** que ambos usuários já completaram verificação
+- Usuário A está no grupo há dias quando o conflito é detectado
+- Ambos precisam resolver conflito retroativamente
+- Difícil determinar quem é o "dono" legítimo do CPF
+
+**Por Que Foi Mantida**:
+
+O usuário **explicitamente decidiu manter este comportamento**:
+
+> "Nesse caso nao quero nada complexo, por isso em caso, quero que seja assim mesmo, por equanto vou manter, quem tiver fazeno o checkup sera quem escolhe quem vai ser mantido no grupo. E em caso de problema remover todos do mesmo cpf do grupo creio que foi essa a logica implementada correto ?"
+
+**Comportamento Atual (Verificado em `scripts/tasks/daily_cpf_checkup.py`)**:
+
+1. **Detecção Proativa** (`_phase3_handle_duplicates`, linhas 388-495):
+   - Daily checkup detecta CPFs duplicados no grupo
+   - Notifica o usuário **mais recente** com inline keyboard
+   - Usuário escolhe qual conta manter via botões:
+     - Botão para cada conta duplicada
+     - Ao escolher, remove as outras contas do grupo
+
+2. **Timeout Automático** (`_phase_process_expired_conflicts`, linhas 162-248):
+   - Se usuário não responder em 24h
+   - **Remove TODAS as contas** com aquele CPF do grupo
+   - Garante que o problema não fica indefinidamente pendente
+
+3. **Escolha Manual** (`_phase3_handle_duplicates`, linhas 414-461):
+   - Cria inline keyboard com botões
+   - Cada botão representa uma conta
+   - Usuário que fizer o checkup decide quem fica
+
+**Justificativa da Decisão**:
+- ✅ **Simplicidade**: Solução simples e direta, sem complexidade desnecessária
+- ✅ **Controle Manual**: Usuário/admin tem controle total sobre a decisão
+- ✅ **Segurança**: Se não houver resposta, remove todos (previne fraude)
+- ✅ **Praticidade**: Para maioria dos casos, resolução manual funciona bem
+- ⚠️ **Trade-off Aceitável**: Detecção tardia é aceitável se casos são raros
+
+**Notas Técnicas**:
+- Este é o comportamento **intencional** do sistema
+- Detecção reativa (durante verificação) já previne a maioria dos casos via inconsistência #1
+- Daily checkup é uma **rede de segurança** para casos que escaparam
+- Sistema de escolha manual é adequado para volume baixo de duplicatas
+
+**Possíveis Melhorias Futuras (Backlog)**:
+- Dar prioridade temporal automática (conta mais antiga fica)
+- Notificar admin quando há conflitos pendentes há muito tempo
+- Adicionar campo "motivo" para registrar por que conta foi escolhida
+
+**Decisão**: Mantida intencionalmente conforme requisito do usuário - [DATA DO COMMIT]
 
 ---
 
@@ -440,16 +493,16 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
 | 🔴 Crítica | 3 | 3 | 0 | 0 |
-| 🟠 Alta | 5 | 3 | 0 | 2 |
+| 🟠 Alta | 5 | 3 | 1 | 1 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **6** | **0** | **13** |
+| **TOTAL** | **19** | **6** | **1** | **12** |
 
-**Progresso**: 31.6% completo (6/19) | ✅ **TODAS as críticas resolvidas!**
+**Progresso**: 36.8% completo (7/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #7 (Conflito Detectado DEPOIS de Verificação Completa)
-2. Continuar revisão sequencial das 13 inconsistências restantes
+1. ⏳ Revisar inconsistência #9 (Bot Sem Permissões Após Demotion)
+2. Continuar revisão sequencial das 12 inconsistências restantes
