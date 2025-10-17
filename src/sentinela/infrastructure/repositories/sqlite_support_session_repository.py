@@ -125,9 +125,39 @@ class SQLiteSupportSessionRepository(SupportSessionRepository):
         try:
             now = datetime.now().isoformat()
             async with aiosqlite.connect(self.db_path) as db:
+                # 1. Primeiro, encontra sessões expiradas para rastreamento
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT user_id, state_json FROM support_sessions WHERE expires_at < ?",
+                    (now,)
+                )
+                expired_sessions = await cursor.fetchall()
+
+                # 2. Registra na tabela de expiradas (para feedback posterior)
+                for session in expired_sessions:
+                    try:
+                        await db.execute(
+                            """INSERT OR REPLACE INTO expired_support_sessions
+                               (user_id, expired_at, session_data, notified)
+                               VALUES (?, ?, ?, 0)""",
+                            (session['user_id'], now, session['state_json'])
+                        )
+                    except Exception as e:
+                        logger.warning(f"Erro ao registrar sessão expirada para user {session['user_id']}: {e}")
+
+                # 3. Remove sessões expiradas da tabela principal
+                db.row_factory = None
                 cursor = await db.execute(
                     "DELETE FROM support_sessions WHERE expires_at < ?", (now,)
                 )
+
+                # 4. Limpa registros de expiração muito antigos (> 1 hora)
+                one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
+                await db.execute(
+                    "DELETE FROM expired_support_sessions WHERE expired_at < ?",
+                    (one_hour_ago,)
+                )
+
                 await db.commit()
                 removed_count = cursor.rowcount
                 if removed_count > 0:
@@ -148,3 +178,33 @@ class SQLiteSupportSessionRepository(SupportSessionRepository):
         except Exception as e:
             logger.error(f"Erro ao contar sessões ativas: {e}", exc_info=True)
             return 0
+
+    async def had_recent_expired_session(self, user_id: int, within_minutes: int = 5) -> bool:
+        try:
+            # Calcula timestamp de X minutos atrás
+            cutoff_time = (datetime.now() - timedelta(minutes=within_minutes)).isoformat()
+
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    """SELECT 1 FROM expired_support_sessions
+                       WHERE user_id = ? AND expired_at > ? AND notified = 0
+                       LIMIT 1""",
+                    (user_id, cutoff_time)
+                )
+                result = await cursor.fetchone()
+
+                if result:
+                    # Marca como notificado para evitar notificações duplicadas
+                    await db.execute(
+                        "UPDATE expired_support_sessions SET notified = 1 WHERE user_id = ?",
+                        (user_id,)
+                    )
+                    await db.commit()
+                    logger.info(f"Sessão expirada recente detectada para usuário {user_id}")
+                    return True
+
+                return False
+
+        except Exception as e:
+            logger.error(f"Erro ao verificar sessão expirada para {user_id}: {e}", exc_info=True)
+            return False

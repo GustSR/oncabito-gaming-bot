@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 3/19 revisadas | 3 resolvidas | 0 mantidas intencionalmente
+**Status**: 4/19 revisadas | 4 resolvidas | 0 mantidas intencionalmente
 
 ---
 
@@ -170,6 +170,78 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🟠 #4: Sessão de Suporte Expirada mas Usuário Continua Preenchendo
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Sessões de suporte expiram após 24h de inatividade (cleanup automático)
+- Se usuário tentar continuar preenchendo após expiração, não recebia feedback
+- Formulário simplesmente não respondia mais, causando confusão
+- Usuário não sabia se era erro do bot ou problema de conexão
+
+**Solução Implementada** (Opção A - Feedback ao Detectar Expiração):
+
+1. **Migration de banco de dados** (`migrations/007_add_expired_sessions_tracking.sql`):
+   - Criada tabela `expired_support_sessions` para rastrear sessões recém-expiradas
+   - Campos: `user_id`, `expired_at`, `session_data` (snapshot), `notified` (flag)
+   - Índice para cleanup rápido de registros antigos (> 1 hora)
+
+2. **Repository interface atualizado** (`support_session_repository.py`):
+   - Adicionado método abstrato `had_recent_expired_session(user_id, within_minutes=5)`
+   - Define contrato para verificar expirações recentes
+
+3. **Repository SQLite atualizado** (`sqlite_support_session_repository.py`):
+   - Método `cleanup_expired_sessions()` modificado para:
+     - Antes de deletar, registra sessões expiradas na tabela de rastreamento
+     - Limpa automaticamente registros de expiração > 1 hora
+   - Implementado `had_recent_expired_session()`:
+     - Verifica se houve expiração nos últimos X minutos (padrão: 5 min)
+     - Marca como `notified=1` após primeira verificação (evita spam)
+     - Retorna `True` apenas na primeira tentativa de uso pós-expiração
+
+4. **Handler atualizado** (`support_form_handler.py`):
+   - Modificado `handle_description_input()` para detectar expiração:
+     - Se não há sessão ativa, verifica se houve expiração recente
+     - Se sim: envia mensagem amigável explicando a situação
+     - Direciona usuário para reiniciar com `/suporte`
+   - Modificado `handle_photo_attachment()` com mesma lógica
+   - Mensagem de feedback:
+     ```
+     ⏱️ **Sessão Expirada**
+
+     Sua sessão de suporte expirou por inatividade (24h).
+
+     Por favor, inicie um novo chamado com /suporte
+     ```
+
+**Arquivos Modificados**:
+- ✅ Criado: `migrations/007_add_expired_sessions_tracking.sql`
+- ✅ Modificado: `src/sentinela/domain/repositories/support_session_repository.py`
+- ✅ Modificado: `src/sentinela/infrastructure/repositories/sqlite_support_session_repository.py`
+- ✅ Modificado: `src/sentinela/presentation/handlers/support_form_handler.py`
+
+**Impacto**:
+- 🎯 **UX**: Usuário recebe feedback claro em vez de silêncio confuso
+- 🔒 **Idempotência**: Flag `notified` evita múltiplas notificações para mesma expiração
+- 🧹 **Limpeza**: Registros de expiração são auto-removidos após 1h
+- ⚡ **Performance**: Verificação rápida com índice em `expired_at`
+- 📊 **Observabilidade**: Logs registram quando usuários tentam usar sessões expiradas
+
+**Notas Técnicas**:
+- Janela de detecção de 5 minutos balanceia entre detectar tentativas genuínas e evitar falsos positivos
+- Tabela auxiliar `expired_support_sessions` permite rastrear sem modificar schema principal
+- Cleanup automático de 1h evita crescimento infinito da tabela
+- Solução simples e eficaz, sem necessidade de cache ou Redis
+
+**Alternativas Consideradas**:
+- Opção B (Avisar X minutos antes): Mais complexo, requer cron/scheduler adicional
+- Opção C (Não fazer nada): Rejeitada devido ao impacto negativo na UX
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 *(Nenhuma até o momento)*
@@ -178,10 +250,10 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ## ⏳ PENDENTES DE REVISÃO
 
-### 🟠 #4: Rate Limit Inexistente em `/cancelar`
+### 🟠 #5: Rate Limit Inexistente em `/cancelar`
 **Status**: ⏳ Aguardando revisão
 
-### 🟠 #5: `/status` Público Permite Enumerar Usuários
+### 🟠 #6: `/status` Público Permite Enumerar Usuários
 **Status**: ⏳ Aguardando revisão
 
 ### 🟠 #6: Falta Validação de CPF em `resolve_duplicate`
@@ -233,16 +305,16 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 | Categoria | Total | Resolvidas | Mantidas | Pendentes |
 |-----------|-------|------------|----------|-----------|
 | 🔴 Crítica | 3 | 3 | 0 | 0 |
-| 🟠 Alta | 5 | 0 | 0 | 5 |
+| 🟠 Alta | 5 | 1 | 0 | 4 |
 | 🟡 Média | 7 | 0 | 0 | 7 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **3** | **0** | **16** |
+| **TOTAL** | **19** | **4** | **0** | **15** |
 
-**Progresso**: 15.8% completo (3/19) | ✅ **TODAS as críticas resolvidas!**
+**Progresso**: 21.1% completo (4/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #4 (Rate limit em /cancelar)
-3. Continuar revisão sequencial das 16 inconsistências restantes
+1. ⏳ Revisar inconsistência #5 (Rate limit em /cancelar)
+2. Continuar revisão sequencial das 15 inconsistências restantes

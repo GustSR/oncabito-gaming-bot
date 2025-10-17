@@ -803,6 +803,17 @@ class SupportFormHandler:
         has_session = await repository.session_exists(user_id)
 
         if not has_session:
+            # Verifica se teve uma sessão expirada recentemente
+            had_expired = await repository.had_recent_expired_session(user_id, within_minutes=5)
+            if had_expired:
+                await update.message.reply_text(
+                    "⏱️ **Sessão Expirada**\n\n"
+                    "Sua sessão de suporte expirou por inatividade (24h).\n\n"
+                    "Por favor, inicie um novo chamado com /suporte",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"Usuário {user_id} tentou continuar sessão expirada - notificado")
+                return True
             return False
 
         state = await self._get_support_state(user_id)
@@ -855,6 +866,17 @@ class SupportFormHandler:
         has_session = await repository.session_exists(user_id)
 
         if not has_session:
+            # Verifica se teve uma sessão expirada recentemente
+            had_expired = await repository.had_recent_expired_session(user_id, within_minutes=5)
+            if had_expired:
+                await update.message.reply_text(
+                    "⏱️ **Sessão Expirada**\n\n"
+                    "Sua sessão de suporte expirou por inatividade (24h).\n\n"
+                    "Por favor, inicie um novo chamado com /suporte",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"Usuário {user_id} tentou enviar anexo em sessão expirada - notificado")
+                return True
             return False
 
         state = await self._get_support_state(user_id)

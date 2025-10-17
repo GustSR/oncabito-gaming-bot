@@ -121,3 +121,20 @@ class SupportSessionRepository(ABC):
             int: Número de sessões ativas
         """
         pass
+
+    @abstractmethod
+    async def had_recent_expired_session(self, user_id: int, within_minutes: int = 5) -> bool:
+        """
+        Verifica se o usuário teve uma sessão expirada recentemente.
+
+        Útil para fornecer feedback quando usuário tenta continuar
+        uma sessão que expirou.
+
+        Args:
+            user_id: ID do Telegram do usuário
+            within_minutes: Janela de tempo em minutos para considerar "recente"
+
+        Returns:
+            bool: True se houve expiração recente, False caso contrário
+        """
+        pass
