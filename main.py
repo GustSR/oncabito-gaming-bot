@@ -2,6 +2,10 @@ import logging
 import os
 import sys
 import asyncio
+import warnings
+
+# Suprime warning sobre tasks pendentes durante shutdown (comportamento esperado)
+warnings.filterwarnings("ignore", message=".*was destroyed but it is pending.*")
 
 from src.sentinela.core.logging_config import setup_logging
 from src.sentinela.infrastructure.config.dependency_injection import configure_dependencies
@@ -88,15 +92,18 @@ def main() -> None:
         # Finaliza o gerenciador de locks
         if lock_manager:
             try:
-                loop = asyncio.get_event_loop()
-                if not loop.is_closed():
+                # Tenta criar um novo event loop para cleanup
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
                     loop.run_until_complete(shutdown_lock_manager(lock_manager))
                     logger.info("Gerenciador de locks finalizado.")
-                else:
-                    # Event loop já fechado (shutdown normal), apenas log
-                    logger.info("Event loop já fechado, gerenciador de locks não finalizado explicitamente.")
+                finally:
+                    loop.close()
             except Exception as e:
-                logger.warning(f"Erro ao finalizar lock manager: {e}")
+                # Silencia erro esperado quando event loop já foi fechado
+                if "Event loop is closed" not in str(e):
+                    logger.warning(f"Erro ao finalizar lock manager: {e}")
 
 if __name__ == "__main__":
     main()

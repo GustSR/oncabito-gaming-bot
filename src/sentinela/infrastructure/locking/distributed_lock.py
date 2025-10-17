@@ -27,6 +27,18 @@ class InMemoryLockManager:
         self._locks: dict[str, tuple[asyncio.Lock, datetime]] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
 
+    def __del__(self):
+        """Garante que a task de cleanup seja cancelada ao destruir o objeto."""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            # Tenta aguardar o cancelamento para evitar warning
+            try:
+                loop = asyncio.get_event_loop()
+                if not loop.is_closed():
+                    loop.run_until_complete(asyncio.sleep(0))
+            except:
+                pass  # Ignora erros no destrutor
+
     async def start(self):
         """Inicia o gerenciador de locks."""
         if not self._cleanup_task:
@@ -46,21 +58,26 @@ class InMemoryLockManager:
 
     async def _cleanup_expired_locks(self):
         """Remove locks expirados periodicamente."""
-        while True:
-            try:
-                await asyncio.sleep(60)  # Executa a cada minuto
-                now = datetime.now()
-                expired_keys = [
-                    key for key, (_, expires_at) in self._locks.items()
-                    if expires_at < now
-                ]
-                for key in expired_keys:
-                    del self._locks[key]
-                    logger.debug(f"Lock expirado removido: {key}")
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Erro ao limpar locks expirados: {e}")
+        try:
+            while True:
+                try:
+                    await asyncio.sleep(60)  # Executa a cada minuto
+                    now = datetime.now()
+                    expired_keys = [
+                        key for key, (_, expires_at) in self._locks.items()
+                        if expires_at < now
+                    ]
+                    for key in expired_keys:
+                        del self._locks[key]
+                        logger.debug(f"Lock expirado removido: {key}")
+                except asyncio.CancelledError:
+                    logger.debug("Cleanup de locks cancelado (shutdown)")
+                    break
+                except Exception as e:
+                    logger.error(f"Erro ao limpar locks expirados: {e}")
+        finally:
+            # Garante que não haverá warning de "Task was destroyed"
+            pass
 
     @asynccontextmanager
     async def acquire(self, key: str, timeout: int = 30):

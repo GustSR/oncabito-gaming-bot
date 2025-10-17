@@ -22,5 +22,9 @@ def setup_logging():
     logging.getLogger("telegram.ext").setLevel(logging.WARNING)
     logging.getLogger("telegram.bot").setLevel(logging.WARNING)
 
+    # Silencia warnings sobre tasks pendentes do asyncio durante shutdown
+    # (comportamento esperado quando cleanup tasks são canceladas)
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
     logger = logging.getLogger(__name__)
     logger.info("Sistema de logging configurado com sucesso.")
