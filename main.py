@@ -87,8 +87,16 @@ def main() -> None:
     finally:
         # Finaliza o gerenciador de locks
         if lock_manager:
-            asyncio.get_event_loop().run_until_complete(shutdown_lock_manager(lock_manager))
-            logger.info("Gerenciador de locks finalizado.")
+            try:
+                loop = asyncio.get_event_loop()
+                if not loop.is_closed():
+                    loop.run_until_complete(shutdown_lock_manager(lock_manager))
+                    logger.info("Gerenciador de locks finalizado.")
+                else:
+                    # Event loop já fechado (shutdown normal), apenas log
+                    logger.info("Event loop já fechado, gerenciador de locks não finalizado explicitamente.")
+            except Exception as e:
+                logger.warning(f"Erro ao finalizar lock manager: {e}")
 
 if __name__ == "__main__":
     main()
