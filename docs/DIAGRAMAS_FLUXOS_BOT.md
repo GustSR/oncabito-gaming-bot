@@ -189,7 +189,7 @@
                     │
                     ▼
     ┌───────────────────────────────────────────────────┐
-    │           FORMULÁRIO DE SUPORTE (7 PASSOS)         │
+    │           FORMULÁRIO DE SUPORTE (6 PASSOS)         │
     └───────────────────────────────────────────────────┘
                     │
                     ▼
@@ -210,22 +210,7 @@
                     │
                     ▼
 
-                PASSO 2: SEVERIDADE
-                ═══════════════════
-
-        [Mensagem: "Qual o impacto?"]
-                    │
-        ┌───────────┼───────────┬─────────┐
-        │           │           │         │
-        ▼           ▼           ▼         ▼
-    [Crítico]   [Alto]     [Médio]   [Baixo]
-    [🔴]        [🟠]       [🟡]      [🟢]
-        │           │           │         │
-        └───────────┴───────────┴─────────┘
-                    │
-                    ▼
-
-                PASSO 3: JOGO
+                PASSO 2: JOGO
                 ═════════════
 
         [Mensagem: "Qual jogo?"]
@@ -236,6 +221,20 @@
       [CS2]    [Valorant]   [LoL]   [Fortnite] [Outros]
         │           │           │         │        │
         └───────────┴───────────┴─────────┴────────┘
+                    │
+                    ▼
+
+                PASSO 3: TIMING
+                ═══════════════
+
+        [Mensagem: "Quando acontece?"]
+                    │
+        ┌───────────┼───────────┬─────────────┐
+        │           │           │             │
+        ▼           ▼           ▼             ▼
+    [Sempre]  [Horário]  [Dias]      [Não sei]
+                    │
+        └───────────┴───────────┴─────────────┘
                     │
                     ▼
 
@@ -252,21 +251,7 @@
                     │
                     ▼
 
-                PASSO 5: TIMING
-                ═══════════════
-
-        [Mensagem: "Quando acontece?"]
-                    │
-        ┌───────────┼───────────┬─────────────┐
-        │           │           │             │
-        ▼           ▼           ▼             ▼
-    [Sempre]  [Horário]  [Dias]      [Não sei]
-                    │
-        └───────────┴───────────┴─────────────┘
-                    │
-                    ▼
-
-                PASSO 6: ANEXOS (OPCIONAL)
+                PASSO 5: ANEXOS (OPCIONAL)
                 ══════════════════════════
 
         [Mensagem: "Envie prints (opcional)"]
@@ -274,7 +259,7 @@
         ┌───────────┴───────────┐
         │                       │
     [Envia Fotos]          [Pular]
-    (até 5)                    │
+    (até 3)                    │
         │                      │
         ▼                      │
     [Armazena                  │
@@ -284,7 +269,7 @@
                     │
                     ▼
 
-                PASSO 7: CONFIRMAÇÃO
+                PASSO 6: CONFIRMAÇÃO
                 ════════════════════
 
         [Resumo de todos os dados]
