@@ -19,6 +19,7 @@ class ConflictStatus(Enum):
     RESOLVED = "RESOLVED"  # Resolvido pela escolha do usuário
     EXPIRED_REMOVED = "EXPIRED_REMOVED"  # Expirado, todas as contas removidas
     ADMIN_RESOLVED = "ADMIN_RESOLVED"  # Resolvido por intervenção de admin
+    ERROR = "ERROR"  # CORREÇÃO INCONSISTÊNCIA #9: Erro durante resolução (ex: falta de permissões)
 
 
 class ResolutionAction(Enum):
@@ -82,6 +83,7 @@ class DuplicateConflict(AggregateRoot[ConflictId]):
         self._resolved_by: Optional[int] = None
         self._resolution_choice: Optional[int] = None
         self._resolution_action: Optional[ResolutionAction] = None
+        self._resolution_notes: Optional[str] = None  # CORREÇÃO INCONSISTÊNCIA #9
 
     # Properties
     @property
@@ -138,6 +140,16 @@ class DuplicateConflict(AggregateRoot[ConflictId]):
     def resolution_action(self) -> Optional[ResolutionAction]:
         """Ação tomada para resolver o conflito."""
         return self._resolution_action
+
+    @property
+    def resolution_notes(self) -> Optional[str]:
+        """Notas sobre a resolução do conflito (ex: erros, observações)."""
+        return self._resolution_notes
+
+    @resolution_notes.setter
+    def resolution_notes(self, value: str) -> None:
+        """Define notas sobre a resolução."""
+        self._resolution_notes = value
 
     # Business rules
     def is_expired(self) -> bool:

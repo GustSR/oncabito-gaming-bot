@@ -16,7 +16,8 @@ from ...core.config import (
     TELEGRAM_GROUP_ID,
     ONCABO_SITE_URL,
     ONCABO_WHATSAPP_URL,
-    INVITE_LINK_EXPIRE_TIME
+    INVITE_LINK_EXPIRE_TIME,
+    TECH_NOTIFICATION_CHANNEL_ID
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,56 @@ class CPFVerificationHandler:
         if self._cpf_use_case is None:
             self._cpf_use_case = self._container.get("cpf_verification_use_case")
         return self._cpf_use_case
+
+    async def _notify_permission_error(
+        self,
+        bot,
+        failed_user_ids: list[int],
+        context: str
+    ) -> None:
+        """
+        Notifica admins sobre falhas de permissão ao remover usuários.
+
+        CORREÇÃO INCONSISTÊNCIA #9: Implementa notificação robusta (Opção 4)
+        - Tenta enviar para canal técnico (TECH_NOTIFICATION_CHANNEL_ID)
+        - Se falhar, registra em log (fallback)
+
+        Args:
+            bot: Instância do bot
+            failed_user_ids: Lista de IDs de usuários que não puderam ser removidos
+            context: Contexto da operação (ex: "proactive_duplicate_resolution")
+        """
+        error_message = (
+            f"⚠️ **ERRO DE PERMISSÕES DO BOT** ⚠️\n\n"
+            f"**Contexto:** {context}\n"
+            f"**Problema:** Bot não conseguiu remover {len(failed_user_ids)} usuário(s)\n"
+            f"**IDs afetados:** {', '.join(map(str, failed_user_ids))}\n\n"
+            f"**Ação necessária:**\n"
+            f"1. Verificar se bot tem permissão 'can_restrict_members'\n"
+            f"2. Remover manualmente os usuários listados\n"
+            f"3. Atualizar status do conflito no banco\n\n"
+            f"**Timestamp:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+
+        # Tenta enviar para o canal técnico
+        if TECH_NOTIFICATION_CHANNEL_ID:
+            try:
+                await bot.send_message(
+                    chat_id=TECH_NOTIFICATION_CHANNEL_ID,
+                    text=error_message,
+                    parse_mode='Markdown'
+                )
+                logger.info(f"Notificação de erro de permissão enviada ao canal técnico: {failed_user_ids}")
+                return  # Sucesso - não precisa fallback
+            except Exception as channel_error:
+                logger.error(f"Falha ao enviar notificação para canal técnico: {channel_error}")
+                # Continua para fallback em log
+
+        # Fallback: Log detalhado (sempre executado se canal técnico não configurado ou falhou)
+        logger.critical(
+            f"ERRO DE PERMISSÕES - Bot sem permissão para remover usuários. "
+            f"Context: {context} | Failed IDs: {failed_user_ids}"
+        )
 
     async def check_user_verified(self, user_id: int) -> bool:
         """
@@ -469,13 +520,42 @@ class CPFVerificationHandler:
                     logger.error(f"Erro inesperado ao remover usuário {user_id}: {removal_error}")
                     removal_failed_users.append(user_id)
 
-            # Se houve falhas de remoção, marca conflito como erro e notifica
+            # CORREÇÃO INCONSISTÊNCIA #9: Se houve falhas de remoção, NÃO marca como resolvido
+            # Notifica admin e mostra mensagem de erro ao usuário
             if removal_failed_users:
                 logger.error(f"⚠️ Falha ao remover {len(removal_failed_users)} usuários: {removal_failed_users}")
-                # Marca conflito como tendo erros
-                conflict.resolution_notes = f"Falha ao remover usuários: {removal_failed_users}"
 
-            # Salva o conflito resolvido
+                # Notifica admin usando Opção 4 (canal técnico + fallback em log)
+                await self._notify_permission_error(
+                    bot=query.get_bot(),
+                    failed_user_ids=removal_failed_users,
+                    context="proactive_duplicate_resolution"
+                )
+
+                # Marca conflito como erro ao invés de resolvido
+                from ...domain.entities.duplicate_conflict import ConflictStatus
+                conflict.status = ConflictStatus.ERROR
+                conflict.resolution_notes = (
+                    f"Permissão negada: não foi possível remover {len(removal_failed_users)} usuário(s). "
+                    f"IDs: {removal_failed_users}. Resolução escolhida: manter conta {chosen_user_id}."
+                )
+                await conflict_repo.save(conflict)
+
+                # Mostra mensagem de erro ao usuário
+                error_message = (
+                    f"⚠️ **Erro ao Resolver Conflito**\n\n"
+                    f"Não consegui remover {len(removal_failed_users)} usuário(s) do grupo devido a falta de permissões.\n\n"
+                    f"**O que fazer:**\n"
+                    f"Entre em contato com o suporte informando este erro.\n"
+                    f"Um administrador precisará remover manualmente as contas duplicadas.\n\n"
+                    f"**Conta mantida:** {chosen_user_id}\n"
+                    f"**Contas que falharam:** {', '.join(map(str, removal_failed_users))}"
+                )
+                await query.edit_message_text(error_message, parse_mode='Markdown')
+                logger.warning(f"Conflito {conflict_id} marcado como erro devido a falhas de permissão")
+                return  # Não mostra mensagem de sucesso
+
+            # Se chegou aqui, não houve falhas - salva conflito resolvido
             await conflict_repo.save(conflict)
 
             # Cria link de convite para a conta escolhida (se não for ele mesmo)

@@ -2,7 +2,7 @@
 
 Este documento rastreia quais inconsistências identificadas foram resolvidas e quais foram mantidas intencionalmente.
 
-**Status**: 7/19 revisadas | 6 resolvidas | 1 mantida intencionalmente
+**Status**: 8/19 revisadas | 7 resolvidas | 1 mantida intencionalmente
 
 ---
 
@@ -377,6 +377,90 @@ Este documento rastreia quais inconsistências identificadas foram resolvidas e 
 
 ---
 
+### 🟡 #9: Bot Sem Permissões Após Demotion
+
+**Status**: ✅ **RESOLVIDA**
+
+**Problema Original**:
+- Admin remove permissão `can_restrict_members` do bot
+- Daily checkup detecta duplicatas e tenta remover usuários do grupo
+- Bot não tem permissão para remover, operação falha
+- **INCONSISTÊNCIA**: Código detectava falha mas marcava conflito como "resolvido" mesmo assim
+- Conflito ficava com status RESOLVED mas usuários duplicados continuavam no grupo
+- Nenhum admin era notificado sobre o problema
+- Sem visibilidade técnica da falha de permissões
+
+**Solução Implementada** (Opção 4 - Notificação Robusta):
+
+1. **Entidade de Domínio Atualizada** (`duplicate_conflict.py`):
+   - Adicionado status `ERROR` ao enum `ConflictStatus`
+   - Adicionado campo `resolution_notes` para armazenar detalhes de erros
+   - Property com getter e setter para manipular notas de resolução
+
+2. **Método de Notificação Criado** (`cpf_verification_handler.py:47-95`):
+   - Implementado `_notify_permission_error()` com estratégia de fallback:
+     - **Primário**: Tenta enviar notificação para `TECH_NOTIFICATION_CHANNEL_ID`
+     - **Fallback**: Se canal falhar ou não estiver configurado, registra log CRITICAL
+   - Mensagem detalhada inclui:
+     - Contexto da operação
+     - IDs dos usuários que falharam
+     - Ações necessárias para admin
+     - Timestamp da falha
+
+3. **Lógica de Erro Implementada** (`cpf_verification_handler.py:523-556`):
+   - **ANTES**: Logava erro e continuava marcando como resolvido
+   - **AGORA**: Se `removal_failed_users` não está vazio:
+     - Chama `_notify_permission_error()` para alertar admin
+     - Marca conflito com `status = ConflictStatus.ERROR`
+     - Salva notas detalhadas em `resolution_notes`
+     - Mostra mensagem de erro ao usuário (não mensagem de sucesso)
+     - Retorna early (não executa fluxo de sucesso)
+
+4. **Mensagem de Erro ao Usuário**:
+   ```
+   ⚠️ **Erro ao Resolver Conflito**
+
+   Não consegui remover X usuário(s) do grupo devido a falta de permissões.
+
+   **O que fazer:**
+   Entre em contato com o suporte informando este erro.
+   Um administrador precisará remover manualmente as contas duplicadas.
+
+   **Conta mantida:** [ID]
+   **Contas que falharam:** [IDs]
+   ```
+
+**Arquivos Modificados**:
+- ✅ Modificado: `src/sentinela/domain/entities/duplicate_conflict.py`
+  - Adicionado `ConflictStatus.ERROR`
+  - Adicionado campo `_resolution_notes` com property
+- ✅ Modificado: `src/sentinela/presentation/handlers/cpf_verification_handler.py`
+  - Import de `TECH_NOTIFICATION_CHANNEL_ID`
+  - Método `_notify_permission_error()` com Opção 4
+  - Lógica de erro no `_handle_proactive_duplicate_resolution()`
+
+**Impacto**:
+- 🔒 **Integridade**: Conflitos com falhas não são marcados como "resolvidos"
+- 📢 **Visibilidade**: Admins são notificados imediatamente sobre problemas de permissão
+- 🛡️ **Robustez**: Sistema de notificação com fallback (canal técnico → log crítico)
+- 📊 **Rastreabilidade**: Notas de resolução registram exatamente quais usuários falharam
+- 😊 **Melhor UX**: Usuário recebe feedback claro sobre o erro (não fica confuso)
+- 🔍 **Observabilidade**: Logs CRITICAL garantem que erro não passa despercebido
+
+**Notas Técnicas**:
+- **Opção 4 escolhida**: Combinação de canal técnico + fallback em log
+  - Tenta enviar para `TECH_NOTIFICATION_CHANNEL_ID` primeiro
+  - Se falhar ou não configurado: registra com `logger.critical()`
+  - Garante que erro sempre será visível de alguma forma
+- Status `ERROR` permite distinguir conflitos parcialmente resolvidos
+- `resolution_notes` armazena contexto completo para debugging
+- Early return evita executar lógica de sucesso quando há erros
+- Verificação de permissões já existia (linhas 426-435), apenas faltava agir corretamente
+
+**Decisão**: Implementado em [DATA DO COMMIT]
+
+---
+
 ## 🔄 MANTIDAS INTENCIONALMENTE
 
 ### 🟠 #8: Conflito Detectado DEPOIS de Verificação Completa
@@ -494,15 +578,15 @@ O usuário **explicitamente decidiu manter este comportamento**:
 |-----------|-------|------------|----------|-----------|
 | 🔴 Crítica | 3 | 3 | 0 | 0 |
 | 🟠 Alta | 5 | 3 | 1 | 1 |
-| 🟡 Média | 7 | 0 | 0 | 7 |
+| 🟡 Média | 7 | 1 | 0 | 6 |
 | 🟢 Baixa | 4 | 0 | 0 | 4 |
-| **TOTAL** | **19** | **6** | **1** | **12** |
+| **TOTAL** | **19** | **7** | **1** | **11** |
 
-**Progresso**: 36.8% completo (7/19) | ✅ **TODAS as críticas resolvidas!**
+**Progresso**: 42.1% completo (8/19) | ✅ **TODAS as críticas resolvidas!**
 
 ---
 
 ## 🎯 Próximos Passos
 
-1. ⏳ Revisar inconsistência #9 (Bot Sem Permissões Após Demotion)
-2. Continuar revisão sequencial das 12 inconsistências restantes
+1. ⏳ Revisar inconsistência #10 (Falta Feedback Durante Processamento de Anexos)
+2. Continuar revisão sequencial das 11 inconsistências restantes
