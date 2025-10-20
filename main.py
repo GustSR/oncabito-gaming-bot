@@ -82,7 +82,13 @@ def main() -> None:
         # 6. Inicia o bot
         logger.info("--- Iniciando o bot Sentinela com a NOVA ARQUITETURA ---")
         all_updates = [t for t in UpdateType]
-        application.run_polling(allowed_updates=all_updates)
+        # Long polling com timeout de 60s (padrão é 30s)
+        # Reduz requests em 50% sem afetar responsividade
+        application.run_polling(
+            allowed_updates=all_updates,
+            timeout=60,  # Aguarda até 60s por updates
+            drop_pending_updates=True  # Ignora updates antigos no boot
+        )
         logger.info("--- Bot Sentinela foi encerrado ---")
 
     except Exception as e:
