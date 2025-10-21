@@ -8,9 +8,9 @@ relacionados à verificação de CPF.
 import logging
 from typing import Dict, Any, List
 
-from .base import CommandHandler, CommandResult
-from ...infrastructure.locking import distributed_lock
-from ..commands.cpf_verification_commands import (
+from src.sentinela.application.command_handlers.base import CommandHandler, CommandResult
+from src.sentinela.infrastructure.locking import distributed_lock
+from src.sentinela.application.commands.cpf_verification_commands import (
     StartCPFVerificationCommand,
     SubmitCPFForVerificationCommand,
     CancelCPFVerificationCommand,
@@ -18,19 +18,20 @@ from ..commands.cpf_verification_commands import (
     GetVerificationStatsCommand,
     ResolveCPFDuplicateCommand
 )
-from ...domain.entities.cpf_verification import (
+from src.sentinela.domain.entities.cpf_verification import (
     CPFVerificationRequest,
     VerificationId,
     VerificationType,
     VerificationStatus
 )
-from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
-from ...domain.repositories.user_repository import UserRepository
-from ...domain.value_objects.identifiers import UserId
-from ...domain.value_objects.cpf import CPF
-from ...domain.services.cpf_validation_service import CPFValidationService
-from ...domain.services.duplicate_cpf_service import DuplicateCPFService
-from ...infrastructure.events.event_bus import EventBus
+from src.sentinela.domain.repositories.cpf_verification_repository import CPFVerificationRepository
+from src.sentinela.domain.repositories.user_repository import UserRepository
+from src.sentinela.domain.value_objects.identifiers import UserId
+from src.sentinela.domain.value_objects.cpf import CPF
+from src.sentinela.domain.services.cpf_validation_service import CPFValidationService
+from src.sentinela.domain.services.duplicate_cpf_service import DuplicateCPFService
+from src.sentinela.infrastructure.events.event_bus import EventBus
+from src.sentinela.integrations.hubsoft.cliente import get_client_info
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +449,6 @@ class ResolveCPFDuplicateHandler(CommandHandler[ResolveCPFDuplicateCommand]):
             
             cpf = CPF.from_raw(last_attempt.cpf_provided)
 
-            from ....integrations.hubsoft.cliente import get_client_info
             client_data = get_client_info(str(cpf), full_data=True)
             if not client_data:
                  return CommandResult.failure("client_not_found_after_resolution", "Cliente não encontrado no Hubsoft após resolução.")

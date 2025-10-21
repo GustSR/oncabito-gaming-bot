@@ -11,14 +11,15 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from ...infrastructure.config.dependency_injection import get_container
-from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
-from ...application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
-from ...domain.value_objects.identifiers import UserId
-from ...domain.entities.cpf_verification import VerificationStatus
-from ...core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID
-from .cpf_verification_handler import CPFVerificationHandler
-from .support_form_handler import (
+from src.sentinela.infrastructure.config.dependency_injection import get_container
+from src.sentinela.application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
+from src.sentinela.application.use_cases.cpf_verification_use_case import CPFVerificationUseCase
+from src.sentinela.domain.value_objects.identifiers import UserId
+from src.sentinela.domain.entities.cpf_verification import VerificationStatus
+from src.sentinela.domain.value_objects.welcome_message import WelcomeMessage
+from src.sentinela.core.config import SUPPORT_TOPIC_ID, TELEGRAM_GROUP_ID, ONCABO_SITE_URL, ONCABO_WHATSAPP_URL, WELCOME_TOPIC_ID, RULES_TOPIC_ID
+from src.sentinela.presentation.handlers.cpf_verification_handler import CPFVerificationHandler
+from src.sentinela.presentation.handlers.support_form_handler import (
     SupportFormHandler,
     SupportState,
     get_progress_bar
@@ -134,8 +135,6 @@ class TelegramBotHandler:
             user = update.effective_user
             if not user:
                 return
-
-            from ...core.config import ONCABO_SITE_URL, ONCABO_WHATSAPP_URL
 
             # Texto de boas-vindas acolhedor (baseado em welcome_message.py)
             welcome_text = (
@@ -271,7 +270,6 @@ class TelegramBotHandler:
 
                 # Apresentação do OnCabito e solicitação de CPF (FLUXO DE RESET)
                 # Esta parte agora é executada para qualquer usuário não-membro, resetando a conversa.
-                from ...core.config import ONCABO_SITE_URL, ONCABO_WHATSAPP_URL
 
                 welcome_message = (
                     f"🎮 <b>Olá, {user.first_name}! Eu sou o OnCabito!</b> 🤖\n\n"
@@ -562,6 +560,10 @@ class TelegramBotHandler:
             else:
                 full_status_message = await self._get_full_status_message(user.id)
                 await update.message.reply_text(full_status_message, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Erro no comando /status: {e}", exc_info=True)
+            if update.effective_user:
+                await context.bot.send_message(chat_id=update.effective_user.id, text="❌ Erro ao verificar status. Tente novamente.")
 
     async def _get_user_active_tickets(self, user_id: int) -> List[Dict[str, Any]]:
         """Busca e retorna apenas os tickets ativos de um usuário."""
@@ -1251,8 +1253,6 @@ class TelegramBotHandler:
                     logger.info(f"Iniciando fluxo de boas-vindas para {user.first_name} (ID: {user.id}). Usuário novo ou regras não aceitas.")
                     
                     if hasattr(self, '_welcome_use_case') and self._welcome_use_case:
-                        from ...domain.value_objects.welcome_message import WelcomeMessage
-                        from ...core.config import WELCOME_TOPIC_ID, RULES_TOPIC_ID
                         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
                         await self._welcome_use_case.handle_new_member(
@@ -1322,8 +1322,6 @@ class TelegramBotHandler:
                 if result.success:
                     # Atualiza mensagem
                     user_mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
-
-                    from ...domain.value_objects.welcome_message import WelcomeMessage
                     confirmation_msg = WelcomeMessage.create_rules_accepted()
                     confirmation_text = confirmation_msg.format_for_user(
                         user_mention=user_mention,
