@@ -2,16 +2,26 @@
 
 Este diretório contém todos os testes do projeto Sentinela Bot.
 
+**Última atualização:** 21 de Outubro de 2025
+**Cobertura atual:** Testes para 4 inconsistências críticas resolvidas
+
 ## 📁 Estrutura
 
 ```
 tests/
-├── conftest.py              # Fixtures globais do pytest
-├── unit/                    # Testes unitários
-│   ├── handlers/           # Testes de handlers do Telegram
-│   └── use_cases/          # Testes de Use Cases
-├── integration/            # Testes de integração
-└── fixtures/               # Dados de teste (JSONs, mocks, etc)
+├── conftest.py                                      # Fixtures globais do pytest
+├── unit/                                            # Testes unitários
+│   ├── handlers/                                    # Testes de handlers
+│   │   ├── test_user_verification.py               # ✅ Verificação de usuário (TASK-002)
+│   │   ├── test_callback_idempotency.py            # ✅ Idempotência de callbacks (Inconsist. #3)
+│   │   └── test_permission_error_handling.py       # ✅ Erros de permissão (Inconsist. #9)
+│   ├── locking/                                     # Testes de locks
+│   │   └── test_distributed_lock.py                # ✅ Race conditions (Inconsist. #1)
+│   ├── entities/                                    # Testes de entidades
+│   │   └── test_cpf_verification_context.py        # ✅ Persistência de contexto (Inconsist. #2)
+│   └── use_cases/                                   # Testes de Use Cases (TODO)
+├── integration/                                     # Testes de integração (TODO)
+└── fixtures/                                        # Dados de teste (TODO)
 ```
 
 ## 🚀 Executando os Testes
@@ -19,6 +29,10 @@ tests/
 ### Instalar dependências de teste
 
 ```bash
+# Instalar todas as dependências de teste
+pip install -r requirements-test.txt
+
+# OU instalar apenas o básico
 pip install pytest pytest-asyncio pytest-cov
 ```
 
