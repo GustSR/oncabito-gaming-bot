@@ -32,6 +32,12 @@ jobs:
         pip install -r requirements-test.txt
 
     - name: 🧪 Executar testes com pytest
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || 'test_token_dummy' }}
+        TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID || '-1001234567890' }}
+        TECH_NOTIFICATION_CHANNEL_ID: ${{ secrets.TECH_NOTIFICATION_CHANNEL_ID || '-1001234567890' }}
+        HUBSOFT_ENABLED: "false"
+        DATABASE_FILE: ":memory:"
       run: |
         pytest tests/ -v --cov=src/sentinela --cov-report=xml --cov-report=term
 
