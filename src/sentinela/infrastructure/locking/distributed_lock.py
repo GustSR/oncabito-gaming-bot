@@ -109,8 +109,8 @@ class InMemoryLockManager:
 
         try:
             # Tenta adquirir o lock com timeout
-            async with asyncio.timeout(timeout):
-                await lock.acquire()
+            # Usa wait_for para compatibilidade com Python 3.10+
+            await asyncio.wait_for(lock.acquire(), timeout=timeout)
 
             logger.debug(f"Lock adquirido: {key}")
 
