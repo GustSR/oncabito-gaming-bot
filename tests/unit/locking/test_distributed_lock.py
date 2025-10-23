@@ -139,12 +139,12 @@ class TestDistributedLock:
         lock_key = f"cpf_verification:{cpf}"
         verification_results = []
 
-        async def verify_cpf(user_id: int):
+        async def verify_cpf(user_id: int, timeout: int):
             """Simula verificação de CPF."""
             try:
-                async with distributed_lock(lock_key, timeout=2):
+                async with distributed_lock(lock_key, timeout=timeout):
                     verification_results.append(f"user_{user_id}_started")
-                    await asyncio.sleep(1)  # Simula processamento
+                    await asyncio.sleep(2)  # Simula processamento (2 segundos)
                     verification_results.append(f"user_{user_id}_completed")
                     return True
             except asyncio.TimeoutError:
@@ -152,8 +152,10 @@ class TestDistributedLock:
                 return False
 
         # Act: Simula 2 usuários tentando verificar mesmo CPF simultaneamente
-        user_a = asyncio.create_task(verify_cpf(user_id=111))
-        user_b = asyncio.create_task(verify_cpf(user_id=222))
+        # user_a tem timeout generoso (10s), user_b tem timeout curto (1s)
+        user_a = asyncio.create_task(verify_cpf(user_id=111, timeout=10))
+        await asyncio.sleep(0.1)  # Garante que user_a adquire primeiro
+        user_b = asyncio.create_task(verify_cpf(user_id=222, timeout=1))
         results = await asyncio.gather(user_a, user_b)
 
         # Assert
