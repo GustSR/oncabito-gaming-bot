@@ -23,51 +23,10 @@ class SQLiteUserRepository(UserRepository):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async def _init_database(self):
-        """Inicializa as tabelas do banco de dados."""
-        import aiosqlite
-
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    telegram_user_id INTEGER UNIQUE NOT NULL,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    is_banned BOOLEAN DEFAULT FALSE,
-                    ban_reason TEXT,
-                    roles TEXT DEFAULT '[]',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_activity_at TEXT,
-                    metadata TEXT DEFAULT '{}'
-                )
-            """)
-
-            await db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_users_telegram_id
-                ON users(telegram_user_id)
-            """)
-
-            await db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_users_username
-                ON users(username)
-            """)
-
-            await db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_users_banned
-                ON users(is_banned)
-            """)
-
-            await db.commit()
-
     async def save(self, user: User) -> None:
         """Salva um usuário."""
         import aiosqlite
         import json
-
-        await self._init_database()
 
         async with aiosqlite.connect(self.db_path) as db:
             # Verifica se existe
@@ -90,7 +49,10 @@ class SQLiteUserRepository(UserRepository):
                         roles = ?,
                         updated_at = ?,
                         last_activity_at = ?,
-                        metadata = ?
+                        metadata = ?,
+                        expires_at = ?,
+                        rules_accepted = ?,
+                        rules_accepted_at = ?
                     WHERE id = ?
                 """, (
                     user.telegram_user_id,
@@ -103,6 +65,9 @@ class SQLiteUserRepository(UserRepository):
                     datetime.now().isoformat(),
                     user.last_activity_at.isoformat() if user.last_activity_at else None,
                     self._serialize_metadata(user.metadata),
+                    user.expires_at.isoformat() if user.expires_at else None,
+                    user.rules_accepted,
+                    user.rules_accepted_at.isoformat() if user.rules_accepted_at else None,
                     user.id.value
                 ))
             else:
@@ -110,22 +75,28 @@ class SQLiteUserRepository(UserRepository):
                 await db.execute("""
                     INSERT INTO users (
                         id, telegram_user_id, username, first_name, last_name,
-                        is_banned, ban_reason, roles, created_at, updated_at,
-                        last_activity_at, metadata
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        cpf, client_name, is_banned, ban_reason, roles, created_at, updated_at,
+                        last_activity_at, metadata, status, expires_at, rules_accepted, rules_accepted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     user.id.value,
                     user.telegram_user_id,
                     user.username,
                     user.first_name,
                     user.last_name,
+                    user.cpf.value,
+                    user.client_name,
                     user.is_banned,
                     user.ban_reason,
                     json.dumps(user.roles),
                     user.created_at.isoformat(),
                     datetime.now().isoformat(),
                     user.last_activity_at.isoformat() if user.last_activity_at else None,
-                    self._serialize_metadata(user.metadata)
+                    self._serialize_metadata(user.metadata),
+                    user.status.value,
+                    user.expires_at.isoformat() if user.expires_at else None,
+                    user.rules_accepted,
+                    user.rules_accepted_at.isoformat() if user.rules_accepted_at else None
                 ))
 
             await db.commit()
@@ -134,9 +105,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca usuário por ID."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE id = ? LIMIT 1
             """, (user_id.value,))
@@ -150,9 +120,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca usuário por ID do Telegram."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE telegram_user_id = ? LIMIT 1
             """, (telegram_id,))
@@ -166,9 +135,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca usuário por username."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE username = ? LIMIT 1
             """, (username,))
@@ -182,9 +150,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca todos os usuários ativos."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE is_banned = FALSE
                 ORDER BY created_at DESC
@@ -197,9 +164,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca usuários banidos."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE is_banned = TRUE
                 ORDER BY updated_at DESC
@@ -211,8 +177,6 @@ class SQLiteUserRepository(UserRepository):
     async def count_active_users(self) -> int:
         """Conta usuários ativos."""
         import aiosqlite
-
-        await self._init_database()
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
@@ -226,9 +190,8 @@ class SQLiteUserRepository(UserRepository):
         """Busca usuários por role."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users WHERE roles LIKE ?
                 ORDER BY created_at DESC
@@ -240,8 +203,6 @@ class SQLiteUserRepository(UserRepository):
     async def ban_user(self, user_id: UserId, reason: str) -> bool:
         """Bane um usuário."""
         import aiosqlite
-
-        await self._init_database()
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
@@ -259,8 +220,6 @@ class SQLiteUserRepository(UserRepository):
         """Remove ban de um usuário."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 UPDATE users SET
@@ -276,8 +235,6 @@ class SQLiteUserRepository(UserRepository):
     async def update_last_activity(self, user_id: UserId) -> bool:
         """Atualiza última atividade do usuário."""
         import aiosqlite
-
-        await self._init_database()
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
@@ -302,8 +259,6 @@ class SQLiteUserRepository(UserRepository):
         """
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
@@ -317,6 +272,20 @@ class SQLiteUserRepository(UserRepository):
 
             return None
 
+    async def find_active_users_without_cpf(self) -> List[User]:
+        """Busca usuários ativos que não possuem CPF."""
+        import aiosqlite
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT * FROM users 
+                WHERE (status = 'active' OR status = 'pending_verification') 
+                AND (cpf IS NULL OR cpf = '')
+            """)
+            rows = await cursor.fetchall()
+            return [self._row_to_user(row) for row in rows]
+
     async def find_users_without_cpf(self) -> List[User]:
         """
         Busca todos os usuários que NÃO têm CPF vinculado.
@@ -326,9 +295,8 @@ class SQLiteUserRepository(UserRepository):
         """
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
                 SELECT * FROM users
                 WHERE cpf IS NULL OR cpf = ''
@@ -353,8 +321,6 @@ class SQLiteUserRepository(UserRepository):
             True se atualizado com sucesso
         """
         import aiosqlite
-
-        await self._init_database()
 
         async with aiosqlite.connect(self.db_path) as db:
             # Remove CPF do usuário antigo
@@ -382,8 +348,6 @@ class SQLiteUserRepository(UserRepository):
         """Obtém estatísticas de um usuário."""
         import aiosqlite
 
-        await self._init_database()
-
         # Por agora retorna estatísticas básicas, pode ser expandido
         user = await self.find_by_id(user_id)
         if not user:
@@ -403,8 +367,6 @@ class SQLiteUserRepository(UserRepository):
         """Remove um usuário."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 DELETE FROM users WHERE id = ?
@@ -417,8 +379,6 @@ class SQLiteUserRepository(UserRepository):
         """Verifica se um usuário existe."""
         import aiosqlite
 
-        await self._init_database()
-
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
                 SELECT 1 FROM users WHERE id = ? LIMIT 1
@@ -427,24 +387,54 @@ class SQLiteUserRepository(UserRepository):
             result = await cursor.fetchone()
             return result is not None
 
-    def _row_to_user(self, row) -> User:
+    def _row_to_user(self, row: sqlite3.Row) -> User:
         """Converte linha do banco para User."""
-        import json
+        from ...domain.entities.user import ServiceInfo, UserStatus
+        from ...domain.value_objects.cpf import CPF
         from datetime import datetime
+        import json
 
-        return User(
-            id=UserId(row[0]),
-            telegram_user_id=row[1],
-            username=row[2],
-            first_name=row[3],
-            last_name=row[4],
-            is_banned=bool(row[5]),
-            ban_reason=row[6],
-            roles=json.loads(row[7]) if row[7] else [],
-            created_at=datetime.fromisoformat(row[8]),
-            last_activity_at=datetime.fromisoformat(row[10]) if row[10] else None,
-            metadata=self._deserialize_metadata(row[11])
+        # Mapeia os dados da linha para os argumentos do construtor User
+        user_id = UserId(int(row["id"]))
+        username = row["username"]
+        
+        # O construtor do User espera um objeto CPF
+        cpf_obj = CPF.from_raw(row["cpf"]) if row["cpf"] else None
+        
+        client_name = row["client_name"]
+        
+        # Cria ServiceInfo se houver dados de serviço
+        service_info = None
+        if row["service_name"] and row["service_status"]:
+            service_info = ServiceInfo(
+                name=row["service_name"],
+                status=row["service_status"]
+            )
+
+        # Validação para garantir que campos obrigatórios não sejam nulos
+        if not cpf_obj or not client_name:
+            raise ValueError(f"Dados essenciais (CPF, client_name) ausentes para o usuário {user_id.value}")
+
+        # Cria a instância do usuário
+        user = User(
+            user_id=user_id,
+            telegram_user_id=row["telegram_user_id"],
+            username=username,
+            first_name=row["first_name"],
+            last_name=row["last_name"],
+            cpf=cpf_obj,
+            client_name=client_name,
+            service_info=service_info,
+            rules_accepted=bool(row["rules_accepted"]) if "rules_accepted" in row.keys() else False,
+            rules_accepted_at=datetime.fromisoformat(row["rules_accepted_at"]) if row["rules_accepted_at"] else None
         )
+
+        # Recarrega o estado do usuário a partir do banco de dados
+        user._status = UserStatus(row["status"]) if row["status"] else UserStatus.PENDING_VERIFICATION
+        user._last_verification = datetime.fromisoformat(row["last_verification"]) if row["last_verification"] else None
+        user._is_admin = True if row["roles"] and 'admin' in json.loads(row["roles"]) else False
+
+        return user
 
     def _serialize_metadata(self, metadata: Dict[str, Any]) -> str:
         """Serializa metadados para JSON."""
@@ -455,6 +445,23 @@ class SQLiteUserRepository(UserRepository):
         """Deserializa metadados do JSON."""
         import json
         try:
-            return json.loads(metadata_str) if metadata_str else {}
+            return json.loads(data_str) if data_str else {}
         except:
             return {}
+
+    async def delete_expired_pending_users(self) -> int:
+        """Deleta usuários pendentes cuja data de expiração já passou."""
+        import aiosqlite
+
+        async with aiosqlite.connect(self.db_path) as db:
+            now_iso = datetime.now().isoformat()
+            
+            cursor = await db.execute("""
+                DELETE FROM users
+                WHERE status = ? AND expires_at IS NOT NULL AND expires_at < ?
+            """, ("pending_verification", now_iso))
+            
+            await db.commit()
+            deleted_count = cursor.rowcount
+            logger.info(f"{deleted_count} usuários pendentes expirados foram removidos.")
+            return deleted_count

@@ -141,3 +141,16 @@ class UserRepository(Repository[User, UserId]):
             dict: Estatísticas do usuário
         """
         pass
+
+    @abstractmethod
+    async def find_by_cpf(self, cpf: str) -> Optional[User]:
+        """
+        Busca um usuário pelo CPF.
+
+        Args:
+            cpf: O CPF (texto puro) a ser buscado.
+
+        Returns:
+            O usuário, se encontrado.
+        """
+        pass

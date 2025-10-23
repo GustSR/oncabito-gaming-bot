@@ -73,7 +73,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
         """Faz requisição para a API HubSoft."""
 
         # Rate limiting
-        await self.rate_limiter.acquire()
+        await self.rate_limiter.wait_for_rate_limit()
 
         try:
             session = await self._get_session()
@@ -83,7 +83,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
             headers = {}
 
             if authenticated:
-                token = await self.token_manager.get_valid_token()
+                token = self.token_manager.get_access_token()
                 if not token:
                     # Faz login se necessário
                     token = await self._authenticate()
@@ -178,13 +178,15 @@ class HubSoftAPIService(HubSoftAPIRepository):
         """Verifica cliente no HubSoft por CPF."""
         try:
             params = {
-                "cpf": cpf,
-                "include_contracts": include_contracts
+                "busca": "cpf_cnpj",
+                "termo_busca": cpf,
+                "incluir_contrato": str(include_contracts).lower(),
+                "servico_status": "servico_habilitado"
             }
 
             response = await self._make_request(
                 "GET",
-                "/clients/verify",
+                "/api/v1/integracao/cliente",
                 params=params
             )
 
@@ -308,35 +310,28 @@ class HubSoftAPIService(HubSoftAPIRepository):
         Returns:
             Ticket mapeado para formato interno
         """
-        # Mapeia status da API HubSoft para status interno
-        status_map = {
-            'Pendente': 'pending',
-            'Aberto': 'open',
-            'Em Andamento': 'in_progress',
-            'Aguardando Cliente': 'waiting_customer',
-            'Fechado': 'closed',
-            'Resolvido': 'resolved',
-            'Cancelado': 'cancelled'
-        }
+        hubsoft_status_obj = hubsoft_ticket.get('status', {})
 
-        hubsoft_status = hubsoft_ticket.get('status', 'Pendente')
-        internal_status = status_map.get(hubsoft_status, 'pending')
+        # Usa o 'prefixo' para lógica interna e a 'descricao' para exibição ao usuário.
+        status_key = hubsoft_status_obj.get('prefixo', 'unknown')
+        status_display = hubsoft_status_obj.get('descricao', 'Status Desconhecido')
 
         # Tenta extrair categoria do tipo_atendimento ou parametros
         # Por padrão, tickets do HubSoft não têm categoria, então usa "others"
         category = 'others'
-
-        # Se o ticket foi criado pelo bot, pode ter parametros com categoria
-        # (verificar se há campo parametros no retorno da API)
+        if hubsoft_ticket.get('tipo_atendimento') and isinstance(hubsoft_ticket['tipo_atendimento'], dict):
+            category = hubsoft_ticket['tipo_atendimento'].get('descricao', 'others')
 
         return {
             'id': hubsoft_ticket.get('id_atendimento'),
             'protocol': hubsoft_ticket.get('protocolo'),
-            'status': internal_status,
+            'status_key': status_key,          # Para lógica (ex: 'aguardando_analise')
+            'status_display': status_display,    # Para exibição (ex: 'Aguardando Análise')
             'category': category,
             'created_at': hubsoft_ticket.get('data_cadastro'),
             'closed_at': hubsoft_ticket.get('data_fechamento'),
             'description': hubsoft_ticket.get('descricao_abertura', ''),
+            'closure_description': hubsoft_ticket.get('descricao_fechamento', ''),
             'type': hubsoft_ticket.get('tipo_atendimento', ''),
             'affected_game': None,  # HubSoft não retorna esse campo diretamente
             # Dados originais da API HubSoft para referência

@@ -49,6 +49,24 @@ class CPFVerificationRepository(Repository[CPFVerificationRequest, VerificationI
         pass
 
     @abstractmethod
+    async def find_by_user_id_and_status(
+        self,
+        user_id: int,
+        status: VerificationStatus
+    ) -> List[CPFVerificationRequest]:
+        """
+        Busca todas as verificações de um usuário com um status específico.
+
+        Args:
+            user_id: ID do usuário (int)
+            status: Status da verificação
+
+        Returns:
+            List[CPFVerificationRequest]: Lista de verificações do usuário com o status
+        """
+        pass
+
+    @abstractmethod
     async def find_by_status(self, status: VerificationStatus) -> List[CPFVerificationRequest]:
         """
         Busca verificações por status.

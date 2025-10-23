@@ -93,7 +93,8 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
         user_mention: str,
         verification_type: VerificationType,
         source_action: Optional[str] = None,
-        expires_at: Optional[datetime] = None
+        expires_at: Optional[datetime] = None,
+        duplicate_resolution_context: Optional[Dict[str, Any]] = None
     ):
         super().__init__(verification_id)
         self._user_id = user_id
@@ -110,6 +111,7 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
         self._client_data: Optional[Dict[str, Any]] = None
         self._verification_data: Dict[str, Any] = {}
         self._metadata: Dict[str, Any] = {}
+        self._duplicate_resolution_context: Optional[Dict[str, Any]] = duplicate_resolution_context
 
     # Properties
     @property
@@ -201,6 +203,16 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
     def metadata(self) -> Dict[str, Any]:
         """Retorna metadados da verificação."""
         return getattr(self, '_metadata', {})
+
+    @property
+    def duplicate_resolution_context(self) -> Optional[Dict[str, Any]]:
+        """
+        Retorna contexto de resolução de duplicatas.
+
+        Persistido no banco para sobreviver reinicializações do bot.
+        Contém informações sobre usuários conflitantes que precisam ser resolvidos.
+        """
+        return getattr(self, '_duplicate_resolution_context', None)
 
     # Business rules
     def is_expired(self) -> bool:
@@ -307,6 +319,7 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
             username=self._username,
             verification_type=self._verification_type.value,
             cpf_number=str(cpf),
+            client_data=self._client_data,  # Adicionado para propagar os dados
             success=True
         ))
 
@@ -405,6 +418,32 @@ class CPFVerificationRequest(AggregateRoot[VerificationId]):
             "remaining": self.has_attempts_left(),
             "last_attempt": self._attempts[-1].attempted_at if self._attempts else None
         }
+
+    def set_duplicate_resolution_context(
+        self,
+        conflicting_users: list[Dict[str, Any]],
+        verification_id: str
+    ) -> None:
+        """
+        Define o contexto de resolução de duplicatas.
+
+        Args:
+            conflicting_users: Lista de usuários conflitantes
+            verification_id: ID da verificação em conflito
+        """
+        self._duplicate_resolution_context = {
+            "verification_id": verification_id,
+            "conflicting_users": conflicting_users,
+            "created_at": datetime.now().isoformat()
+        }
+
+    def clear_duplicate_resolution_context(self) -> None:
+        """Limpa o contexto de resolução de duplicatas."""
+        self._duplicate_resolution_context = None
+
+    def has_pending_duplicate_resolution(self) -> bool:
+        """Verifica se há uma resolução de duplicata pendente."""
+        return self._duplicate_resolution_context is not None
 
 
 class VerificationBusinessRuleError(Exception):

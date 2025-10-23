@@ -6,6 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from .group_client import GroupClient
+from ...domain.repositories.group_member_repository import GroupMemberRepository
+
 
 if TYPE_CHECKING:
     pass
@@ -20,6 +22,9 @@ class GroupClientImpl(GroupClient):
     Utiliza os serviços existentes como base.
     """
 
+    def __init__(self, member_repository: GroupMemberRepository):
+        self.member_repository = member_repository
+
     async def is_user_in_group(self, user_id: int) -> bool:
         """
         Verifica se usuário está no grupo.
@@ -31,11 +36,8 @@ class GroupClientImpl(GroupClient):
             True se usuário está no grupo, False caso contrário
         """
         try:
-            # Importa aqui para evitar circular imports durante inicialização
-            from ...services.group_service import is_user_in_group
-
             logger.info(f"Verificando se usuário {user_id} está no grupo...")
-            result = await is_user_in_group(user_id)
+            result = await self.member_repository.exists(user_id)
 
             logger.info(f"Usuário {user_id} {'está' if result else 'não está'} no grupo")
             return result

@@ -5,14 +5,14 @@ Registra os handlers do Telegram Bot para a nova arquitetura.
 
 import logging
 from telegram.ext import Application
-from ..core.config import TELEGRAM_TOKEN
+from src.sentinela.core.config import TELEGRAM_TOKEN
 
 # Cria a instância principal da aplicação do bot
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ChatMemberHandler, filters
 
-from .handlers.telegram_bot_handler import TelegramBotHandler
+from src.sentinela.presentation.handlers.telegram_bot_handler import TelegramBotHandler
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,6 @@ def register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("start", handler.handle_start_command))
     app.add_handler(CommandHandler("suporte", handler.handle_support_command))
     app.add_handler(CommandHandler("status", handler.handle_status_command))
-
-    # Comandos de admin
-    app.add_handler(CommandHandler("admin", handler.handle_admin_command))
 
     # Callbacks de botões
     app.add_handler(CallbackQueryHandler(handler.handle_callback_query))

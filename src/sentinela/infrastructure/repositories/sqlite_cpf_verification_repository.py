@@ -21,73 +21,9 @@ logger = logging.getLogger(__name__)
 class SQLiteCPFVerificationRepository(CPFVerificationRepository):
     """Implementação SQLite do repositório de verificações CPF."""
 
-    def __init__(self, db_path: str = "data/oncabo.db"):
+    def __init__(self, db_path: str = "data/database/sentinela.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_tables()
-
-    def _init_tables(self) -> None:
-        """Inicializa tabelas do banco."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS cpf_verifications (
-                    id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    user_mention TEXT,
-                    cpf_hash TEXT NOT NULL,
-                    verification_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    max_attempts INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    verification_data TEXT,
-                    metadata TEXT,
-                    client_data TEXT
-                )
-            """)
-
-            # Migração: adiciona coluna user_mention se não existir
-            try:
-                conn.execute("ALTER TABLE cpf_verifications ADD COLUMN user_mention TEXT")
-                conn.commit()
-                logger.info("Coluna user_mention adicionada à tabela cpf_verifications")
-            except sqlite3.OperationalError:
-                # Coluna já existe, ignora
-                pass
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS cpf_verification_attempts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    verification_id TEXT NOT NULL,
-                    attempted_at TEXT NOT NULL,
-                    success BOOLEAN NOT NULL,
-                    response_data TEXT,
-                    error_message TEXT,
-                    duration_ms INTEGER,
-                    cpf_provided_hash TEXT,
-                    FOREIGN KEY (verification_id) REFERENCES cpf_verifications(id)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_user_id ON cpf_verifications(user_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_status ON cpf_verifications(status)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verifications_cpf_hash ON cpf_verifications(cpf_hash)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cpf_verification_attempts_verification_id ON cpf_verification_attempts(verification_id)
-            """)
-
-            conn.commit()
 
     async def save(self, verification: CPFVerificationRequest) -> None:
         """Salva uma verificação CPF."""
@@ -117,7 +53,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                             completed_at = ?,
                             verification_data = ?,
                             metadata = ?,
-                            client_data = ?
+                            client_data = ?,
+                            duplicate_resolution_context = ?
                         WHERE id = ?
                     """, (
                         verification.user_id.value,
@@ -132,6 +69,7 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         self._serialize_data(verification.verification_data),
                         self._serialize_data(verification.metadata),
                         self._serialize_data(verification.client_data) if verification.client_data else None,
+                        self._serialize_data(verification.duplicate_resolution_context) if verification.duplicate_resolution_context else None,
                         verification.id.value
                     ))
                 else:
@@ -140,8 +78,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         INSERT INTO cpf_verifications (
                             id, user_id, username, user_mention, cpf_hash, verification_type,
                             status, max_attempts, created_at, expires_at,
-                            completed_at, verification_data, metadata, client_data
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            completed_at, verification_data, metadata, client_data, duplicate_resolution_context
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         verification.id.value,
                         verification.user_id.value,
@@ -156,7 +94,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
                         verification.completed_at.isoformat() if verification.completed_at else None,
                         self._serialize_data(verification.verification_data),
                         self._serialize_data(verification.metadata),
-                        self._serialize_data(verification.client_data) if verification.client_data else None
+                        self._serialize_data(verification.client_data) if verification.client_data else None,
+                        self._serialize_data(verification.duplicate_resolution_context) if verification.duplicate_resolution_context else None
                     ))
 
                 # Salva tentativas
@@ -275,6 +214,30 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
         except Exception as e:
             logger.error(f"Erro ao buscar verificação pendente do usuário {user_id}: {e}")
             return None
+
+    async def find_by_user_id_and_status(
+        self,
+        user_id: int,
+        status: VerificationStatus
+    ) -> List[CPFVerificationRequest]:
+        """Busca todas as verificações de um usuário com um status específico."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute("""
+                    SELECT * FROM cpf_verifications
+                    WHERE user_id = ? AND status = ?
+                    ORDER BY created_at DESC
+                """, (user_id, status.value))
+
+                rows = cursor.fetchall()
+                return [await self._row_to_verification(conn, row) for row in rows]
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar verificações do usuário {user_id} com status {status.value}: {e}")
+            return []
 
     async def find_by_status(self, status: VerificationStatus, limit: int = 50) -> List[CPFVerificationRequest]:
         """Busca verificações por status."""
@@ -424,6 +387,11 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             )
             attempts.append(attempt)
 
+        # Recupera duplicate_resolution_context se existir
+        duplicate_context = None
+        if 'duplicate_resolution_context' in row.keys() and row['duplicate_resolution_context']:
+            duplicate_context = self._deserialize_data(row['duplicate_resolution_context'])
+
         # Cria verificação
         verification = CPFVerificationRequest(
             verification_id=VerificationId(row['id']),
@@ -432,7 +400,8 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
             user_mention=f"@{row['username']}",  # Reconstruído a partir do username
             verification_type=VerificationType(row['verification_type']),
             source_action=None,  # Não persistido no banco
-            expires_at=datetime.fromisoformat(row['expires_at'])
+            expires_at=datetime.fromisoformat(row['expires_at']),
+            duplicate_resolution_context=duplicate_context
         )
 
         # Restaura estado

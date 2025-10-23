@@ -112,10 +112,13 @@ class VerificationCompletedHandler(EventHandler):
     Handler para evento de verificação completada.
 
     Responsabilidades:
+    - Criar ou atualizar o usuário no repositório principal
     - Notificar usuário sobre sucesso
-    - Atualizar dados do usuário no sistema
     - Ativar funcionalidades premium
     """
+
+    def __init__(self, user_repository: "UserRepository"):
+        self.user_repository = user_repository
 
     @property
     def event_type(self) -> Type[DomainEvent]:
@@ -136,14 +139,74 @@ class VerificationCompletedHandler(EventHandler):
             f"- CPF: {cpf_masked} - Tipo: {event.verification_type}"
         )
 
-        # Notifica usuário sobre sucesso
+        # 1. Criar ou atualizar o usuário no sistema
+        await self._create_or_update_user(event)
+
+        # 2. Notificar usuário sobre sucesso
         await self._notify_verification_success(event)
 
-        # Ativa funcionalidades premium
+        # 3. Ativar funcionalidades premium
         await self._activate_premium_features(event)
 
-        # Atualiza métricas de sucesso
+        # 4. Atualiza métricas de sucesso
         await self._update_success_metrics(event)
+
+    async def _create_or_update_user(self, event: VerificationCompleted) -> None:
+        """Cria um novo usuário ou atualiza um existente com dados da verificação."""
+        from ....domain.entities.user import User, ServiceInfo
+        from ....domain.value_objects.cpf import CPF
+        from ....domain.value_objects.identifiers import UserId
+
+        try:
+            logger.info(f"Atualizando/Criando registro para o usuário {event.user_id}...")
+
+            user = await self.user_repository.find_by_telegram_id(event.user_id)
+
+            client_data = event.client_data or {}
+            client_name = client_data.get('nome_razaosocial', event.username)
+            name_parts = client_name.split(' ', 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else None
+
+            servicos = client_data.get('servicos', [])
+            service_info = None
+            if servicos:
+                primeiro_servico = servicos[0]
+                service_info = ServiceInfo(
+                    name=primeiro_servico.get('nome', 'N/A'),
+                    status=primeiro_servico.get('status', 'N/A'),
+                    service_id=primeiro_servico.get('id')
+                )
+
+            if user:
+                logger.info(f"Usuário {event.user_id} encontrado. Atualizando dados.")
+                user.update_client_data(client_data)
+            else:
+                from datetime import datetime, timedelta
+                from ....core.config import INVITE_LINK_EXPIRE_TIME
+
+                # Define o tempo de expiração para o registro do usuário pendente
+                expires_at = datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)
+
+                logger.info(f"Usuário {event.user_id} não encontrado. Criando novo registro com expiração em {expires_at.isoformat()}.")
+                user = User(
+                    user_id=UserId(event.user_id),
+                    telegram_user_id=event.user_id,
+                    username=event.username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    cpf=CPF(event.cpf_number),
+                    client_name=client_name,
+                    service_info=service_info,
+                    is_banned=False,  # Garante o valor padrão
+                    expires_at=expires_at
+                )
+
+            await self.user_repository.save(user)
+            logger.info(f"Usuário {event.user_id} salvo com sucesso no repositório.")
+
+        except Exception as e:
+            logger.error(f"Erro ao criar/atualizar usuário {event.user_id} após verificação: {e}", exc_info=True)
 
     async def _notify_verification_success(self, event: VerificationCompleted) -> None:
         """

@@ -2,32 +2,41 @@
 
 Bem-vindo à documentação do **Sentinela Bot** - Sistema de gerenciamento de comunidade gaming OnCabo.
 
+> **Última atualização:** 21 de Outubro de 2025
+> **Status:** Documentação organizada e atualizada ✅
+
+---
+
 ## 📖 Índice
 
 ### 🚀 Início Rápido
-- [Guia de Instalação](./guides/INSTALLATION.md) - Como instalar e configurar
-- [Primeiros Passos](./guides/GETTING_STARTED.md) - Uso básico do bot
-- [Comandos Disponíveis](./guides/COMMANDS.md) - Lista completa de comandos
+- [Quick Start](./guides/QUICK_START.md) - Guia rápido de início
+- [Deploy em Produção](./guides/DEPLOYMENT.md) - Como fazer deploy
+- [Deploy Local](./DEPLOY_PRODUCAO_LOCAL.md) - Deploy com git clone + build local
 
 ### 🏗️ Arquitetura
 - [Visão Geral da Arquitetura](./architecture/OVERVIEW.md) - Clean Architecture + DDD
 - [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md) - Organização de diretórios
-- [Fluxo de Dados](./architecture/DATA_FLOW.md) - Como os dados fluem no sistema
-- [Padrões Implementados](./architecture/PATTERNS.md) - Design patterns utilizados
+- [Decisões Arquiteturais](./architecture/ARCHITECTURAL_DECISIONS.md) - ADRs do projeto
 
 ### 🔌 API & Integrações
-- [API HubSoft](./api/HUBSOFT_API.md) - Integração com ERP HubSoft
-- [Telegram Bot API](./api/TELEGRAM_BOT.md) - Handlers e comandos
-- [Event Bus](./api/EVENT_BUS.md) - Sistema de eventos
+- [Documentação API HubSoft - Guia de Uso](./api/Documentação%20API%20Hubsoft%20-%20Guia%20de%20Uso.md) - Índice da documentação HubSoft
+- [HubSoft API (Focado)](./api/HUBSOFT_API_DOCUMENTATION.md) - Endpoints de Atendimento
+- [HubSoft API (Completo)](./api/hubsoft_api_documentation.md) - 175 endpoints completos
+- [Collection Postman](./api/hubsoft_collection.json) - Collection para testes
 
-### 📝 Guias
-- [Deploy em Produção](./guides/DEPLOYMENT.md) - Como fazer deploy
-- [Configuração .env](./guides/CONFIGURATION.md) - Variáveis de ambiente
-- [Troubleshooting](./guides/TROUBLESHOOTING.md) - Resolução de problemas comuns
-- [Contribuindo](./guides/CONTRIBUTING.md) - Como contribuir com o projeto
+### 📊 Análises & Processos
+- [Inconsistências Lógicas](./processes/INCONSISTENCIAS_LOGICA_INTERACOES.md) - Lista de inconsistências identificadas
+- [Resoluções de Inconsistências](./processes/INCONSISTENCIAS_RESOLUCOES.md) - Rastreamento de correções (7/19 resolvidas)
+- [Mapeamento Completo de Mensagens](./analysis/MAPEAMENTO_COMPLETO_MENSAGENS_INTERACOES.md) - Todas as mensagens do bot
+- [Diagramas de Fluxos](./analysis/DIAGRAMAS_FLUXOS_BOT.md) - Diagramas ASCII dos fluxos
 
 ### 🔄 Migração
-- [Relatório de Migração](./migration/MIGRATION_REPORT.md) - Histórico da migração
+- [Relatório Final de Migração](./migration/FINAL_REPORT.md) - Histórico da migração para Clean Architecture
+- [Sumário de Limpeza](./migration/CLEANUP_SUMMARY.md) - Resumo do processo de limpeza
+
+### 📦 Histórico & Arquivo
+- [Documentos Arquivados](./archive/) - Análises antigas e documentos históricos
 - [Comparação Antes/Depois](./migration/COMPARISON.md) - Mudanças na arquitetura
 
 ## 🎯 Para Desenvolvedores

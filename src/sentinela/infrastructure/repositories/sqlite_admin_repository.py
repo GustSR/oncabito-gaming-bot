@@ -20,39 +20,7 @@ class SQLiteAdminRepository(AdminRepository):
     """
 
     def __init__(self, db_path: str):
-        """
-        Inicializa o repositório.
-
-        Args:
-            db_path: Caminho para o arquivo do banco SQLite
-        """
         self.db_path = db_path
-        self._ensure_table_exists()
-
-    def _ensure_table_exists(self) -> None:
-        """Garante que a tabela de administradores existe."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS administrators (
-                        user_id INTEGER PRIMARY KEY,
-                        username TEXT,
-                        first_name TEXT,
-                        last_name TEXT,
-                        status TEXT DEFAULT 'administrator',
-                        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        is_active BOOLEAN DEFAULT 1
-                    )
-                """)
-                conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_administrators_active
-                    ON administrators(is_active)
-                """)
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Erro ao criar tabela administrators: {e}")
-
     async def is_administrator(self, user_id: int) -> bool:
         """Verifica se um usuário é administrador ativo."""
         try:

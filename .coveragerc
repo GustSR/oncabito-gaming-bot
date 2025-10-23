@@ -1,0 +1,76 @@
+[run]
+# Configuração do coverage.py
+
+# Código fonte a ser medido
+source = src/sentinela
+
+# Arquivos/diretórios a ignorar
+omit =
+    */tests/*
+    */migrations/*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */.venv/*
+    */site-packages/*
+    */dist-packages/*
+
+# Incluir branch coverage
+branch = True
+
+# Arquivo de dados do coverage
+data_file = .coverage
+
+[report]
+# Configuração de relatórios
+
+# Linhas a ignorar no relatório
+exclude_lines =
+    # Ignora docstrings de módulos
+    pragma: no cover
+
+    # Ignora métodos abstratos
+    @abstractmethod
+    @abc.abstractmethod
+
+    # Ignora blocos de debug
+    def __repr__
+    def __str__
+
+    # Ignora raise de erros
+    raise AssertionError
+    raise NotImplementedError
+
+    # Ignora blocos if __name__ == '__main__'
+    if __name__ == .__main__.:
+
+    # Ignora type checking
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # Ignora ellipsis em stubs
+    \.\.\.
+
+# Precisão dos percentuais
+precision = 2
+
+# Mostrar linhas faltantes
+show_missing = True
+
+# Pular arquivos vazios
+skip_empty = True
+
+# Pular arquivos cobertos
+skip_covered = False
+
+# Ordenar por nome
+sort = Name
+
+[html]
+# Configuração de relatório HTML
+directory = htmlcov
+title = Sentinela Bot - Coverage Report
+
+[xml]
+# Configuração de relatório XML (para CI/CD)
+output = coverage.xml

@@ -94,25 +94,64 @@ python main.py
 ## 📁 **ESTRUTURA DO PROJETO**
 
 ```
-oncabito-bot/
-├── 📁 src/                    # Código fonte
-│   └── sentinela/
-│       ├── bot/               # Handlers do Telegram
-│       ├── clients/           # APIs (HubSoft, Database)
-│       ├── services/          # Lógica de negócio
-│       └── core/              # Configurações base
-├── 📁 scripts/                # Scripts de automação
-├── 📁 deployment/             # Deploy e instalação
-│   ├── install.sh             # Instalador automático
-│   ├── deploy.sh              # Deploy do bot
-│   └── run_checkup.sh         # Checkup manual
-├── 📁 tools/                  # Utilitários e testes
-├── 📁 docs/                   # Documentação completa
-├── 📁 data/                   # Banco de dados (criado automaticamente)
-├── 📁 logs/                   # Logs do sistema
-├── 🔧 .env                    # Configurações (não commitar)
-├── 🐳 Dockerfile             # Container Docker
-└── 📖 README.md              # Este arquivo
+sentinela/
+├── 📁 src/sentinela/                    # Código fonte (Clean Architecture)
+│   ├── application/                     # Camada de Aplicação
+│   │   ├── command_handlers/            # Handlers de comandos (CQRS)
+│   │   ├── commands/                    # Comandos do sistema
+│   │   └── use_cases/                   # Casos de uso
+│   ├── domain/                          # Camada de Domínio (DDD)
+│   │   ├── entities/                    # Entidades de negócio
+│   │   ├── value_objects/               # Value Objects
+│   │   ├── repositories/                # Interfaces de repositórios
+│   │   └── events/                      # Eventos de domínio
+│   ├── infrastructure/                  # Camada de Infraestrutura
+│   │   ├── repositories/                # Implementações de repositórios
+│   │   ├── external_services/           # APIs externas (HubSoft)
+│   │   ├── locking/                     # Sistema de locks distribuídos
+│   │   └── database/                    # Conexões e migrações
+│   ├── presentation/                    # Camada de Apresentação
+│   │   └── handlers/                    # Handlers do Telegram Bot
+│   ├── core/                            # Configurações e dependências
+│   └── integrations/                    # Integrações (HubSoft, etc)
+│
+├── 📁 deployment/                       # Scripts de deploy
+│   ├── deploy-local.sh                  # Deploy local com build (NOVO)
+│   └── run_checkup.sh                   # Checkup manual
+│
+├── 📁 migrations/                       # Migrations do banco
+│   ├── migration_engine.py              # Engine de migrations
+│   └── 00X_*.sql                        # Scripts SQL versionados
+│
+├── 📁 scripts/                          # Scripts utilitários
+│   ├── db/                              # Backup e restore
+│   ├── deploy/                          # Deploy safe
+│   ├── setup/                           # Setup de monitoring
+│   └── tasks/                           # Tarefas agendadas (cron)
+│
+├── 📁 docs/                             # Documentação (REORGANIZADA)
+│   ├── architecture/                    # Docs de arquitetura
+│   ├── guides/                          # Guias práticos
+│   ├── api/                             # Docs da API HubSoft
+│   ├── processes/                       # Inconsistências e processos
+│   ├── analysis/                        # Análises e diagramas
+│   ├── migration/                       # Histórico de migração
+│   └── archive/                         # Documentos históricos
+│
+├── 📁 tests/                            # Testes automatizados
+│   ├── unit/                            # Testes unitários
+│   └── integration/                     # Testes de integração
+│
+├── 📁 data/                             # Dados persistentes (volumes)
+│   └── database/                        # Banco SQLite
+│
+├── 📁 logs/                             # Logs do sistema
+│
+├── 🔧 .env                              # Configurações (não commitar)
+├── 🔧 .env.example                      # Template de configuração
+├── 🐳 Dockerfile                        # Imagem produção (multi-stage)
+├── 🐳 Dockerfile.dev                    # Imagem desenvolvimento
+└── 📖 README.md                         # Este arquivo
 ```
 
 ---
@@ -217,10 +256,7 @@ docker exec -it oncabito-bot /bin/bash
 ./deployment/run_checkup.sh
 
 # Teste do cron
-./tools/test_cron.sh
-
-# Validação do sistema
-python scripts/validate_checkup.py
+./scripts/test_cron.sh
 ```
 
 ### 🧪 **Testes e Debug**
@@ -229,7 +265,7 @@ python scripts/validate_checkup.py
 python3 scripts/test_cpf_verification.py
 
 # Teste de configuração
-./tools/test_config_final.sh
+./scripts/test_config_final.sh
 
 # Verificação manual de integridade
 python3 scripts/verify_data_integrity.py
@@ -256,10 +292,10 @@ print(f'Sucessos últimas 24h: {stats[\"last_24h\"][\"successful\"]}')
 
 ### ⏰ **Cron Jobs Configurados (Automático)**
 ```bash
-# Setup automático via scripts/setup_monitoring.sh
+# Setup automático via scripts/setup/setup_monitoring.sh
 
 # Backup diário às 3:00 AM
-0 3 * * * ./scripts/backup_database.sh auto
+0 3 * * * ./scripts/db/backup_database.sh auto
 
 # Checkup completo às 6:00 AM (contratos + CPF + integridade)
 0 6 * * * python3 ./scripts/daily_checkup.py
@@ -300,7 +336,7 @@ sudo chown -R $USER:$USER data/ logs/
 
 # Cron não executa
 crontab -l
-./tools/test_cron.sh
+./scripts/test_cron.sh
 ```
 
 ### 📞 **Onde Buscar Ajuda**
@@ -354,12 +390,13 @@ Este projeto é propriedade da **OnCabo Gaming Community**.
 
 ---
 
-*Documentação atualizada em 26/09/2025 - OnCabito Gaming Bot v2.2*
+*Documentação atualizada em 21/10/2025 - OnCabito Gaming Bot v2.3*
 
-### 🆕 **Novidades v2.2**
-- ✨ **Sistema de Re-verificação Automática**: Detecta e recupera clientes que perderam dados
-- 🛡️ **Proteção Tripla de Dados**: Backup SQLite + JSON + Migrations com integridade
-- 🔄 **Checkup Inteligente**: 3 fases (contratos + CPF + integridade) com estatísticas completas
-- ⚡ **Monitoramento 24/7**: Backup às 3h, checkup às 6h, export às 9h
-- 📊 **Sistema de Migrations**: Contagem before/after, detecção de anomalias
-- 🎯 **Zero Perda de Dados**: Garantia total da ligação CPF ↔ Telegram ID
+### 🆕 **Novidades v2.3**
+- 🏗️ **Arquitetura Clean + DDD**: Migração completa para Clean Architecture + Domain-Driven Design
+- 🔒 **Sistema de Locks Distribuídos**: Prevenção de race conditions em verificação de CPF
+- 🐛 **7 Inconsistências Resolvidas**: Correção de bugs críticos identificados em auditoria
+- 📦 **Deploy Local Otimizado**: Script de deploy com build local (304MB vs 757MB dev)
+- 📚 **Documentação Reorganizada**: Estrutura por categorias (architecture/, processes/, analysis/)
+- ⚡ **Persistência Aprimorada**: Contexto de resolução sobrevive a reinicializações
+- 🎯 **Notificações Técnicas**: Canal dedicado para alertas de permissões e erros críticos

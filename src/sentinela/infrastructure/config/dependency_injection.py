@@ -323,7 +323,11 @@ def configure_dependencies() -> None:
     from ..external_services.invite_client_impl import InviteClientImpl
 
     container.register_singleton(HubSoftClient, HubSoftClientImpl)
-    container.register_singleton(GroupClient, GroupClientImpl)
+    def create_group_client() -> GroupClientImpl:
+        member_repo = container.get(GroupMemberRepository)
+        return GroupClientImpl(member_repository=member_repo)
+
+    container.register_factory(GroupClient, create_group_client)
     container.register_singleton(InviteClient, InviteClientImpl)
 
     # === Event System ===
@@ -357,15 +361,6 @@ def configure_dependencies() -> None:
 
     container.register_factory(CPFVerificationRepository, create_cpf_verification_repository)
 
-    # Ticket Repository
-    from ...domain.repositories.ticket_repository import TicketRepository
-    from ..repositories.sqlite_ticket_repository import SQLiteTicketRepository
-
-    def create_ticket_repository() -> SQLiteTicketRepository:
-        return SQLiteTicketRepository(DATABASE_FILE)
-
-    container.register_factory(TicketRepository, create_ticket_repository)
-
     # HubSoft Integration Repository
     from ...domain.repositories.hubsoft_repository import HubSoftIntegrationRepository
     from ..repositories.sqlite_hubsoft_integration_repository import SQLiteHubSoftIntegrationRepository
@@ -380,9 +375,28 @@ def configure_dependencies() -> None:
     from ..repositories.sqlite_group_member_repository import SQLiteGroupMemberRepository
 
     def create_group_member_repository() -> SQLiteGroupMemberRepository:
-        return SQLiteGroupMemberRepository(DATABASE_FILE)
+        user_repo = container.get(UserRepository)
+        return SQLiteGroupMemberRepository(user_repository=user_repo)
 
     container.register_factory(GroupMemberRepository, create_group_member_repository)
+
+    # Duplicate Conflict Repository
+    from ...domain.repositories.duplicate_conflict_repository import DuplicateConflictRepository
+    from ..repositories.sqlite_duplicate_conflict_repository import SQLiteDuplicateConflictRepository
+
+    def create_duplicate_conflict_repository() -> SQLiteDuplicateConflictRepository:
+        return SQLiteDuplicateConflictRepository(DATABASE_FILE)
+
+    container.register_factory(DuplicateConflictRepository, create_duplicate_conflict_repository)
+
+    # Support Session Repository
+    from ...domain.repositories.support_session_repository import SupportSessionRepository
+    from ..repositories.sqlite_support_session_repository import SQLiteSupportSessionRepository
+
+    def create_support_session_repository() -> SQLiteSupportSessionRepository:
+        return SQLiteSupportSessionRepository(DATABASE_FILE)
+
+    container.register_factory(SupportSessionRepository, create_support_session_repository)
 
     # === Command Handlers ===
 
@@ -421,25 +435,41 @@ def configure_dependencies() -> None:
     )
 
     container.register_singleton(StartCPFVerificationHandler, StartCPFVerificationHandler)
-    container.register_singleton(SubmitCPFForVerificationHandler, SubmitCPFForVerificationHandler)
+
+    # SubmitCPFForVerificationHandler precisa de HubSoftAPIService
+    def create_submit_cpf_handler():
+        from ...domain.services.cpf_validation_service import CPFValidationService
+        from ...domain.services.duplicate_cpf_service import DuplicateCPFService
+        from ..events.event_bus import EventBus
+        from ...domain.repositories.hubsoft_repository import HubSoftAPIRepository
+
+        return SubmitCPFForVerificationHandler(
+            verification_repository=container.get("cpf_verification_repository"),
+            user_repository=container.get("user_repository"),
+            cpf_validation_service=container.get(CPFValidationService),
+            duplicate_cpf_service=container.get(DuplicateCPFService),
+            event_bus=container.get(EventBus),
+            hubsoft_api_service=container.get(HubSoftAPIRepository)
+        )
+    container.register_factory(SubmitCPFForVerificationHandler, create_submit_cpf_handler)
+
     container.register_singleton(CancelCPFVerificationHandler, CancelCPFVerificationHandler)
     container.register_singleton(ProcessExpiredVerificationsHandler, ProcessExpiredVerificationsHandler)
-    container.register_singleton(ResolveCPFDuplicateHandler, ResolveCPFDuplicateHandler)
 
-    # Admin Handlers
-    from ...application.command_handlers.admin_command_handlers import (
-        ListTicketsHandler,
-        AssignTicketHandler,
-        UpdateTicketStatusHandler,
-        BanUserHandler,
-        GetSystemStatsHandler
-    )
+    # ResolveCPFDuplicateHandler precisa de HubSoftAPIService
+    def create_resolve_duplicate_handler():
+        from ...domain.services.duplicate_cpf_service import DuplicateCPFService
+        from ..events.event_bus import EventBus
+        from ...domain.repositories.hubsoft_repository import HubSoftAPIRepository
 
-    container.register_singleton(ListTicketsHandler, ListTicketsHandler)
-    container.register_singleton(AssignTicketHandler, AssignTicketHandler)
-    container.register_singleton(UpdateTicketStatusHandler, UpdateTicketStatusHandler)
-    container.register_singleton(BanUserHandler, BanUserHandler)
-    container.register_singleton(GetSystemStatsHandler, GetSystemStatsHandler)
+        return ResolveCPFDuplicateHandler(
+            duplicate_cpf_service=container.get(DuplicateCPFService),
+            verification_repository=container.get("cpf_verification_repository"),
+            user_repository=container.get("user_repository"),
+            event_bus=container.get(EventBus),
+            hubsoft_api_service=container.get(HubSoftAPIRepository)
+        )
+    container.register_factory(ResolveCPFDuplicateHandler, create_resolve_duplicate_handler)
 
     # === Domain Services ===
 
@@ -482,10 +512,6 @@ def configure_dependencies() -> None:
     from ...application.use_cases.hubsoft_integration_use_case import HubSoftIntegrationUseCase
     container.register_singleton(HubSoftIntegrationUseCase, HubSoftIntegrationUseCase)
 
-    # Admin Operations Use Case
-    from ...application.use_cases.admin_operations_use_case import AdminOperationsUseCase
-    container.register_singleton(AdminOperationsUseCase, AdminOperationsUseCase)
-
     # Member Verification Use Case
     from ...application.use_cases.member_verification_use_case import MemberVerificationUseCase
     container.register_singleton(MemberVerificationUseCase, MemberVerificationUseCase)
@@ -497,11 +523,13 @@ def configure_dependencies() -> None:
     def create_welcome_management_use_case() -> WelcomeManagementUseCase:
         user_repo = container.get(UserRepository)
         member_repo = container.get(GroupMemberRepository)
+        admin_repo = container.get(AdminRepository)
         event_bus = container.get(EventBus)
 
         return WelcomeManagementUseCase(
             user_repository=user_repo,
             member_repository=member_repo,
+            admin_repository=admin_repo,
             event_bus=event_bus,
             group_id=int(TELEGRAM_GROUP_ID),
             welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None,
@@ -517,14 +545,14 @@ def configure_dependencies() -> None:
     container.register_alias("user_repository", UserRepository)
     container.register_alias("admin_repository", AdminRepository)
     container.register_alias("cpf_verification_repository", CPFVerificationRepository)
-    container.register_alias("ticket_repository", TicketRepository)
     container.register_alias("hubsoft_integration_repository", HubSoftIntegrationRepository)
     container.register_alias("group_member_repository", GroupMemberRepository)
+    container.register_alias("duplicate_conflict_repository", DuplicateConflictRepository)
+    container.register_alias("support_session_repository", SupportSessionRepository)
 
     # Use Cases
     container.register_alias("cpf_verification_use_case", CPFVerificationUseCase)
     container.register_alias("hubsoft_integration_use_case", HubSoftIntegrationUseCase)
-    container.register_alias("admin_operations_use_case", AdminOperationsUseCase)
     container.register_alias("member_verification_use_case", MemberVerificationUseCase)
     container.register_alias("welcome_management_use_case", WelcomeManagementUseCase)
 
@@ -537,7 +565,8 @@ def configure_dependencies() -> None:
         from ..events.event_bus import EventBus
 
         event_bus = container.get(EventBus)
-        registry = EventHandlerRegistry(event_bus)
+        user_repo = container.get(UserRepository)
+        registry = EventHandlerRegistry(event_bus, user_repo)
         registry.register_all_handlers()
         logger.info("✅ Event handlers registered successfully")
     except Exception as e:

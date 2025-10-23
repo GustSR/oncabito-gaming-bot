@@ -21,43 +21,6 @@ class SQLiteGroupInviteRepository:
     def __init__(self, db_path: str = "data/database/sentinela.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_tables()
-
-    def _init_tables(self) -> None:
-        """Inicializa tabelas do banco."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS group_invites (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    cpf TEXT NOT NULL,
-                    invite_link TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    used BOOLEAN DEFAULT FALSE,
-                    used_at TEXT,
-                    client_name TEXT,
-                    plan_name TEXT,
-                    UNIQUE(invite_link)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_group_invites_user_id
-                ON group_invites(user_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_group_invites_cpf
-                ON group_invites(cpf)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_group_invites_expires_at
-                ON group_invites(expires_at)
-            """)
-
-            conn.commit()
 
     async def save(self, invite: GroupInvite) -> GroupInvite:
         """

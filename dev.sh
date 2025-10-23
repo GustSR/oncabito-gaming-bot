@@ -58,6 +58,8 @@ DICAS:
 EOF
 }
 
+DOCKER_COMPOSE="docker-compose -f docker-compose.yml"
+
 # Funções principais
 cmd_start() {
     log_info "Iniciando bot em modo desenvolvimento..."
@@ -68,7 +70,7 @@ cmd_start() {
         exit 1
     fi
 
-    docker-compose up -d
+    $DOCKER_COMPOSE up -d
     sleep 2
 
     if [ "$(docker ps -q -f name=oncabo-gaming-bot-dev)" ]; then
@@ -77,20 +79,20 @@ cmd_start() {
         log_info "Logs: ./dev.sh logs"
     else
         log_error "Falha ao iniciar bot"
-        docker-compose logs
+        $DOCKER_COMPOSE logs
         exit 1
     fi
 }
 
 cmd_stop() {
     log_info "Parando bot..."
-    docker-compose stop
+    $DOCKER_COMPOSE stop
     log_success "Bot parado"
 }
 
 cmd_restart() {
     log_info "Reiniciando bot (rápido, sem rebuild)..."
-    docker-compose restart
+    $DOCKER_COMPOSE restart
     sleep 2
     log_success "Bot reiniciado com código atualizado"
     log_info "Logs: ./dev.sh logs"
@@ -98,21 +100,21 @@ cmd_restart() {
 
 cmd_rebuild() {
     log_info "Fazendo rebuild da imagem dev..."
-    docker-compose down
-    docker-compose build --no-cache
-    docker-compose up -d
+    $DOCKER_COMPOSE down
+    $DOCKER_COMPOSE build --no-cache
+    $DOCKER_COMPOSE up -d
     sleep 2
     log_success "Rebuild completo e bot reiniciado"
 }
 
 cmd_logs() {
     log_info "Mostrando logs (Ctrl+C para sair)..."
-    docker-compose logs -f --tail=50
+    $DOCKER_COMPOSE logs -f --tail=50
 }
 
 cmd_shell() {
     log_info "Abrindo shell no container..."
-    docker-compose exec oncabo-gaming-bot /bin/bash
+    $DOCKER_COMPOSE exec oncabo-gaming-bot /bin/bash
 }
 
 cmd_status() {
@@ -141,7 +143,7 @@ cmd_clean() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_info "Limpando ambiente dev..."
-        docker-compose down -v
+        $DOCKER_COMPOSE down -v
         log_success "Ambiente dev limpo"
     else
         log_info "Operação cancelada"

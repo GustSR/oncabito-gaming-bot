@@ -10,25 +10,27 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from .base import UseCase, UseCaseResult
-from ..commands.cpf_verification_commands import (
+from src.sentinela.application.use_cases.base import UseCase, UseCaseResult
+from src.sentinela.application.commands.cpf_verification_commands import (
     StartCPFVerificationCommand,
     SubmitCPFForVerificationCommand,
     CancelCPFVerificationCommand,
-    ProcessExpiredVerificationsCommand
+    ProcessExpiredVerificationsCommand,
+    ResolveCPFDuplicateCommand
 )
-from ..command_handlers.cpf_verification_handlers import (
+from src.sentinela.domain.entities.cpf_verification import VerificationId
+from src.sentinela.application.command_handlers.cpf_verification_handlers import (
     StartCPFVerificationHandler,
     SubmitCPFForVerificationHandler,
     CancelCPFVerificationHandler
 )
-from ..command_handlers.process_expired_verifications_handler import (
+from src.sentinela.application.command_handlers.process_expired_verifications_handler import (
     ProcessExpiredVerificationsHandler
 )
-from ..command_handlers.resolve_cpf_duplicate_handler import ResolveCPFDuplicateHandler
-from ...domain.entities.cpf_verification import VerificationType, VerificationStatus
-from ...domain.repositories.cpf_verification_repository import CPFVerificationRepository
-from ...domain.value_objects.identifiers import UserId
+from src.sentinela.application.command_handlers.resolve_cpf_duplicate_handler import ResolveCPFDuplicateHandler
+from src.sentinela.domain.entities.cpf_verification import VerificationType, VerificationStatus
+from src.sentinela.domain.repositories.cpf_verification_repository import CPFVerificationRepository
+from src.sentinela.domain.value_objects.identifiers import UserId
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +318,6 @@ class CPFVerificationUseCase(UseCase):
         Resolve um conflito de CPF duplicado.
         """
         try:
-            from ..commands.cpf_verification_commands import ResolveCPFDuplicateCommand
 
             command = ResolveCPFDuplicateCommand(
                 verification_id=verification_id,
@@ -337,6 +338,42 @@ class CPFVerificationUseCase(UseCase):
                 success=False,
                 message="Erro interno ao resolver conflito.",
                 error_code="system_error"
+            )
+
+    async def cancel_verification_by_id(
+        self,
+        verification_id: str,
+        reason: str = "user_cancelled"
+    ) -> CPFVerificationResult:
+        """Cancela uma verificação pendente pelo seu ID."""
+        try:
+            
+            verification = await self.verification_repository.find_by_id(VerificationId(verification_id))
+
+            if not verification:
+                return CPFVerificationResult(
+                    success=False,
+                    message="Verificação não encontrada",
+                    error_code="verification_not_found"
+                )
+
+            verification.cancel_verification(reason)
+            await self.verification_repository.save(verification)
+
+            logger.info(f"Verificação {verification_id} cancelada. Motivo: {reason}")
+
+            return CPFVerificationResult(
+                success=True,
+                message="Verificação cancelada com sucesso",
+                status="cancelled"
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao cancelar verificação {verification_id}: {e}")
+            return CPFVerificationResult(
+                success=False,
+                message=f"Erro ao cancelar: {str(e)}",
+                error_code="cancel_error"
             )
 
     async def get_verification_status(self, user_id: int) -> CPFVerificationResult:
