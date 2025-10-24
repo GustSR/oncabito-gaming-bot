@@ -33,9 +33,12 @@ fi
 chmod +x "$AUTO_UPDATE_SCRIPT"
 echo -e "${GREEN}✅ Script auto-update.sh está executável${NC}"
 
-# Cria diretório de logs
+# Cria diretórios necessários com permissões corretas
+mkdir -p "$PROJECT_DIR/data/database"
 mkdir -p "$PROJECT_DIR/logs"
-echo -e "${GREEN}✅ Diretório de logs criado${NC}"
+chmod -R 755 "$PROJECT_DIR/data"
+chmod -R 755 "$PROJECT_DIR/logs"
+echo -e "${GREEN}✅ Diretórios de dados e logs criados com permissões corretas${NC}"
 
 # Verifica se cron está instalado
 if ! command -v crontab &> /dev/null; then

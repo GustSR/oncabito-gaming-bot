@@ -98,6 +98,14 @@ docker pull ghcr.io/gustsr/oncabito-gaming-bot:latest
 
 Se funcionar: ✅ Setup OK!
 
+**4. Criar diretórios necessários:**
+```bash
+mkdir -p data/database logs
+chmod -R 755 data logs
+```
+
+⚠️ **IMPORTANTE:** Isso garante que o container tenha permissão para criar o banco de dados SQLite.
+
 ---
 
 ### **Parte 3: Configurar Auto-Update (Cron)**
