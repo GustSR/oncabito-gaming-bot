@@ -159,8 +159,8 @@ deploy_new_version() {
     log_info "Verificando diretórios de dados..."
     mkdir -p "$PROJECT_DIR/data/database"
     mkdir -p "$PROJECT_DIR/logs"
-    chmod -R 755 "$PROJECT_DIR/data"
-    chmod -R 755 "$PROJECT_DIR/logs"
+    chmod -R 777 "$PROJECT_DIR/data"
+    chmod -R 777 "$PROJECT_DIR/logs"
     log_info "Diretórios criados/verificados com sucesso"
 
     # Para container antigo
