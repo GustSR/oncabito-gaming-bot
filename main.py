@@ -25,9 +25,15 @@ def run_migrations():
         return
 
     try:
+        # Cria diretórios do database se não existirem
+        db_dir = os.path.dirname(DATABASE_FILE)
+        if db_dir and not os.path.exists(db_dir):
+            logger.info(f"Criando diretório do database: {db_dir}")
+            os.makedirs(db_dir, mode=0o755, exist_ok=True)
+
         # Adiciona o diretório raiz ao path para o motor de migração
         sys.path.append('.')
-        
+
         logger.info("Verificando e aplicando migrations...")
         engine = MigrationEngine(DATABASE_FILE, migrations_dir)
         
