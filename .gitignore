@@ -64,8 +64,9 @@ coverage.xml
 *.sqlite3
 *.db-journal
 
-# Database backups
+# Database backups (allow migrations/*.sql but block other SQL files)
 *.sql
+!migrations/*.sql
 backup/
 *.backup
 
