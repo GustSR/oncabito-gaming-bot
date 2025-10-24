@@ -220,7 +220,28 @@ class TelegramBotHandler:
                     if member and member.status in ['creator', 'administrator', 'member']:
                         logger.info(f"Usuário {user.id} (membro do grupo, status: {member.status}) usou /start.")
 
-                        # Etapa 1: Diferenciar Admin de Usuário Normal
+                        # CORREÇÃO: Verifica se o usuário tem verificação VÁLIDA antes de mostrar menu
+                        is_verified = await self._cpf_handler.check_user_verified(user.id)
+
+                        # Se não está verificado ou verificação expirou, oferece re-verificação
+                        if not is_verified:
+                            logger.warning(f"Usuário {user.id} está no grupo mas sem verificação válida. Oferecendo re-verificação.")
+
+                            keyboard = [
+                                [InlineKeyboardButton("♻️ Renovar Acesso", callback_data="reverify_access")]
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+
+                            message = (
+                                f"⚠️ <b>Atenção, {user.first_name}!</b>\n\n"
+                                "Detectei que você está no grupo, mas sua verificação expirou ou está inválida.\n\n"
+                                "📋 <b>Para continuar com acesso ao grupo, você precisa renovar sua verificação.</b>\n\n"
+                                "Clique no botão abaixo para iniciar a renovação:"
+                            )
+                            await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='HTML')
+                            return
+
+                        # Etapa 1: Diferenciar Admin de Usuário Normal (somente se verificado)
                         if await self._is_admin(user.id):
                             logger.info(f"Usuário {user.id} é admin. Exibindo menu de admin.")
                             keyboard = [
@@ -240,7 +261,7 @@ class TelegramBotHandler:
                             await update.message.reply_text(message, reply_markup=reply_markup)
 
                         else:
-                            logger.info(f"Usuário {user.id} é membro normal. Exibindo opções de suporte.")
+                            logger.info(f"Usuário {user.id} é membro normal verificado. Exibindo opções de suporte.")
                             keyboard = [
                                 [
                                     InlineKeyboardButton("➕ Abrir novo chamado", callback_data="start_flow_support"),
@@ -821,6 +842,84 @@ class TelegramBotHandler:
             logger.error(f"Erro no _handle_start_flow_status_callback: {e}", exc_info=True)
             await context.bot.send_message(chat_id=query.from_user.id, text="❌ Erro ao verificar seus chamados. Tente novamente.")
 
+    async def _handle_reverify_access_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        CORREÇÃO: Handler para o botão de renovação de acesso.
+        Inicia o fluxo de verificação de CPF para usuários com verificação expirada.
+        """
+        try:
+            user = query.from_user
+            await query.answer()
+
+            logger.info(f"Usuário {user.id} solicitou renovação de acesso.")
+
+            # Edita a mensagem original
+            await query.edit_message_text(
+                "🔄 <b>Iniciando renovação de acesso...</b>\n\n"
+                "Vou solicitar seu CPF para validar seu plano OnCabo Gaming.",
+                parse_mode='HTML'
+            )
+
+            # Garante que o estado de verificação seja criado ou exista
+            verification_result = await self._cpf_use_case.start_verification(
+                user_id=user.id,
+                username=user.username or user.first_name,
+                user_mention=f"<a href='tg://user?id={user.id}'>{user.first_name}</a>",
+                verification_type="reverification",
+                source_action="reverify_access_button"
+            )
+
+            if not verification_result.success:
+                # Trata o caso de limite de tentativas
+                if hasattr(verification_result, 'error_code') and verification_result.error_code == "rate_limited":
+                    logger.warning(f"Usuário {user.id} atingiu o limite de tentativas de re-verificação.")
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text=(
+                            "⚠️ <b>Limite de Tentativas Atingido</b>\n\n"
+                            "Você realizou muitas tentativas de verificação nas últimas 24 horas.\n\n"
+                            "Por favor, aguarde e tente novamente amanhã ou entre em contato com o suporte."
+                        ),
+                        parse_mode='HTML'
+                    )
+                    return
+
+                # Se a verificação já existe, continua normalmente
+                if "já existe" not in verification_result.message.lower() and "already pending" not in verification_result.message.lower():
+                    logger.error(f"Erro ao criar verificação de renovação: {verification_result.message}")
+                    await context.bot.send_message(
+                        chat_id=user.id,
+                        text=(
+                            "❌ <b>Erro ao iniciar renovação</b>\n\n"
+                            "Ocorreu um erro ao processar sua solicitação. Tente novamente em alguns instantes."
+                        ),
+                        parse_mode='HTML'
+                    )
+                    return
+
+            # Solicita o CPF
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    "📝 <b>Por favor, envie seu CPF</b> (apenas os 11 números):\n\n"
+                    "Exemplo: <code>12345678900</code>\n\n"
+                    "🔒 Seus dados são protegidos e usados apenas para validação do seu contrato."
+                ),
+                parse_mode='HTML'
+            )
+
+            # Define estado conversacional aguardando CPF
+            context.user_data['waiting_cpf'] = True
+
+            # Agenda lembrete
+            self._cpf_handler.schedule_cpf_reminder(context, user.id, delay_seconds=300)
+
+            logger.info(f"Fluxo de renovação iniciado para usuário {user.id}")
+
+        except Exception as e:
+            logger.error(f"Erro ao processar renovação de acesso: {e}", exc_info=True)
+            await query.answer("❌ Erro ao processar renovação. Tente novamente.", show_alert=True)
+
     async def handle_callback_query(
         self,
         update: Update,
@@ -857,6 +956,8 @@ class TelegramBotHandler:
                 await self._handle_start_flow_status_callback(query, context)
             elif callback_data == "status_show_all":
                 await self._handle_show_all_tickets_callback(query, context)
+            elif callback_data == "reverify_access":
+                await self._handle_reverify_access_callback(query, context)
             else:
                 logger.warning(f"Callback não reconhecido: {callback_data}")
 
