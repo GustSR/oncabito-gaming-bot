@@ -299,10 +299,12 @@ class CPFVerificationHandler:
                     client_data = result.data.get('client_data', {})
                     client_name = client_data.get('name', user.first_name)
                     try:
+                        # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
+                        expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
                         invite_link = await update.get_bot().create_chat_invite_link(
                             chat_id=int(TELEGRAM_GROUP_ID),
                             member_limit=3,
-                            expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
+                            expire_date=expire_timestamp,
                             name=f"Link para {client_name}"
                         )
                         message = (
@@ -316,7 +318,17 @@ class CPFVerificationHandler:
                         )
                         logger.info(f"Link temporário criado para {user.id} ({client_name})")
                     except Exception as link_error:
-                        logger.error(f"Erro ao criar link de convite: {link_error}")
+                        # CORREÇÃO: Logging detalhado para diagnóstico completo
+                        logger.error(
+                            f"Erro ao criar link de convite para usuário {user.id}: {link_error}",
+                            exc_info=True,
+                            extra={
+                                'user_id': user.id,
+                                'group_id': TELEGRAM_GROUP_ID,
+                                'expire_timestamp': expire_timestamp if 'expire_timestamp' in locals() else 'N/A',
+                                'error_type': type(link_error).__name__
+                            }
+                        )
                         message = (
                             "✅ **CPF Verificado!** 🎉\n\n"
                             "Seu plano está ativo, mas houve um erro ao gerar seu link de convite. "
@@ -572,10 +584,12 @@ class CPFVerificationHandler:
             else:
                 # A conta escolhida é a mesma que respondeu - gera link de convite
                 try:
+                    # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
+                    expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
-                        expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
+                        expire_date=expire_timestamp,
                         name=f"Link para {client_name} (pós-resolução)"
                     )
                     invite_message = (
@@ -584,7 +598,17 @@ class CPFVerificationHandler:
                         f"⏰ Este link expira em 1 hora e tem 3 tentativas de uso!"
                     )
                 except Exception as link_error:
-                    logger.error(f"Erro ao criar link de convite: {link_error}")
+                    # CORREÇÃO: Logging detalhado para diagnóstico completo
+                    logger.error(
+                        f"Erro ao criar link de convite (pós-resolução) para usuário {query.from_user.id}: {link_error}",
+                        exc_info=True,
+                        extra={
+                            'user_id': query.from_user.id,
+                            'group_id': TELEGRAM_GROUP_ID,
+                            'expire_timestamp': expire_timestamp if 'expire_timestamp' in locals() else 'N/A',
+                            'error_type': type(link_error).__name__
+                        }
+                    )
                     invite_message = (
                         "\n\n⚠️ Houve um erro ao gerar seu link de convite. "
                         "Por favor, contate o suporte."
@@ -666,10 +690,12 @@ class CPFVerificationHandler:
                 # A resolução foi um sucesso e a verificação foi completada.
                 try:
                     client_name = query.from_user.first_name
+                    # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
+                    expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
-                        expire_date=datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME),
+                        expire_date=expire_timestamp,
                         name=f"Link para {client_name}"
                     )
                     message = (
@@ -681,7 +707,17 @@ class CPFVerificationHandler:
                     )
                     await query.edit_message_text(message, parse_mode='Markdown', disable_web_page_preview=True)
                 except Exception as e:
-                    logger.error(f"Erro ao criar link de convite pós-resolução de conflito: {e}")
+                    # CORREÇÃO: Logging detalhado para diagnóstico completo
+                    logger.error(
+                        f"Erro ao criar link de convite pós-resolução de conflito para usuário {query.from_user.id}: {e}",
+                        exc_info=True,
+                        extra={
+                            'user_id': query.from_user.id,
+                            'group_id': TELEGRAM_GROUP_ID,
+                            'expire_timestamp': expire_timestamp if 'expire_timestamp' in locals() else 'N/A',
+                            'error_type': type(e).__name__
+                        }
+                    )
                     await query.edit_message_text(
                         "✅ Conflito resolvido, mas houve um erro ao gerar seu link de convite. "
                         "Por favor, contate o suporte."
