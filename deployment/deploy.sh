@@ -81,12 +81,15 @@ echo "🔨 Buildando nova imagem..."
 COMPOSE_PROJECT_NAME=oncabito-bot docker-compose build --no-cache
 echo "✅ Imagem criada com sucesso"
 
-# Cria diretórios necessários
+# Cria diretórios necessários com permissões corretas
 echo ""
 echo "📁 Preparando diretórios..."
 mkdir -p data/database
 mkdir -p logs
-echo "✅ Diretórios preparados"
+# Usa 777 para garantir que o container (usuário oncabito) possa escrever
+chmod -R 777 data
+chmod -R 777 logs
+echo "✅ Diretórios preparados com permissões totais (777)"
 
 # Inicia novo container usando docker-compose
 echo ""
