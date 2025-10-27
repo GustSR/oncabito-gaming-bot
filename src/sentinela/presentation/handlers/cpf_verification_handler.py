@@ -300,7 +300,9 @@ class CPFVerificationHandler:
                     client_name = client_data.get('name', user.first_name)
                     try:
                         # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
-                        expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
+                        # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
+                        expire_seconds = max(INVITE_LINK_EXPIRE_TIME, 60)
+                        expire_timestamp = int((datetime.now() + timedelta(seconds=expire_seconds)).timestamp())
                         invite_link = await update.get_bot().create_chat_invite_link(
                             chat_id=int(TELEGRAM_GROUP_ID),
                             member_limit=3,
@@ -585,7 +587,9 @@ class CPFVerificationHandler:
                 # A conta escolhida é a mesma que respondeu - gera link de convite
                 try:
                     # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
-                    expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
+                    # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
+                    expire_seconds = max(INVITE_LINK_EXPIRE_TIME, 60)
+                    expire_timestamp = int((datetime.now() + timedelta(seconds=expire_seconds)).timestamp())
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
@@ -691,7 +695,9 @@ class CPFVerificationHandler:
                 try:
                     client_name = query.from_user.first_name
                     # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
-                    expire_timestamp = int((datetime.now() + timedelta(seconds=INVITE_LINK_EXPIRE_TIME)).timestamp())
+                    # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
+                    expire_seconds = max(INVITE_LINK_EXPIRE_TIME, 60)
+                    expire_timestamp = int((datetime.now() + timedelta(seconds=expire_seconds)).timestamp())
                     invite_link = await query.get_bot().create_chat_invite_link(
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
