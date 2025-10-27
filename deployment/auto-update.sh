@@ -159,9 +159,10 @@ deploy_new_version() {
     log_info "Verificando diretórios de dados..."
     mkdir -p "$PROJECT_DIR/data/database"
     mkdir -p "$PROJECT_DIR/logs"
+    # Usa 777 para garantir que o container (usuário oncabito) possa escrever
     chmod -R 777 "$PROJECT_DIR/data"
     chmod -R 777 "$PROJECT_DIR/logs"
-    log_info "Diretórios criados/verificados com sucesso"
+    log_info "Diretórios criados/verificados com permissões totais (777)"
 
     # Para container antigo
     if is_container_running; then

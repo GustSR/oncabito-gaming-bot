@@ -36,9 +36,10 @@ echo -e "${GREEN}✅ Script auto-update.sh está executável${NC}"
 # Cria diretórios necessários com permissões corretas
 mkdir -p "$PROJECT_DIR/data/database"
 mkdir -p "$PROJECT_DIR/logs"
-chmod -R 755 "$PROJECT_DIR/data"
-chmod -R 755 "$PROJECT_DIR/logs"
-echo -e "${GREEN}✅ Diretórios de dados e logs criados com permissões corretas${NC}"
+# Usa 777 para garantir que o container (usuário oncabito) possa escrever
+chmod -R 777 "$PROJECT_DIR/data"
+chmod -R 777 "$PROJECT_DIR/logs"
+echo -e "${GREEN}✅ Diretórios de dados e logs criados com permissões totais (777)${NC}"
 
 # Verifica se cron está instalado
 if ! command -v crontab &> /dev/null; then
