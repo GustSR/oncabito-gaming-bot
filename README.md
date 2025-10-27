@@ -115,19 +115,23 @@ sentinela/
 │   ├── core/                            # Configurações e dependências
 │   └── integrations/                    # Integrações (HubSoft, etc)
 │
-├── 📁 deployment/                       # Scripts de deploy
-│   ├── deploy-local.sh                  # Deploy local com build (NOVO)
-│   └── run_checkup.sh                   # Checkup manual
+├── 📁 deployment/                       # Scripts de deploy e produção
+│   ├── auto-update.sh                   # ⭐ Deploy automático via GHCR (PRODUÇÃO)
+│   ├── setup-cron.sh                    # ⚙️ Configura auto-update (setup inicial)
+│   ├── deploy-compose.sh                # 📦 Deploy local com docker-compose
+│   ├── deploy-local.sh                  # 🏗️ Deploy local sem compose
+│   ├── install.sh                       # 📥 Instalação inicial no servidor
+│   ├── run_checkup.sh                   # 🏥 Checkup diário de saúde
+│   └── README.md                        # 📖 Documentação completa dos scripts
 │
 ├── 📁 migrations/                       # Migrations do banco
 │   ├── migration_engine.py              # Engine de migrations
 │   └── 00X_*.sql                        # Scripts SQL versionados
 │
 ├── 📁 scripts/                          # Scripts utilitários
-│   ├── db/                              # Backup e restore
-│   ├── deploy/                          # Deploy safe
-│   ├── setup/                           # Setup de monitoring
-│   └── tasks/                           # Tarefas agendadas (cron)
+│   ├── dev/                             # 🔧 Helper de desenvolvimento (dev.sh)
+│   ├── db/                              # 💾 Backup e restore de banco
+│   └── run_tests.sh                     # ✅ Executa testes automatizados
 │
 ├── 📁 docs/                             # Documentação (REORGANIZADA)
 │   ├── architecture/                    # Docs de arquitetura
@@ -208,27 +212,62 @@ Siga o guia: **[docs/TOPICS_DISCOVERY_GUIDE.md](docs/TOPICS_DISCOVERY_GUIDE.md)*
 
 ---
 
-## 🐳 **DOCKER**
+## 🚀 **QUICK START**
 
-### 📦 **Build Manual**
+### 🏭 **Produção (Servidor)**
 ```bash
-docker build -t oncabito-bot .
-docker run -d --name oncabito-bot --env-file .env oncabito-bot
+# 1. Clone e instale
+git clone https://github.com/GustSR/oncabito-gaming-bot.git /opt/oncabito-gaming-bot
+cd /opt/oncabito-gaming-bot
+./deployment/install.sh
+
+# 2. Configure credenciais
+cp .env.example .env
+nano .env  # Editar com suas credenciais
+
+# 3. Login no GitHub Container Registry
+echo 'SEU_TOKEN' | docker login ghcr.io -u SEU_USUARIO --password-stdin
+
+# 4. Setup auto-update (roda a cada 10 min)
+./deployment/setup-cron.sh
+
+# 5. Primeiro deploy
+./deployment/auto-update.sh
+
+# ✅ Pronto! O bot vai atualizar automaticamente quando houver nova versão
 ```
 
-### 📊 **Comandos Úteis**
+### 💻 **Desenvolvimento Local**
 ```bash
-# Status
-docker ps | grep oncabito-bot
+# Opção 1: Helper de desenvolvimento (RECOMENDADO)
+./dev.sh start     # Inicia bot
+./dev.sh logs      # Ver logs em tempo real
+./dev.sh restart   # Reinicia após mudanças no código
+./dev.sh rebuild   # Rebuild completo (se mudar requirements.txt)
+./dev.sh help      # Ver todos os comandos
 
-# Logs
-docker logs -f oncabito-bot
+# Opção 2: Deploy manual com docker-compose
+./deployment/deploy-compose.sh
 
-# Restart
-docker restart oncabito-bot
+# Opção 3: Build manual Docker
+docker build -t oncabito-bot:local .
+docker run -d --name oncabito-bot --env-file .env -v $(pwd)/data:/app/data oncabito-bot:local
+```
 
-# Bash interno
-docker exec -it oncabito-bot /bin/bash
+### 📊 **Monitoramento**
+```bash
+# Ver logs do bot
+docker logs -f oncabo-gaming-bot
+tail -f logs/auto-update.log      # Logs do auto-update
+
+# Status do container
+docker ps | grep oncabo-gaming-bot
+
+# Executar checkup manual
+./deployment/run_checkup.sh
+
+# Acessar shell do container
+docker exec -it oncabo-gaming-bot /bin/bash
 ```
 
 ---
