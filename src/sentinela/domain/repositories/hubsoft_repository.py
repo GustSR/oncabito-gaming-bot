@@ -264,82 +264,25 @@ class HubSoftAPIRepository(ABC):
         pass
 
     @abstractmethod
-    async def update_ticket(
-        self,
-        hubsoft_ticket_id: str,
-        updates: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Atualiza ticket no HubSoft.
-
-        Args:
-            hubsoft_ticket_id: ID do ticket no HubSoft
-            updates: Dados para atualização
-
-        Returns:
-            Dados do ticket atualizado
-
-        Raises:
-            HubSoftAPIError: Erro na atualização
-        """
-        pass
-
-    @abstractmethod
-    async def get_ticket_status(
-        self,
-        hubsoft_ticket_id: str
-    ) -> Dict[str, Any]:
-        """
-        Obtém status de ticket no HubSoft.
-
-        Args:
-            hubsoft_ticket_id: ID do ticket no HubSoft
-
-        Returns:
-            Status do ticket
-
-        Raises:
-            HubSoftAPIError: Erro na consulta
-        """
-        pass
-
-    @abstractmethod
-    async def search_tickets_by_cpf(
+    async def get_user_tickets(
         self,
         cpf: str,
-        limit: int = 50
+        include_closed: bool = True,
+        limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Busca tickets por CPF do cliente.
+        Busca atendimentos de um cliente por CPF.
 
         Args:
-            cpf: CPF do cliente
-            limit: Limite de resultados
+            cpf: CPF do cliente (formatado ou não)
+            include_closed: Se True, inclui atendimentos fechados/resolvidos
+            limit: Limite de resultados (padrão: 20)
 
         Returns:
-            Lista de tickets encontrados
+            Lista de atendimentos do cliente
 
         Raises:
             HubSoftAPIError: Erro na busca
-        """
-        pass
-
-    @abstractmethod
-    async def get_client_contracts(
-        self,
-        cpf: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Obtém contratos do cliente.
-
-        Args:
-            cpf: CPF do cliente
-
-        Returns:
-            Lista de contratos
-
-        Raises:
-            HubSoftAPIError: Erro na consulta
         """
         pass
 

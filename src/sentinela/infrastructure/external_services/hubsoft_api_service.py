@@ -279,8 +279,8 @@ class HubSoftAPIService(HubSoftAPIRepository):
             )
 
             # Processa resposta da API
-            # Nota: API retorna "suscess" com 's' duplo (typo da API HubSoft)
-            if response.get('status') == 'suscess' and response.get('atendimentos'):
+            # A API retorna "success" (não "suscess" como estava na documentação antiga)
+            if response.get('status') == 'success' and response.get('atendimentos'):
                 atendimentos = response['atendimentos']
                 logger.info(f"Encontrados {len(atendimentos)} atendimentos para CPF {formatted_cpf[:3]}***")
 
@@ -310,17 +310,27 @@ class HubSoftAPIService(HubSoftAPIRepository):
         Returns:
             Ticket mapeado para formato interno
         """
-        hubsoft_status_obj = hubsoft_ticket.get('status', {})
+        # O campo 'status' vem como string na API HubSoft (ex: "Resolvido", "Aguardando Análise")
+        status_value = hubsoft_ticket.get('status', 'Status Desconhecido')
 
-        # Usa o 'prefixo' para lógica interna e a 'descricao' para exibição ao usuário.
-        status_key = hubsoft_status_obj.get('prefixo', 'unknown')
-        status_display = hubsoft_status_obj.get('descricao', 'Status Desconhecido')
+        # Mapeia status em português para prefixo interno
+        status_map = {
+            'Aguardando Análise': 'aguardando_analise',
+            'Em Andamento': 'em_andamento',
+            'Resolvido': 'resolvido',
+            'Cancelado': 'cancelado',
+            'Pendente': 'pendente'
+        }
 
-        # Tenta extrair categoria do tipo_atendimento ou parametros
-        # Por padrão, tickets do HubSoft não têm categoria, então usa "others"
+        status_key = status_map.get(status_value, 'unknown')
+        status_display = status_value
+
+        # Tenta extrair categoria do tipo_atendimento
+        # tipo_atendimento vem como string (ex: "SUPORTE - ONCABO GAMER")
         category = 'others'
-        if hubsoft_ticket.get('tipo_atendimento') and isinstance(hubsoft_ticket['tipo_atendimento'], dict):
-            category = hubsoft_ticket['tipo_atendimento'].get('descricao', 'others')
+        tipo_atendimento = hubsoft_ticket.get('tipo_atendimento', '')
+        if tipo_atendimento and isinstance(tipo_atendimento, str):
+            category = tipo_atendimento
 
         return {
             'id': hubsoft_ticket.get('id_atendimento'),
