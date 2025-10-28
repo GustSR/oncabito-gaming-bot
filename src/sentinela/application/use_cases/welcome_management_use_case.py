@@ -300,12 +300,10 @@ class WelcomeManagementUseCase(UseCase):
         user = await self.user_repository.find_by_telegram_id(user_id)
 
         if user:
-            # Se o usuário já existe (verificou CPF), apenas reseta o status das regras.
+            # Se o usuário já existe (verificou CPF), não precisamos fazer nada.
+            # O status de regras deve ser preservado se ele já aceitou antes.
             # Não mexe no status de verificação (ativo/inativo).
-            user.rules_accepted = False
-            user.rules_accepted_at = None
-            await self.user_repository.save(user)
-            logger.info(f"Usuário existente {username} teve seu status de regras resetado ao entrar no grupo.")
+            logger.info(f"Usuário existente {username} (ID: {user_id}) entrou no grupo. Status atual: {user.status.value}, Regras aceitas: {user.rules_accepted}")
         else:
             # Este caso é raro, para alguém que entrou no grupo sem passar pelo bot.
             # O fluxo normal de verificação de CPF irá criar o usuário corretamente depois.
