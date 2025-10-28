@@ -138,14 +138,16 @@ class IntegrationStartedHandler(EventHandler[IntegrationStarted]):
             result = await self.api_repository.create_ticket(ticket_data)
 
         elif sync_type == "update":
-            # Atualizar ticket existente
-            updates = await self._prepare_ticket_updates(ticket_id)
-            result = await self.api_repository.update_ticket(hubsoft_ticket_id, updates)
+            # REMOVIDO: update_ticket() não existe na API HubSoft
+            # TODO: Implementar atualização usando PUT /api/v1/integracao/atendimento/{id}
+            logger.warning(f"Sincronização 'update' não implementada - endpoint não existe")
+            raise NotImplementedError("Atualização de tickets não implementada na API HubSoft")
 
         elif sync_type == "status_change":
-            # Atualizar apenas status
-            updates = {"status": payload.get("new_status")}
-            result = await self.api_repository.update_ticket(hubsoft_ticket_id, updates)
+            # REMOVIDO: update_ticket() não existe na API HubSoft
+            # TODO: Implementar usando PUT /api/v1/integracao/atendimento/{id}
+            logger.warning(f"Mudança de status não implementada - endpoint não existe")
+            raise NotImplementedError("Mudança de status não implementada na API HubSoft")
 
         else:
             raise ValueError(f"Tipo de sincronização inválido: {sync_type}")
@@ -197,13 +199,12 @@ class IntegrationStartedHandler(EventHandler[IntegrationStarted]):
 
         # Busca tickets se solicitado
         if payload.get("include_tickets", True):
-            tickets = await self.api_repository.search_tickets_by_cpf(cpf)
+            # USA método correto: get_user_tickets() em vez de search_tickets_by_cpf()
+            tickets = await self.api_repository.get_user_tickets(cpf, include_closed=True)
             client_data["tickets"] = tickets
 
-        # Busca contratos se solicitado
-        if payload.get("include_billing", False):
-            contracts = await self.api_repository.get_client_contracts(cpf)
-            client_data["contracts"] = contracts
+        # Busca contratos já incluídos em verify_client_by_cpf com include_contracts=True
+        # Não precisa chamar get_client_contracts() (método não existe na API)
 
         # Cache dos dados
         cache_duration = payload.get("cache_duration", 3600)
@@ -221,18 +222,16 @@ class IntegrationStartedHandler(EventHandler[IntegrationStarted]):
         hubsoft_ticket_id = payload.get("hubsoft_ticket_id")
         new_status = payload.get("new_status")
 
-        logger.info(f"Atualizando status do ticket {hubsoft_ticket_id}: {new_status}")
+        logger.warning(f"Atualização de status não implementada - endpoint não existe na API HubSoft")
 
-        updates = {
-            "status": new_status,
-            "notes": payload.get("notes", "")
-        }
+        # REMOVIDO: update_ticket() não existe na API HubSoft
+        # TODO: Implementar usando PUT /api/v1/integracao/atendimento/{id}
+        # com campo id_atendimento_status (ID numérico, não string)
 
-        result = await self.api_repository.update_ticket(hubsoft_ticket_id, updates)
-
-        # Marca como concluída
-        integration.complete_with_success(result)
-        await self.integration_repository.save(integration)
+        raise NotImplementedError(
+            "Atualização de status não implementada. "
+            "Endpoint correto: PUT /api/v1/integracao/atendimento/{id}"
+        )
 
     async def _execute_bulk_sync(self, integration) -> None:
         """Executa sincronização em lote."""

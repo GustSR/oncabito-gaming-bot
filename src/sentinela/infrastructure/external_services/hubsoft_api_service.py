@@ -180,7 +180,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
             params = {
                 "busca": "cpf_cnpj",
                 "termo_busca": cpf,
-                "incluir_contrato": str(include_contracts).lower(),
+                "incluir_contrato": "sim" if include_contracts else "nao",  # API espera "sim"/"nao", não "true"/"false"
                 "servico_status": "servico_habilitado"
             }
 
@@ -338,90 +338,11 @@ class HubSoftAPIService(HubSoftAPIRepository):
             '_hubsoft_data': hubsoft_ticket
         }
 
-    async def update_ticket(
-        self,
-        hubsoft_ticket_id: str,
-        updates: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Atualiza ticket no HubSoft."""
-        try:
-            response = await self._make_request(
-                "PATCH",
-                f"/tickets/{hubsoft_ticket_id}",
-                data=updates
-            )
-
-            logger.info(f"Ticket atualizado no HubSoft: {hubsoft_ticket_id}")
-            return response
-
-        except Exception as e:
-            logger.error(f"Erro ao atualizar ticket: {e}")
-            raise
-
-    async def get_ticket_status(
-        self,
-        hubsoft_ticket_id: str
-    ) -> Dict[str, Any]:
-        """Obtém status de ticket no HubSoft."""
-        try:
-            response = await self._make_request(
-                "GET",
-                f"/tickets/{hubsoft_ticket_id}/status"
-            )
-
-            return response
-
-        except Exception as e:
-            logger.error(f"Erro ao obter status do ticket: {e}")
-            raise
-
-    async def search_tickets_by_cpf(
-        self,
-        cpf: str,
-        limit: int = 50
-    ) -> List[Dict[str, Any]]:
-        """Busca tickets por CPF do cliente."""
-        try:
-            params = {
-                "cpf": cpf,
-                "limit": limit
-            }
-
-            response = await self._make_request(
-                "GET",
-                "/tickets/search",
-                params=params
-            )
-
-            tickets = response.get('tickets', [])
-            logger.info(f"Encontrados {len(tickets)} tickets para CPF={cpf[:3]}***{cpf[-2:]}")
-            return tickets
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar tickets: {e}")
-            raise
-
-    async def get_client_contracts(
-        self,
-        cpf: str
-    ) -> List[Dict[str, Any]]:
-        """Obtém contratos do cliente."""
-        try:
-            params = {"cpf": cpf}
-
-            response = await self._make_request(
-                "GET",
-                "/clients/contracts",
-                params=params
-            )
-
-            contracts = response.get('contracts', [])
-            logger.info(f"Encontrados {len(contracts)} contratos para CPF={cpf[:3]}***{cpf[-2:]}")
-            return contracts
-
-        except Exception as e:
-            logger.error(f"Erro ao obter contratos: {e}")
-            raise
+    # REMOVIDOS: Métodos com endpoints inexistentes na API HubSoft
+    # - update_ticket() - usava /tickets/{id} (não existe)
+    # - get_ticket_status() - usava /tickets/{id}/status (não existe)
+    # - search_tickets_by_cpf() - usava /tickets/search (não existe, usar get_user_tickets())
+    # - get_client_contracts() - usava /clients/contracts (não existe, usar verify_client_by_cpf())
 
     async def check_api_health(self) -> Dict[str, Any]:
         """Verifica saúde da API HubSoft."""
