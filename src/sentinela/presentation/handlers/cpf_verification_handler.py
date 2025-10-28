@@ -96,16 +96,16 @@ class CPFVerificationHandler:
 
     async def check_user_verified(self, user_id: int) -> bool:
         """
-        Verifica se um usuário está ATIVO no sistema.
+        Verifica se um usuário está VERIFICADO (CPF validado) ou ATIVO no sistema.
 
-        A única fonte da verdade para um usuário ativo é a tabela `users`
-        com o status 'active'.
+        Aceita usuários com status 'verified' (CPF OK, aguardando entrar no grupo)
+        ou 'active' (já entrou no grupo).
 
         Args:
             user_id: ID do usuário do Telegram.
 
         Returns:
-            bool: True se o usuário existe e está ativo, False caso contrário.
+            bool: True se o usuário existe e está verificado ou ativo, False caso contrário.
         """
         try:
             user_repo = self._container.get("user_repository")
@@ -115,14 +115,14 @@ class CPFVerificationHandler:
 
             user = await user_repo.find_by_telegram_id(user_id)
 
-            if user and user.is_active():
-                logger.debug(f"Usuário {user_id} está verificado e ativo.")
+            if user and user.is_verified():
+                logger.debug(f"✅ Usuário {user_id} está verificado (status: {user.status.value}).")
                 return True
 
             if user:
-                logger.debug(f"Usuário {user_id} encontrado, mas com status '{user.status.value}', não 'active'.")
+                logger.debug(f"⚠️ Usuário {user_id} encontrado, mas com status '{user.status.value}' (não verificado).")
             else:
-                logger.debug(f"Usuário {user_id} não encontrado na tabela 'users'.")
+                logger.debug(f"❌ Usuário {user_id} não encontrado na tabela 'users'.")
 
             return False
 

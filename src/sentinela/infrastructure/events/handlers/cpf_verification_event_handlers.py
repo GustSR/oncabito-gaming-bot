@@ -202,10 +202,13 @@ class VerificationCompletedHandler(EventHandler):
                     expires_at=expires_at
                 )
 
-            # CORREÇÃO BUG #2: Ativa o usuário após verificação bem-sucedida
-            if not user.is_active():
-                user.activate()
-                logger.info(f"Usuário {event.user_id} ativado com sucesso após verificação de CPF.")
+            # Marca usuário como VERIFIED após CPF validado (não ACTIVE ainda)
+            # O usuário será ACTIVE apenas quando entrar no grupo
+            if user.needs_verification():
+                user.mark_verified()
+                logger.info(f"✅ Usuário {event.user_id} marcado como VERIFIED após validação de CPF. Aguardando entrada no grupo.")
+            elif user.is_verified():
+                logger.info(f"ℹ️ Usuário {event.user_id} já está verificado (status: {user.status.value}).")
 
             await self.user_repository.save(user)
             logger.info(f"Usuário {event.user_id} salvo com sucesso no repositório.")

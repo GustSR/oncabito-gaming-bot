@@ -13,10 +13,19 @@ from ..value_objects.cpf import CPF
 
 
 class UserStatus(Enum):
-    """Status do usuário no sistema."""
+    """
+    Status do usuário no sistema.
+
+    PENDING_VERIFICATION: Usuário criado mas ainda não verificou CPF
+    VERIFIED: CPF verificado, aguardando entrada no grupo
+    ACTIVE: Entrou no grupo e está ativo
+    INACTIVE: Saiu do grupo ou foi removido
+    SUSPENDED: Temporariamente suspenso
+    """
     ACTIVE = "active"
     INACTIVE = "inactive"
     PENDING_VERIFICATION = "pending_verification"
+    VERIFIED = "verified"
     SUSPENDED = "suspended"
 
 
@@ -224,9 +233,24 @@ class User(AggregateRoot[UserId]):
         self._service_info = service_info
         self._touch()
 
+    def mark_verified(self) -> None:
+        """
+        Marca o usuário como verificado (CPF validado).
+
+        Transição: PENDING_VERIFICATION → VERIFIED
+        """
+        if self._status == UserStatus.VERIFIED:
+            return  # Já verificado
+
+        self._status = UserStatus.VERIFIED
+        self._last_verification = datetime.now()
+        self._touch()
+
     def activate(self) -> None:
         """
-        Ativa o usuário no sistema.
+        Ativa o usuário no sistema (entrou no grupo).
+
+        Transição: VERIFIED → ACTIVE
 
         Raises:
             InvalidStatusTransitionError: Se transição inválida
@@ -327,6 +351,15 @@ class User(AggregateRoot[UserId]):
             bool: True se ativo
         """
         return self._status == UserStatus.ACTIVE
+
+    def is_verified(self) -> bool:
+        """
+        Verifica se usuário está verificado (CPF OK).
+
+        Returns:
+            bool: True se verificado ou ativo
+        """
+        return self._status in (UserStatus.VERIFIED, UserStatus.ACTIVE)
 
     def needs_verification(self) -> bool:
         """

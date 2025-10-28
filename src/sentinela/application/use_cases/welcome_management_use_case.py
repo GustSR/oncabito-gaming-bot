@@ -296,18 +296,25 @@ class WelcomeManagementUseCase(UseCase):
         first_name: str,
         last_name: Optional[str]
     ) -> None:
-        """Garante que o usuário seja marcado como pendente de aceitar as regras, sem alterar seu status de verificação."""
+        """
+        Processa entrada de usuário no grupo.
+
+        Se o usuário já verificou CPF (status VERIFIED), ativa ele (status ACTIVE).
+        """
         user = await self.user_repository.find_by_telegram_id(user_id)
 
         if user:
-            # Se o usuário já existe (verificou CPF), não precisamos fazer nada.
-            # O status de regras deve ser preservado se ele já aceitou antes.
-            # Não mexe no status de verificação (ativo/inativo).
-            logger.info(f"Usuário existente {username} (ID: {user_id}) entrou no grupo. Status atual: {user.status.value}, Regras aceitas: {user.rules_accepted}")
+            # Se o usuário está VERIFIED (CPF validado), agora ativa ele pois entrou no grupo
+            if user.is_verified() and not user.is_active():
+                user.activate()
+                await self.user_repository.save(user)
+                logger.info(f"✅ Usuário {username} (ID: {user_id}) ATIVADO ao entrar no grupo. Status: {user.status.value}")
+            else:
+                logger.info(f"ℹ️ Usuário {username} (ID: {user_id}) entrou no grupo. Status atual: {user.status.value}, Regras aceitas: {user.rules_accepted}")
         else:
             # Este caso é raro, para alguém que entrou no grupo sem passar pelo bot.
             # O fluxo normal de verificação de CPF irá criar o usuário corretamente depois.
-            logger.warning(f"Usuário {username} entrou no grupo sem um registro prévio no banco. Ele será tratado pelo fluxo de verificação.")
+            logger.warning(f"⚠️ Usuário {username} entrou no grupo sem um registro prévio no banco. Ele será tratado pelo fluxo de verificação.")
             # Não criamos mais um usuário incompleto aqui.
 
     async def _try_grant_gaming_access(
