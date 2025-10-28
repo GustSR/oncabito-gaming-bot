@@ -19,6 +19,7 @@ from ....domain.events.verification_events import (
     CPFDuplicateDetected,
     CPFRemapped
 )
+from ....domain.entities.user import UserStatus
 
 logger = logging.getLogger(__name__)
 
@@ -204,9 +205,11 @@ class VerificationCompletedHandler(EventHandler):
 
             # Marca usuário como VERIFIED após CPF validado (não ACTIVE ainda)
             # O usuário será ACTIVE apenas quando entrar no grupo
-            if user.needs_verification():
+            # Se usuário precisa de verificação ou está inativo, marca como verificado.
+            if user.needs_verification() or user.status == UserStatus.INACTIVE:
+                previous_status = user.status.value
                 user.mark_verified()
-                logger.info(f"✅ Usuário {event.user_id} marcado como VERIFIED após validação de CPF. Aguardando entrada no grupo.")
+                logger.info(f"✅ Usuário {event.user_id} (status anterior: {previous_status}) marcado como VERIFIED após validação de CPF.")
             elif user.is_verified():
                 logger.info(f"ℹ️ Usuário {event.user_id} já está verificado (status: {user.status.value}).")
 
