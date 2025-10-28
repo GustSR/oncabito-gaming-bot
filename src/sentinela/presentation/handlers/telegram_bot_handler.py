@@ -1342,51 +1342,52 @@ class TelegramBotHandler:
                 except Exception as deactivation_error:
                     logger.error(f"Falha ao desativar o usuário {user.id} na saída do grupo: {deactivation_error}")
 
-            # LÓGICA DE BOAS-VINDAS: Usuário entrou no grupo
+            # LÓGICA DE BOAS-VINDAS E ATIVAÇÃO: Usuário entrou no grupo
             elif new_member_status == 'member' and old_member_status in ['left', 'kicked']:
                 logger.info(f"Novo membro detectado ou retornando: {user.first_name} ({user.id})")
-                
+
                 user_repo = self._container.get("user_repository")
                 domain_user = await user_repo.find_by_telegram_id(user.id)
 
-                # Inicia o fluxo de boas-vindas apenas se o usuário for novo ou se suas regras não estiverem aceitas
+                # SEMPRE chama handle_new_member para processar ativação (VERIFIED → ACTIVE)
+                if hasattr(self, '_welcome_use_case') and self._welcome_use_case:
+                    await self._welcome_use_case.handle_new_member(
+                        user_id=user.id,
+                        username=user.username or user.first_name,
+                        first_name=user.first_name,
+                        last_name=user.last_name
+                    )
+
+                # Mostra mensagens de boas-vindas apenas se for novo ou não aceitou regras
                 if not domain_user or not domain_user.rules_accepted:
                     logger.info(f"Iniciando fluxo de boas-vindas para {user.first_name} (ID: {user.id}). Usuário novo ou regras não aceitas.")
-                    
-                    if hasattr(self, '_welcome_use_case') and self._welcome_use_case:
-                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-                        await self._welcome_use_case.handle_new_member(
-                            user_id=user.id,
-                            username=user.username or user.first_name,
-                            first_name=user.first_name,
-                            last_name=user.last_name
-                        )
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-                        welcome_msg = WelcomeMessage.create_initial_welcome(welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None)
-                        user_mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
-                        welcome_text = welcome_msg.format_for_user(user_mention=user_mention, username=user.first_name)
+                    welcome_msg = WelcomeMessage.create_initial_welcome(welcome_topic_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None)
+                    user_mention = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+                    welcome_text = welcome_msg.format_for_user(user_mention=user_mention, username=user.first_name)
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=welcome_text,
+                        parse_mode='HTML',
+                        message_thread_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None
+                    )
+
+                    if RULES_TOPIC_ID:
+                        rules_msg = WelcomeMessage.create_rules_reminder(rules_topic_id=int(RULES_TOPIC_ID), user_id=user.id)
+                        rules_text = rules_msg.format_for_user(user_mention=user_mention, username=user.first_name)
+                        keyboard = [[InlineKeyboardButton(rules_msg.button_text, callback_data=rules_msg.button_callback)]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
                         await context.bot.send_message(
                             chat_id=chat.id,
-                            text=welcome_text,
+                            text=rules_text,
                             parse_mode='HTML',
-                            message_thread_id=int(WELCOME_TOPIC_ID) if WELCOME_TOPIC_ID else None
+                            message_thread_id=int(RULES_TOPIC_ID),
+                            reply_markup=reply_markup
                         )
-
-                        if RULES_TOPIC_ID:
-                            rules_msg = WelcomeMessage.create_rules_reminder(rules_topic_id=int(RULES_TOPIC_ID), user_id=user.id)
-                            rules_text = rules_msg.format_for_user(user_mention=user_mention, username=user.first_name)
-                            keyboard = [[InlineKeyboardButton(rules_msg.button_text, callback_data=rules_msg.button_callback)]]
-                            reply_markup = InlineKeyboardMarkup(keyboard)
-                            await context.bot.send_message(
-                                chat_id=chat.id,
-                                text=rules_text,
-                                parse_mode='HTML',
-                                message_thread_id=int(RULES_TOPIC_ID),
-                                reply_markup=reply_markup
-                            )
                 else:
-                    logger.info(f"Membro {user.first_name} ({user.id}) já tem as regras aceitas. Pulando boas-vindas.")
+                    logger.info(f"Membro {user.first_name} ({user.id}) já tem as regras aceitas. Pulando mensagens de boas-vindas (mas processou ativação).")
 
         except Exception as e:
             logger.error(f"Erro ao processar novo membro: {e}")

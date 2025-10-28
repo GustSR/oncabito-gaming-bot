@@ -997,13 +997,13 @@ class HubSoftIntegrationUseCase:
                 )
 
             # 3. Busca apenas tickets ativos usando o CPF (LÓGICA CORRIGIDA)
-            active_statuses = ['pending', 'open', 'in_progress']
+            # include_closed=False já filtra apenas tickets abertos/pendentes
             logger.info(f"Buscando tickets ATIVOS para user {user_id} (CPF: {cpf[:3]}***)")
 
             tickets_data = await self.api_repository.get_user_tickets(
                 cpf=cpf,
                 include_closed=False,
-                status_filter=active_statuses
+                limit=20
             )
 
             duration = (datetime.now() - start_time).total_seconds()
