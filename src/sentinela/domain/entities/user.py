@@ -304,6 +304,9 @@ class User(AggregateRoot[UserId]):
         """
         Atualiza dados do cliente com informações do HubSoft.
 
+        IMPORTANTE: Este método apenas atualiza dados, não muda status do usuário.
+        Transições de status devem ser feitas explicitamente pelos event handlers.
+
         Args:
             client_data: Dados retornados pela API HubSoft
         """
@@ -326,11 +329,10 @@ class User(AggregateRoot[UserId]):
                 service_id=service_id
             )
 
-        # Se tem serviço ativo, ativa o usuário automaticamente
-        if (self._service_info and
-            self._service_info.status.lower() in ['ativo', 'active'] and
-            self._status == UserStatus.PENDING_VERIFICATION):
-            self.activate()
+        # REMOVIDO: Lógica de ativação automática (violava SRP)
+        # Transições de status agora são gerenciadas pelos event handlers:
+        # - VerificationCompleted → mark_verified() → VERIFIED
+        # - NewMemberJoined → activate() → ACTIVE
 
         self._touch()
 
