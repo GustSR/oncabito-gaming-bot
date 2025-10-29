@@ -725,7 +725,7 @@ class SupportFormHandler:
             # 3. Chamar o Use Case correto
             logger.info(f"Iniciando criação de ticket para usuário {user_id} via Use Case...")
             hubsoft_use_case = self._ensure_hubsoft_use_case()
-            hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data)
+            hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data, telegram_bot=context.bot)
 
             if not hubsoft_result.success:
                 # Escapa caracteres especiais do Markdown no error_code

@@ -104,7 +104,8 @@ class HubSoftIntegrationUseCase:
 
     async def create_support_ticket(
         self,
-        ticket_data: Dict[str, Any]
+        ticket_data: Dict[str, Any],
+        telegram_bot: Optional[Any] = None
     ) -> HubSoftOperationResult:
         """
         Cria atendimento de suporte no HubSoft.
@@ -277,17 +278,7 @@ class HubSoftIntegrationUseCase:
             if attachments and id_atendimento:
                 logger.info(f"Processando {len(attachments)} anexo(s) para atendimento {id_atendimento}")
 
-                # Importa bot context
-                from ...infrastructure.config.dependency_injection import get_container
-                container = get_container()
-
-                try:
-                    bot = container.get("telegram_bot")
-                except Exception as e:
-                    logger.warning(f"Não foi possível obter bot para download de anexos: {e}")
-                    bot = None
-
-                if bot:
+                if telegram_bot:
                     for idx, attachment in enumerate(attachments):
                         try:
                             file_id = attachment.get('file_id')
@@ -298,7 +289,7 @@ class HubSoftIntegrationUseCase:
 
                             # Download do arquivo do Telegram
                             logger.info(f"Baixando anexo {idx+1}/{len(attachments)} (file_id={file_id[:20]}...)")
-                            file = await bot.get_file(file_id)
+                            file = await telegram_bot.get_file(file_id)
                             file_bytes = await file.download_as_bytearray()
 
                             # Nome do arquivo
