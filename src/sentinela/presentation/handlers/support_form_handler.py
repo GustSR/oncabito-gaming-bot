@@ -727,10 +727,14 @@ class SupportFormHandler:
             hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data)
 
             if not hubsoft_result.success:
+                # Escapa caracteres especiais do Markdown no error_code
+                error_code = hubsoft_result.error_code or 'CREATE_TICKET_ERROR'
+                safe_error_code = error_code.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+
                 error_message = (
-                    "❌ **Não foi possível criar seu chamado**\n\n"
+                    "❌ *Não foi possível criar seu chamado*\n\n"
                     "Nosso sistema de suporte está temporariamente indisponível.\n\n"
-                    f"**Código do erro:** {hubsoft_result.error_code or 'CREATE_TICKET_ERROR'}\n\n"
+                    f"*Código do erro:* `{safe_error_code}`\n\n"
                     "Por favor, tente novamente em alguns minutos."
                 )
                 await query.edit_message_text(error_message, parse_mode='Markdown')
