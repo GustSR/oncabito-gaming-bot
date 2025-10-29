@@ -566,11 +566,15 @@ class SupportFormHandler:
             await self._save_support_state(user_id, state)
             await self.show_confirmation_step(query, context)
 
-    async def show_confirmation_step(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def show_confirmation_step(self, query_or_message, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Mostra etapa de confirmação."""
-        user_id = query.from_user.id
+        # Suporta tanto CallbackQuery quanto Message
+        if hasattr(query_or_message, 'from_user'):
+            user_id = query_or_message.from_user.id
+        else:
+            user_id = query_or_message.message.from_user.id
+
         state = await self._get_support_state(user_id)
-        attachments_count = len(state.get('attachments', []))
 
         keyboard = [
             [InlineKeyboardButton("✅ Confirmar e Criar", callback_data="sup_confirm_create")],
@@ -592,19 +596,26 @@ class SupportFormHandler:
             f"📋 **Resumo do seu chamado:**\n\n"
             f"🔸 **Categoria:** {state['category_name']}\n"
             f"🔸 **Jogo:** {state['game_name']}\n"
-            f"🔸 **Quando começou:** {state['timing_name']}\n"
-            f"🔸 **Anexos:** {attachments_count} arquivo(s)\n\n"
+            f"🔸 **Quando começou:** {state['timing_name']}\n\n"
             f"📝 **Descrição:**\n{desc_preview}\n\n"
             f"💡 Dá uma olhada se está tudo certo. Se quiser mudar algo, é só clicar em \"Editar\"!\n\n"
             f"✅ **Tudo certo?** Então pode confirmar! Vou encaminhar para nossa equipe técnica "
             f"imediatamente e você terá retorno em até **24h úteis!** 🚀"
         )
 
-        await query.edit_message_text(
-            message,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+        # Se for Message, envia nova mensagem; se for CallbackQuery, edita
+        if hasattr(query_or_message, 'reply_text'):
+            await query_or_message.reply_text(
+                message,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await query_or_message.edit_message_text(
+                message,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
 
     async def handle_support_confirmation(
         self,
@@ -701,11 +712,26 @@ class SupportFormHandler:
             user_mention = f"@{user.username}" if user.username else f"ID: {user_id}"
             now_str = datetime.now().strftime('%d/%m/%Y às %H:%M')
 
+            # Nome completo do usuário
+            full_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+            if not full_name:
+                full_name = "Nome não disponível"
+
+            # Telefone (se disponível do Telegram)
+            phone = getattr(user, 'phone_number', None)
+            phone_str = f"Telefone: {phone}\n" if phone else ""
+
             enhanced_description = (
                 f"-- ABERTO VIA BOT TELEGRAM --\n"
                 f"Data/Hora: {now_str}\n"
-                f"Usuário: {user_mention}\n"
-                f"---------------------------\n"
+                f"Nome: {full_name}\n"
+                f"Usuário Telegram: {user_mention}\n"
+                f"{phone_str}"
+                f"---------------------------\n\n"
+                f"Categoria: {state['category_name']}\n"
+                f"Jogo: {state['game_name']}\n"
+                f"Quando começou: {state['timing_name']}\n\n"
+                f"Descrição:\n"
                 f"{state['description']}"
             )
 
@@ -728,9 +754,8 @@ class SupportFormHandler:
             hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data)
 
             if not hubsoft_result.success:
-                # Escapar caracteres especiais do Markdown no error_code
+                # Escapa caracteres especiais do Markdown no error_code
                 error_code = hubsoft_result.error_code or 'CREATE_TICKET_ERROR'
-                # Remove caracteres que podem quebrar Markdown
                 safe_error_code = error_code.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
 
                 error_message = (
@@ -841,14 +866,15 @@ class SupportFormHandler:
 
             # Salva descrição
             state['description'] = text.strip()
-            state['state'] = SupportState.ATTACHMENTS
-            state['current_step'] = 5
+            state['state'] = SupportState.CONFIRMATION  # Pula anexos, vai direto para confirmação
+            state['current_step'] = 6  # Pula etapa 5 (anexos)
+            state['attachments'] = []  # Sem anexos
 
             await self._save_support_state(user_id, state)
 
-            # Mostra etapa de anexos
-            await self.show_attachments_step(update.message, context)
-            logger.info(f"Usuário {user_id} enviou descrição ({len(text)} chars)")
+            # Mostra confirmação diretamente (sem anexos)
+            await self.show_confirmation_step(update.message, context)
+            logger.info(f"Usuário {user_id} enviou descrição ({len(text)} chars) - pulando anexos")
             return True
 
         return False

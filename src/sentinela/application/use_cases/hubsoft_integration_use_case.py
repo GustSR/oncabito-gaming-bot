@@ -207,21 +207,14 @@ class HubSoftIntegrationUseCase:
 
             # 5. Monta descrição enriquecida com metadados do bot
             description = ticket_data.get('description', 'Sem descrição fornecida')
+            # A descrição já vem formatada do handler com todas as informações necessárias
+            enriched_description = description
+
+            # Variáveis necessárias para os parâmetros (mas não usadas na descrição)
             category = ticket_data.get('category', 'others')
             game_name = ticket_data.get('game_name', 'Não especificado')
             timing = ticket_data.get('timing', 'Não especificado')
             user_telegram = ticket_data.get('user_telegram', f'ID: {user_id}')
-
-            # Monta descrição final
-            enriched_description = (
-                f"-- ATENDIMENTO ABERTO VIA BOT TELEGRAM --\n"
-                f"Usuário: {user_telegram}\n"
-                f"Categoria: {category}\n"
-                f"Jogo Afetado: {game_name}\n"
-                f"Quando começou: {timing}\n"
-                f"-------------------------------------------\n\n"
-                f"{description}"
-            )
 
             # 6. Monta payload para API HubSoft
             from ...integrations.hubsoft.config import (
@@ -268,6 +261,13 @@ class HubSoftIntegrationUseCase:
                 f"Atendimento criado com sucesso: protocolo={protocolo}, "
                 f"id={id_atendimento}, user={user_id}"
             )
+
+            # 9. Processa anexos (se houver)
+            attachments = ticket_data.get('attachments', [])
+            # ANEXOS DESABILITADOS: WAF do HubSoft bloqueia anexos do Telegram
+            # Funcionalidade removida temporariamente até resolução com suporte HubSoft
+            if attachments:
+                logger.info(f"Ticket criado com {len(attachments)} anexo(s) fornecido(s), mas envio de anexos está desabilitado")
 
             return HubSoftOperationResult(
                 success=True,
