@@ -385,14 +385,17 @@ class HubSoftAPIService(HubSoftAPIRepository):
                 token = await self._authenticate()
 
             # Cria FormData para enviar arquivo
-            # Testando diferentes variações do nome do campo
             form_data = aiohttp.FormData()
 
-            # Tenta enviar com diferentes nomes de campo
-            # Baseado na doc que mostra: files[0]: None, files[1]: None
+            # Usa BytesIO para garantir que o aiohttp trate corretamente como file-like object
+            # Isso faz o aiohttp usar o Content-Disposition correto
+            import io
+            file_stream = io.BytesIO(file_data)
+
+            # Baseado no cURL da documentação: files[0]=@"arquivo.jpg"
             form_data.add_field(
                 'files[0]',
-                file_data,
+                file_stream,
                 filename=file_name,
                 content_type=mime_type
             )
@@ -402,7 +405,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
                 'Authorization': f'Bearer {token}'
             }
 
-            logger.info(f"Enviando anexo: campo='files[0]', filename='{file_name}', size={len(file_data)} bytes, content_type='{mime_type}'")
+            logger.info(f"Enviando anexo via BytesIO: campo='files[0]', filename='{file_name}', size={len(file_data)} bytes, content_type='{mime_type}'")
 
             # Faz requisição multipart/form-data
             async with session.post(

@@ -104,8 +104,7 @@ class HubSoftIntegrationUseCase:
 
     async def create_support_ticket(
         self,
-        ticket_data: Dict[str, Any],
-        telegram_bot: Optional[Any] = None
+        ticket_data: Dict[str, Any]
     ) -> HubSoftOperationResult:
         """
         Cria atendimento de suporte no HubSoft.
@@ -208,21 +207,14 @@ class HubSoftIntegrationUseCase:
 
             # 5. Monta descrição enriquecida com metadados do bot
             description = ticket_data.get('description', 'Sem descrição fornecida')
+            # A descrição já vem formatada do handler com todas as informações necessárias
+            enriched_description = description
+
+            # Variáveis necessárias para os parâmetros (mas não usadas na descrição)
             category = ticket_data.get('category', 'others')
             game_name = ticket_data.get('game_name', 'Não especificado')
             timing = ticket_data.get('timing', 'Não especificado')
             user_telegram = ticket_data.get('user_telegram', f'ID: {user_id}')
-
-            # Monta descrição final
-            enriched_description = (
-                f"-- ATENDIMENTO ABERTO VIA BOT TELEGRAM --\n"
-                f"Usuário: {user_telegram}\n"
-                f"Categoria: {category}\n"
-                f"Jogo Afetado: {game_name}\n"
-                f"Quando começou: {timing}\n"
-                f"-------------------------------------------\n\n"
-                f"{description}"
-            )
 
             # 6. Monta payload para API HubSoft
             from ...integrations.hubsoft.config import (
@@ -272,52 +264,10 @@ class HubSoftIntegrationUseCase:
 
             # 9. Processa anexos (se houver)
             attachments = ticket_data.get('attachments', [])
-            attachments_uploaded = 0
-            attachments_failed = 0
-
-            if attachments and id_atendimento:
-                logger.info(f"Processando {len(attachments)} anexo(s) para atendimento {id_atendimento}")
-
-                if telegram_bot:
-                    for idx, attachment in enumerate(attachments):
-                        try:
-                            file_id = attachment.get('file_id')
-                            if not file_id:
-                                logger.warning(f"Anexo {idx+1} sem file_id, pulando")
-                                attachments_failed += 1
-                                continue
-
-                            # Download do arquivo do Telegram
-                            logger.info(f"Baixando anexo {idx+1}/{len(attachments)} (file_id={file_id[:20]}...)")
-                            file = await telegram_bot.get_file(file_id)
-                            file_bytes = await file.download_as_bytearray()
-
-                            # Nome do arquivo
-                            file_name = f"telegram_attachment_{idx+1}.png"
-
-                            # Upload para HubSoft
-                            logger.info(f"Enviando anexo {idx+1} para HubSoft (atendimento {id_atendimento})")
-                            await self.api_repository.add_attachment_to_ticket(
-                                id_atendimento=id_atendimento,
-                                file_data=bytes(file_bytes),
-                                file_name=file_name,
-                                mime_type='image/png'
-                            )
-
-                            attachments_uploaded += 1
-                            logger.info(f"Anexo {idx+1}/{len(attachments)} enviado com sucesso!")
-
-                        except Exception as e:
-                            attachments_failed += 1
-                            logger.error(f"Erro ao processar anexo {idx+1}: {e}", exc_info=True)
-                else:
-                    logger.warning("Bot não disponível, anexos não serão enviados")
-                    attachments_failed = len(attachments)
-
-                logger.info(
-                    f"Anexos processados: {attachments_uploaded} sucesso, "
-                    f"{attachments_failed} falha(s)"
-                )
+            # ANEXOS DESABILITADOS: WAF do HubSoft bloqueia anexos do Telegram
+            # Funcionalidade removida temporariamente até resolução com suporte HubSoft
+            if attachments:
+                logger.info(f"Ticket criado com {len(attachments)} anexo(s) fornecido(s), mas envio de anexos está desabilitado")
 
             return HubSoftOperationResult(
                 success=True,
@@ -326,9 +276,7 @@ class HubSoftIntegrationUseCase:
                     "protocolo": protocolo,
                     "id_atendimento": id_atendimento,
                     "atendimento": atendimento,
-                    "response": response,
-                    "attachments_uploaded": attachments_uploaded,
-                    "attachments_failed": attachments_failed
+                    "response": response
                 },
                 duration_seconds=duration
             )
