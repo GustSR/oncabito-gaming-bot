@@ -385,10 +385,13 @@ class HubSoftAPIService(HubSoftAPIRepository):
                 token = await self._authenticate()
 
             # Cria FormData para enviar arquivo
-            # A API HubSoft espera files[] (array notation) para upload de arquivos
+            # Testando diferentes variações do nome do campo
             form_data = aiohttp.FormData()
+
+            # Tenta enviar com diferentes nomes de campo
+            # Baseado na doc que mostra: files[0]: None, files[1]: None
             form_data.add_field(
-                'files[]',
+                'files[0]',
                 file_data,
                 filename=file_name,
                 content_type=mime_type
@@ -398,6 +401,8 @@ class HubSoftAPIService(HubSoftAPIRepository):
             headers = {
                 'Authorization': f'Bearer {token}'
             }
+
+            logger.info(f"Enviando anexo: campo='files[0]', filename='{file_name}', size={len(file_data)} bytes, content_type='{mime_type}'")
 
             # Faz requisição multipart/form-data
             async with session.post(
