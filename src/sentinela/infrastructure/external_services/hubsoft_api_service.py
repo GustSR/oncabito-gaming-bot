@@ -385,9 +385,10 @@ class HubSoftAPIService(HubSoftAPIRepository):
                 token = await self._authenticate()
 
             # Cria FormData para enviar arquivo
+            # A API HubSoft espera files[] (array notation) para upload de arquivos
             form_data = aiohttp.FormData()
             form_data.add_field(
-                'files',
+                'files[]',
                 file_data,
                 filename=file_name,
                 content_type=mime_type
