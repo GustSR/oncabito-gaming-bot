@@ -433,7 +433,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
                         details=response_data
                     )
 
-                logger.info(f"Anexo '{file_name}' adicionado ao atendimento {id_atendimento}")
+                logger.info(f"Anexo '{file_name}' adicionado ao atendimento {id_atendimento} - Response: {response_data}")
                 return response_data
 
         except aiohttp.ClientError as e:
