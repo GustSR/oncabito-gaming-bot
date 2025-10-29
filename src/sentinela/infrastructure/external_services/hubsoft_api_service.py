@@ -387,7 +387,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
             # Cria FormData para enviar arquivo
             form_data = aiohttp.FormData()
             form_data.add_field(
-                'files[0]',
+                'files',
                 file_data,
                 filename=file_name,
                 content_type=mime_type
@@ -421,7 +421,7 @@ class HubSoftAPIService(HubSoftAPIRepository):
                 except:
                     response_data = {"text": await response.text()}
 
-                # Verifica se houve erro
+                # Verifica se houve erro HTTP
                 if not response.ok:
                     error_message = response_data.get('message', f'HTTP {response.status}')
                     error_code = response_data.get('error_code', 'upload_error')
@@ -430,6 +430,27 @@ class HubSoftAPIService(HubSoftAPIRepository):
                         error_message,
                         status_code=response.status,
                         error_code=error_code,
+                        details=response_data
+                    )
+
+                # Verifica se houve erro na resposta da API (status: "error")
+                api_status = response_data.get('status', '')
+                if api_status == 'error':
+                    error_msg = response_data.get('msg', 'Erro desconhecido')
+                    errors = response_data.get('errors', [])
+                    exception = response_data.get('exception', '')
+
+                    error_details = f"{error_msg}"
+                    if errors:
+                        error_details += f" - Erros: {', '.join(errors)}"
+                    if exception:
+                        error_details += f" - Exception: {exception}"
+
+                    logger.error(f"Erro ao adicionar anexo '{file_name}' ao atendimento {id_atendimento}: {error_details}")
+                    raise HubSoftAPIError(
+                        error_details,
+                        status_code=200,  # HTTP foi 200, mas API retornou erro
+                        error_code="api_error",
                         details=response_data
                     )
 
