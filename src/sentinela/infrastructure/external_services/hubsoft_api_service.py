@@ -348,6 +348,105 @@ class HubSoftAPIService(HubSoftAPIRepository):
             '_hubsoft_data': hubsoft_ticket
         }
 
+    async def add_attachment_to_ticket(
+        self,
+        id_atendimento: int,
+        file_data: bytes,
+        file_name: str,
+        mime_type: str = 'image/png'
+    ) -> Dict[str, Any]:
+        """
+        Adiciona anexo a um atendimento existente no HubSoft.
+
+        Args:
+            id_atendimento: ID do atendimento no HubSoft
+            file_data: Dados binários do arquivo
+            file_name: Nome do arquivo (ex: screenshot.png)
+            mime_type: Tipo MIME do arquivo
+
+        Returns:
+            Dict contendo response da API
+
+        Raises:
+            HubSoftAPIError: Erro no upload do anexo
+        """
+        try:
+            import aiohttp
+
+            # Rate limiting
+            await self.rate_limiter.wait_for_rate_limit()
+
+            session = await self._get_session()
+            url = f"{self.base_url}/api/v1/integracao/atendimento/adicionar_anexo/{id_atendimento}"
+
+            # Obtém token de autenticação
+            token = self.token_manager.get_access_token()
+            if not token:
+                token = await self._authenticate()
+
+            # Cria FormData para enviar arquivo
+            form_data = aiohttp.FormData()
+            form_data.add_field(
+                'files[0]',
+                file_data,
+                filename=file_name,
+                content_type=mime_type
+            )
+
+            # Headers (não incluir Content-Type, aiohttp define automaticamente)
+            headers = {
+                'Authorization': f'Bearer {token}'
+            }
+
+            # Faz requisição multipart/form-data
+            async with session.post(
+                url=url,
+                data=form_data,
+                headers=headers
+            ) as response:
+
+                # Verifica rate limiting
+                if response.status == 429:
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    await self.rate_limiter.handle_rate_limit(retry_after)
+                    raise HubSoftAPIError(
+                        "Rate limit exceeded",
+                        status_code=429,
+                        error_code="rate_limit_exceeded"
+                    )
+
+                # Lê resposta
+                try:
+                    response_data = await response.json()
+                except:
+                    response_data = {"text": await response.text()}
+
+                # Verifica se houve erro
+                if not response.ok:
+                    error_message = response_data.get('message', f'HTTP {response.status}')
+                    error_code = response_data.get('error_code', 'upload_error')
+
+                    raise HubSoftAPIError(
+                        error_message,
+                        status_code=response.status,
+                        error_code=error_code,
+                        details=response_data
+                    )
+
+                logger.info(f"Anexo '{file_name}' adicionado ao atendimento {id_atendimento}")
+                return response_data
+
+        except aiohttp.ClientError as e:
+            raise HubSoftAPIError(
+                f"Connection error uploading attachment: {str(e)}",
+                error_code="connection_error"
+            )
+        except asyncio.TimeoutError:
+            raise HubSoftAPIError(
+                "Timeout uploading attachment",
+                error_code="timeout"
+            )
+
     # REMOVIDOS: Métodos com endpoints inexistentes na API HubSoft
     # - update_ticket() - usava /tickets/{id} (não existe)
     # - get_ticket_status() - usava /tickets/{id}/status (não existe)

@@ -739,13 +739,24 @@ class SupportFormHandler:
 
             # 4. Montar mensagem de sucesso com o protocolo real
             hubsoft_protocol = hubsoft_result.data.get("protocolo") or f"ID {hubsoft_result.data.get('id_atendimento')}"
+            attachments_uploaded = hubsoft_result.data.get('attachments_uploaded', 0)
+            attachments_failed = hubsoft_result.data.get('attachments_failed', 0)
             now = datetime.now()
+
+            # Monta informação sobre anexos
+            attachments_info = ""
+            if attachments_uploaded > 0:
+                attachments_info = f"📎 **Anexos:** {attachments_uploaded} enviado(s) com sucesso!\n"
+            if attachments_failed > 0:
+                attachments_info += f"⚠️ {attachments_failed} anexo(s) com falha no envio\n"
 
             success_message = (
                 f"🎉 **PRONTO! SEU CHAMADO FOI CRIADO COM SUCESSO!**\n\n"
                 f"📋 **Protocolo:** `{hubsoft_protocol}`\n"
                 f"📅 **Criado em:** {now.strftime('%d/%m/%Y às %H:%M')}\n"
-                f"📊 **Status:** Aguardando Atendimento\n\n"
+                f"📊 **Status:** Aguardando Atendimento\n"
+                f"{attachments_info}"
+                f"\n"
                 f"✅ Nossa equipe técnica já recebeu seu chamado e vai começar a análise.\n\n"
                 f"Você receberá todas as atualizações aqui pelo Telegram. "
                 f"O tempo médio de primeira resposta é de **até 24h úteis**.\n\n"

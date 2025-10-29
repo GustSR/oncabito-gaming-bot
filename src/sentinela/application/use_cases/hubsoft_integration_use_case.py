@@ -259,6 +259,65 @@ class HubSoftIntegrationUseCase:
                 f"id={id_atendimento}, user={user_id}"
             )
 
+            # 9. Processa anexos (se houver)
+            attachments = ticket_data.get('attachments', [])
+            attachments_uploaded = 0
+            attachments_failed = 0
+
+            if attachments and id_atendimento:
+                logger.info(f"Processando {len(attachments)} anexo(s) para atendimento {id_atendimento}")
+
+                # Importa bot context
+                from ...infrastructure.config.dependency_injection import get_container
+                container = get_container()
+
+                try:
+                    bot = container.get("telegram_bot")
+                except Exception as e:
+                    logger.warning(f"Não foi possível obter bot para download de anexos: {e}")
+                    bot = None
+
+                if bot:
+                    for idx, attachment in enumerate(attachments):
+                        try:
+                            file_id = attachment.get('file_id')
+                            if not file_id:
+                                logger.warning(f"Anexo {idx+1} sem file_id, pulando")
+                                attachments_failed += 1
+                                continue
+
+                            # Download do arquivo do Telegram
+                            logger.info(f"Baixando anexo {idx+1}/{len(attachments)} (file_id={file_id[:20]}...)")
+                            file = await bot.get_file(file_id)
+                            file_bytes = await file.download_as_bytearray()
+
+                            # Nome do arquivo
+                            file_name = f"telegram_attachment_{idx+1}.png"
+
+                            # Upload para HubSoft
+                            logger.info(f"Enviando anexo {idx+1} para HubSoft (atendimento {id_atendimento})")
+                            await self.api_repository.add_attachment_to_ticket(
+                                id_atendimento=id_atendimento,
+                                file_data=bytes(file_bytes),
+                                file_name=file_name,
+                                mime_type='image/png'
+                            )
+
+                            attachments_uploaded += 1
+                            logger.info(f"Anexo {idx+1}/{len(attachments)} enviado com sucesso!")
+
+                        except Exception as e:
+                            attachments_failed += 1
+                            logger.error(f"Erro ao processar anexo {idx+1}: {e}", exc_info=True)
+                else:
+                    logger.warning("Bot não disponível, anexos não serão enviados")
+                    attachments_failed = len(attachments)
+
+                logger.info(
+                    f"Anexos processados: {attachments_uploaded} sucesso, "
+                    f"{attachments_failed} falha(s)"
+                )
+
             return HubSoftOperationResult(
                 success=True,
                 message=f"Atendimento criado com sucesso. Protocolo: {protocolo}",
@@ -266,7 +325,9 @@ class HubSoftIntegrationUseCase:
                     "protocolo": protocolo,
                     "id_atendimento": id_atendimento,
                     "atendimento": atendimento,
-                    "response": response
+                    "response": response,
+                    "attachments_uploaded": attachments_uploaded,
+                    "attachments_failed": attachments_failed
                 },
                 duration_seconds=duration
             )
