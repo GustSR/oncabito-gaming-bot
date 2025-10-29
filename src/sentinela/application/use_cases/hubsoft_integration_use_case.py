@@ -177,7 +177,14 @@ class HubSoftIntegrationUseCase:
             # 3. Valida campos obrigatórios do client_data
             id_cliente_servico = client_data.get('id_cliente_servico')
             nome_cliente = client_data.get('nome_razaosocial') or ticket_data.get('user_name', 'Cliente')
-            telefone_cliente = client_data.get('telefone')
+
+            # Tenta múltiplas fontes para o telefone (prioridade: client_data -> ticket_data -> padrão)
+            telefone_cliente = (
+                client_data.get('telefone') or
+                client_data.get('telefone_principal') or
+                client_data.get('celular') or
+                ticket_data.get('user_phone')
+            )
 
             if not id_cliente_servico:
                 return HubSoftOperationResult(
@@ -186,20 +193,16 @@ class HubSoftIntegrationUseCase:
                     error_code="MISSING_CLIENT_SERVICE_ID"
                 )
 
-            if not telefone_cliente:
-                return HubSoftOperationResult(
-                    success=False,
-                    message="Telefone não encontrado nos dados do cliente",
-                    error_code="MISSING_PHONE"
-                )
-
             # 4. Formata telefone (remove caracteres especiais, mantém apenas dígitos)
-            telefone_formatado = ''.join(filter(str.isdigit, telefone_cliente))
+            if telefone_cliente:
+                telefone_formatado = ''.join(filter(str.isdigit, str(telefone_cliente)))
+            else:
+                telefone_formatado = ""
 
             # Valida formato (mínimo 10 dígitos: DD + número)
             if len(telefone_formatado) < 10:
-                logger.warning(f"Telefone inválido para user {user_id}: {telefone_cliente}")
-                # Usa telefone padrão se inválido
+                logger.warning(f"Telefone inválido ou não fornecido para user {user_id}: '{telefone_cliente}'. Usando telefone padrão.")
+                # Usa telefone padrão se inválido (necessário pela API HubSoft)
                 telefone_formatado = "0000000000"
 
             # 5. Monta descrição enriquecida com metadados do bot
@@ -221,11 +224,18 @@ class HubSoftIntegrationUseCase:
             )
 
             # 6. Monta payload para API HubSoft
+            from ...integrations.hubsoft.config import (
+                HUBSOFT_TIPO_ATENDIMENTO_GAMING,
+                HUBSOFT_STATUS_ATENDIMENTO_ABERTO
+            )
+
             hubsoft_payload = {
                 "id_cliente_servico": id_cliente_servico,
                 "descricao": enriched_description,
                 "nome": nome_cliente,
                 "telefone": telefone_formatado,
+                "id_tipo_atendimento": int(HUBSOFT_TIPO_ATENDIMENTO_GAMING),
+                "id_atendimento_status": int(HUBSOFT_STATUS_ATENDIMENTO_ABERTO),
                 "parametros": {
                     "origem": "telegram_bot",
                     "bot_user_id": user_id,

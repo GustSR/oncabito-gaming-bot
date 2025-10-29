@@ -336,12 +336,28 @@ class SubmitCPFForVerificationHandler(CommandHandler[SubmitCPFForVerificationCom
                 if servico and 'habilitado' in servico.get('status', '').lower():
                     servico_ativo = servico
                     break
-            
+
             if not servico_ativo:
                 logger.warning(f"❌ Cliente {client_name} encontrado, mas não possui serviço ativo.")
                 return None
 
-            logger.info(f"✅ Cliente {client_name} validado com sucesso - Serviço ativo: {servico_ativo.get('nome', 'N/A')}")
+            # DEBUG: Log completo do servico_ativo para entender estrutura
+            logger.info(f"🔍 DEBUG servico_ativo keys: {list(servico_ativo.keys())}")
+            logger.info(f"🔍 DEBUG servico_ativo completo: {servico_ativo}")
+
+            # Enriquece client_data com informações do serviço ativo para uso em atendimentos
+            # Tenta múltiplos campos possíveis para o ID do serviço
+            id_servico = (
+                servico_ativo.get('id') or
+                servico_ativo.get('id_cliente_servico') or
+                servico_ativo.get('id_servico')
+            )
+
+            client_data['id_cliente_servico'] = id_servico
+            client_data['servico_nome'] = servico_ativo.get('nome', '')
+            client_data['servico_status'] = servico_ativo.get('status', '')
+
+            logger.info(f"✅ Cliente {client_name} validado com sucesso - Serviço ativo: {servico_ativo.get('nome', 'N/A')} (ID: {id_servico})")
             return client_data
 
         except Exception as e:

@@ -714,6 +714,7 @@ class SupportFormHandler:
                 "user_id": user_id,
                 "user_name": user.first_name,
                 "user_telegram": user_mention,
+                "user_phone": getattr(user, 'phone_number', None),  # Telefone do Telegram (se disponível)
                 "category": state['category'],
                 "game_name": state['game_name'],
                 "timing": state['timing_name'],
@@ -727,10 +728,15 @@ class SupportFormHandler:
             hubsoft_result = await hubsoft_use_case.create_support_ticket(ticket_data)
 
             if not hubsoft_result.success:
+                # Escapar caracteres especiais do Markdown no error_code
+                error_code = hubsoft_result.error_code or 'CREATE_TICKET_ERROR'
+                # Remove caracteres que podem quebrar Markdown
+                safe_error_code = error_code.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+
                 error_message = (
-                    "❌ **Não foi possível criar seu chamado**\n\n"
+                    "❌ *Não foi possível criar seu chamado*\n\n"
                     "Nosso sistema de suporte está temporariamente indisponível.\n\n"
-                    f"**Código do erro:** {hubsoft_result.error_code or 'CREATE_TICKET_ERROR'}\n\n"
+                    f"*Código do erro:* `{safe_error_code}`\n\n"
                     "Por favor, tente novamente em alguns minutos."
                 )
                 await query.edit_message_text(error_message, parse_mode='Markdown')
@@ -779,7 +785,7 @@ class SupportFormHandler:
         except Exception as e:
             logger.error(f"Erro crítico ao criar ticket: {e}", exc_info=True)
             await query.edit_message_text(
-                "❌ **Erro ao criar chamado**\n\n"
+                "❌ *Erro ao criar chamado*\n\n"
                 "Ocorreu um erro inesperado. Por favor, tente novamente com /suporte.",
                 parse_mode='Markdown'
             )
