@@ -714,6 +714,7 @@ class SupportFormHandler:
                 "user_id": user_id,
                 "user_name": user.first_name,
                 "user_telegram": user_mention,
+                "user_phone": getattr(user, 'phone_number', None),  # Telefone do Telegram (se disponível)
                 "category": state['category'],
                 "game_name": state['game_name'],
                 "timing": state['timing_name'],
@@ -794,7 +795,7 @@ class SupportFormHandler:
         except Exception as e:
             logger.error(f"Erro crítico ao criar ticket: {e}", exc_info=True)
             await query.edit_message_text(
-                "❌ **Erro ao criar chamado**\n\n"
+                "❌ *Erro ao criar chamado*\n\n"
                 "Ocorreu um erro inesperado. Por favor, tente novamente com /suporte.",
                 parse_mode='Markdown'
             )
