@@ -204,7 +204,8 @@ DATABASE_FILE="/app/data/database/sentinela.db"  # Docker: /app/data | Local: da
 ```
 
 ### 🎯 **Como Obter IDs dos Tópicos**
-Siga o guia: **[docs/TOPICS_DISCOVERY_GUIDE.md](docs/TOPICS_DISCOVERY_GUIDE.md)**
+Use o bot **@userinfobot** dentro do grupo e dos tópicos para obter os IDs necessários.
+Ou consulte: **[Documentação de Deployment](docs/guides/DEPLOYMENT.md)** para mais detalhes.
 
 ### 🤖 **Comandos do Bot**
 ```bash
@@ -322,17 +323,27 @@ docker exec -it oncabo-gaming-bot /bin/bash
 
 ## 📚 **DOCUMENTAÇÃO**
 
-### 📖 **Guias Principais**
-- **[🚀 Deploy Manual Guide](docs/DEPLOY_MANUAL_GUIDE.md)** - Deploy simplificado (NOVO)
-- **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Instalação em servidor
-- **[Topics Setup](docs/TOPICS_SETUP_GUIDE.md)** - Configuração de tópicos
-- **[Messages Templates](docs/MENSAGENS_TOPICOS.md)** - Templates para tópicos
-- **[🤖 Mapeamento de Respostas](docs/MAPEAMENTO_RESPOSTAS_BOT.md)** - Todas as interações do bot (NOVO)
+### 📖 **Guias de Uso**
+- **[🤖 Mapeamento de Respostas](docs/MAPEAMENTO_RESPOSTAS_BOT.md)** - Todas as interações do bot por contexto
+- **[🚀 Deploy em Produção Local](docs/DEPLOY_PRODUCAO_LOCAL.md)** - Deploy simplificado com Docker
+- **[📘 Início Rápido](docs/guides/QUICK_START.md)** - Primeiros passos com o bot
+- **[📦 Deployment Guide](docs/guides/DEPLOYMENT.md)** - Guia completo de instalação
+- **[🐳 GitHub Registry Deploy](docs/guides/GITHUB_REGISTRY_DEPLOY.md)** - Deploy via GHCR
+- **[🧪 Testing Setup](docs/guides/TESTING_SETUP.md)** - Configuração de testes
 
-### 🔧 **Guias Técnicos**
-- **[Topics Discovery](docs/TOPICS_DISCOVERY_GUIDE.md)** - Auto-descoberta de IDs
-- **[Restricted Topics](docs/RESTRICTED_TOPICS_GUIDE.md)** - Sistema de permissões
-- **[Notifications](docs/NOTIFICATIONS_SETUP.md)** - Configuração de alertas
+### 🏗️ **Arquitetura e Estrutura**
+- **[📋 Visão Geral da Arquitetura](docs/architecture/OVERVIEW.md)** - Clean Architecture + DDD
+- **[🏛️ Decisões Arquiteturais](docs/architecture/ARCHITECTURAL_DECISIONS.md)** - ADRs do projeto
+- **[📁 Estrutura do Projeto](docs/architecture/PROJECT_STRUCTURE.md)** - Organização de pastas
+
+### 🔌 **API e Integrações**
+- **[📡 Documentação API HubSoft](docs/api/HUBSOFT_API_DOCUMENTATION.md)** - Integração com ERP
+
+### 📊 **Análises e Processos**
+- **[🔄 Mapeamento de Interações](docs/analysis/MAPEAMENTO_COMPLETO_MENSAGENS_INTERACOES.md)** - Fluxos completos
+- **[📈 Diagramas de Fluxo](docs/analysis/DIAGRAMAS_FLUXOS_BOT.md)** - Visualização dos processos
+- **[⚠️ Inconsistências Resolvidas](docs/processes/INCONSISTENCIAS_RESOLUCOES.md)** - Histórico de correções
+- **[🐛 Inconsistências de Lógica](docs/processes/INCONSISTENCIAS_LOGICA_INTERACOES.md)** - Problemas identificados
 
 ---
 
@@ -431,7 +442,7 @@ crontab -l
 - **Issues:** GitHub Issues
 - **Logs:** `logs/checkup.log` e `docker logs oncabito-bot`
 - **Documentação:** Pasta `docs/`
-- **Troubleshooting:** [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
+- **Troubleshooting:** [docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)
 
 ---
 
