@@ -256,7 +256,7 @@ O bot tem comportamentos diferentes dependendo de onde você interage com ele:
 **💡 Por que isso?**
 Para manter o grupo organizado e evitar spam do bot em conversas não relacionadas ao suporte.
 
-**📖 Detalhes completos:** Veja [MAPEAMENTO_RESPOSTAS_BOT.md](MAPEAMENTO_RESPOSTAS_BOT.md) para entender todas as interações
+**📖 Detalhes completos:** Veja [MAPEAMENTO_RESPOSTAS_BOT.md](docs/MAPEAMENTO_RESPOSTAS_BOT.md) para entender todas as interações
 
 ---
 
@@ -327,7 +327,7 @@ docker exec -it oncabo-gaming-bot /bin/bash
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Instalação em servidor
 - **[Topics Setup](docs/TOPICS_SETUP_GUIDE.md)** - Configuração de tópicos
 - **[Messages Templates](docs/MENSAGENS_TOPICOS.md)** - Templates para tópicos
-- **[🤖 Mapeamento de Respostas](MAPEAMENTO_RESPOSTAS_BOT.md)** - Todas as interações do bot (NOVO)
+- **[🤖 Mapeamento de Respostas](docs/MAPEAMENTO_RESPOSTAS_BOT.md)** - Todas as interações do bot (NOVO)
 
 ### 🔧 **Guias Técnicos**
 - **[Topics Discovery](docs/TOPICS_DISCOVERY_GUIDE.md)** - Auto-descoberta de IDs
