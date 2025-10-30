@@ -173,10 +173,10 @@ class CPFVerificationHandler:
 
             status_messages = {
                 VerificationStatus.PENDING: {
-                    "message": "⏳ **Aguardando verificação de CPF**\n\n📝 Por favor, envie seu CPF (apenas números) para continuar.\n\nDigite /ajuda se precisar de mais informações."
+                    "message": "⏳ **Aguardando verificação de CPF**\n\n📝 Por favor, envie seu CPF (apenas números) para continuar."
                 },
                 VerificationStatus.IN_PROGRESS: {
-                    "message": "🔄 **Verificação em andamento**\n\nAguarde enquanto processamos suas informações.\n\nEm caso de dúvidas, digite /ajuda"
+                    "message": "🔄 **Verificação em andamento**\n\nAguarde enquanto processamos suas informações."
                 },
                 VerificationStatus.FAILED: {
                     "message": "❌ **Verificação não concluída**\n\nSuas tentativas foram esgotadas ou houve um erro.\n\n🔄 Para tentar novamente, digite /start"
