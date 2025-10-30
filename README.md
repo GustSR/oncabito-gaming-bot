@@ -171,18 +171,19 @@ sentinela/
 ```bash
 # === Bot Telegram ===
 TELEGRAM_TOKEN="SEU_TOKEN_DO_BOTFATHER"
-TELEGRAM_GROUP_ID="-100123456789"
+TELEGRAM_GROUP_ID="-100XXXXXXXXXXXX"  # ID do grupo (usar @userinfobot)
 
 # === Configurações de Tópicos ===
-RULES_TOPIC_ID="87"          # ID do tópico de regras
-WELCOME_TOPIC_ID="89"        # ID do tópico de boas-vindas
-SUPPORT_TOPIC_ID="148"       # ID do tópico de suporte gamer
+RULES_TOPIC_ID="XX"          # ID do tópico de regras
+WELCOME_TOPIC_ID="XX"        # ID do tópico de boas-vindas
+SUPPORT_TOPIC_ID="XXX"       # ID do tópico de suporte gamer (OBRIGATÓRIO)
 
 # === Notificações ===
-TECH_NOTIFICATION_CHANNEL_ID="-1003102389025"  # Canal técnico privado
+TECH_NOTIFICATION_CHANNEL_ID="-100XXXXXXXXXXXX"  # Canal técnico privado
 
 # === Administração ===
-ADMIN_USER_IDS="123456789,987654321"  # IDs dos admins
+# ⚠️ Admins são detectados AUTOMATICAMENTE via getChatAdministrators
+# Não precisa configurar IDs manualmente
 
 # === API HubSoft (Opcional) ===
 HUBSOFT_ENABLED="true"       # true/false para habilitar integração
@@ -192,9 +193,14 @@ HUBSOFT_CLIENT_SECRET="SEU_CLIENT_SECRET"
 HUBSOFT_USER="seu_usuario@email.com"
 HUBSOFT_PASSWORD="SUA_SENHA"
 
+# === Configurações Específicas de Gaming ===
+HUBSOFT_TIPO_ATENDIMENTO_GAMING="101"  # ID do tipo de atendimento no HubSoft
+HUBSOFT_STATUS_ATENDIMENTO_ABERTO="2"  # ID do status inicial (2 = Aguardando Análise)
+
 # === Configurações ===
-INVITE_LINK_EXPIRE_TIME=3600  # 1 hora
-DATABASE_FILE="data/database/sentinela.db"
+INVITE_LINK_EXPIRE_TIME=3600  # 1 hora (em segundos)
+INVITE_LINK_MEMBER_LIMIT=1    # 1 pessoa por link
+DATABASE_FILE="/app/data/database/sentinela.db"  # Docker: /app/data | Local: data/database
 ```
 
 ### 🎯 **Como Obter IDs dos Tópicos**
