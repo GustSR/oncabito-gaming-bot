@@ -17,8 +17,7 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 - Sistema de migrations para preservação de dados
 
 ### 🆘 **Sistema de Suporte Completo**
-- Formulário conversacional inteligente em 6 etapas
-- Upload de imagens (screenshots, fotos) até 3 por ticket
+- Formulário conversacional inteligente em 4 etapas
 - Integração automática com HubSoft ERP
 - Protocolos oficiais e acompanhamento via /status
 - **Sistema duplo de notificações:**
@@ -240,18 +239,17 @@ O bot tem comportamentos diferentes dependendo de onde você interage com ele:
 #### 📱 **No Privado (DM)**
 - ✅ Responde a **todos** os comandos
 - ✅ Responde a mensagens aleatórias com menu de ajuda
-- ✅ Aceita fotos durante fluxo de suporte
 - ✅ Processa fluxos completos de CPF e suporte
 - ✅ Envia confirmações e notificações
 
 #### 👥 **No Grupo - Tópico de Suporte** (🆘 Suporte Gamer)
 - ✅ Responde ao comando `/suporte` (redireciona para privado)
 - ✅ Envia notificações de novos tickets (para equipe)
-- ❌ **Ignora** mensagens e fotos aleatórias
+- ❌ **Ignora** mensagens aleatórias
 - ❌ **Ignora** outros comandos
 
 #### 🔇 **No Grupo - Outros Tópicos**
-- ❌ **Ignora TUDO** (mensagens, fotos, comandos)
+- ❌ **Ignora TUDO** (mensagens, comandos)
 - 🗑️ Deleta comando `/suporte` se enviado fora do tópico correto
 
 **💡 Por que isso?**

@@ -60,8 +60,7 @@ Bot oficial da **comunidade gamer OnCabo** que automatiza:
 ### 2. 🆘 Sistema de Suporte Completo
 
 **Formulário Conversacional:**
-- 6 etapas interativas
-- Upload de imagens (até 3 por ticket)
+- 4 etapas interativas
 - Categorias específicas de gaming
 - Protocolos oficiais HubSoft
 
@@ -118,7 +117,6 @@ Bot oficial da **comunidade gamer OnCabo** que automatiza:
 
 ✅ Todos os comandos (`/start`, `/suporte`, `/status`)
 ✅ Mensagens aleatórias (menu de ajuda)
-✅ Fotos durante fluxo de suporte
 ✅ Processa fluxos completos (CPF, suporte)
 ✅ Envia confirmações e notificações
 
@@ -130,7 +128,7 @@ Bot oficial da **comunidade gamer OnCabo** que automatiza:
 
 ✅ Responde `/suporte` (redireciona para privado)
 ✅ Envia notificações de novos tickets (para equipe)
-❌ **Ignora** mensagens e fotos aleatórias
+❌ **Ignora** mensagens aleatórias
 ❌ **Ignora** outros comandos
 
 **Por quê?** Manter organização e evitar spam
@@ -141,7 +139,7 @@ Bot oficial da **comunidade gamer OnCabo** que automatiza:
 
 **Bot silencioso:**
 
-❌ **Ignora TUDO** (mensagens, fotos, comandos)
+❌ **Ignora TUDO** (mensagens, comandos)
 🗑️ Deleta `/suporte` se enviado fora do tópico
 
 **Por quê?** Não interferir em conversas não relacionadas
@@ -212,9 +210,9 @@ F --> G[1. Categoria]
 G --> H[2. Jogo afetado]
 H --> I[3. Quando começou]
 I --> J[4. Descrição]
-J --> K[5. Fotos opcional]
-K --> L[6. Confirmação]
-L --> M[Cria ticket HubSoft]
+J --> K[5. Confirmação]
+K --> L[Cria ticket HubSoft]
+L --> M[Notifica equipe]
 M --> N[Notifica equipe]
 ```
 
@@ -298,14 +296,12 @@ F -->|Não| H[Lista completa]
 - 👤 **Clientes** - Validação de CPF e contratos
 - 🎫 **Atendimentos** - CRUD completo de tickets
 - 💬 **Mensagens** - Adicionar interações
-- 📎 **Anexos** - Upload de imagens
 
 **Endpoints:**
 - `/oauth/token`
 - `/api/v1/integracao/cliente`
 - `/api/v1/integracao/atendimento`
 - `/api/v1/integracao/atendimento/adicionar_mensagem`
-- `/api/v1/integracao/atendimento/adicionar_anexo`
 
 ---
 
@@ -433,7 +429,6 @@ administrators           -- Admins detectados automaticamente
 |-----------|--------------|-----------|
 | Verificação CPF | ✅ | - |
 | Sistema Suporte | ✅ | - |
-| Upload Anexos | ✅ | - |
 | Notificações | ✅ | - |
 | Validação Tópicos | ✅ | - |
 | Comandos Admin | ⏳ | Issue #8 |
@@ -607,9 +602,9 @@ administrators           -- Admins detectados automaticamente
 ### 3. Experiência do Usuário
 
 - Formulário conversacional (não invasivo)
-- Upload de fotos (evidências visuais)
 - Respostas contextualizadas (inteligente)
 - Validação de tópicos (organizado)
+- Interface limpa e objetiva
 
 **Resultado:** UX profissional
 
