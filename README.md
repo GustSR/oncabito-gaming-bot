@@ -21,12 +21,17 @@ Bot inteligente de moderação e gestão para grupos Telegram, integrado com o s
 - Upload de imagens (screenshots, fotos) até 3 por ticket
 - Integração automática com HubSoft ERP
 - Protocolos oficiais e acompanhamento via /status
-- Notificações técnicas por prioridade (alta, média, normal)
+- **Sistema duplo de notificações:**
+  - Notificação completa (HTML) para canal admin com dados técnicos
+  - Notificação simples (Markdown) para tópico de suporte
 - Anti-spam: 1 ticket a cada 30 minutos
+- **Validação de tópico:** `/suporte` só funciona no tópico configurado
 
 ### 🎮 **Gestão de Comunidade**
 - Sistema de regras obrigatórias
 - Tópicos restritos até aceitação
+- **Validação global de tópicos:** Bot só responde no tópico de suporte
+- Respostas contextualizadas (privado vs grupo)
 - Comandos funcionam no grupo e privado
 - Mensagens apenas em canais específicos
 
@@ -166,18 +171,19 @@ sentinela/
 ```bash
 # === Bot Telegram ===
 TELEGRAM_TOKEN="SEU_TOKEN_DO_BOTFATHER"
-TELEGRAM_GROUP_ID="-100123456789"
+TELEGRAM_GROUP_ID="-100XXXXXXXXXXXX"  # ID do grupo (usar @userinfobot)
 
 # === Configurações de Tópicos ===
-RULES_TOPIC_ID="87"          # ID do tópico de regras
-WELCOME_TOPIC_ID="89"        # ID do tópico de boas-vindas
-SUPPORT_TOPIC_ID="148"       # ID do tópico de suporte gamer
+RULES_TOPIC_ID="XX"          # ID do tópico de regras
+WELCOME_TOPIC_ID="XX"        # ID do tópico de boas-vindas
+SUPPORT_TOPIC_ID="XXX"       # ID do tópico de suporte gamer (OBRIGATÓRIO)
 
 # === Notificações ===
-TECH_NOTIFICATION_CHANNEL_ID="-1003102389025"  # Canal técnico privado
+TECH_NOTIFICATION_CHANNEL_ID="-100XXXXXXXXXXXX"  # Canal técnico privado
 
 # === Administração ===
-ADMIN_USER_IDS="123456789,987654321"  # IDs dos admins
+# ⚠️ Admins são detectados AUTOMATICAMENTE via getChatAdministrators
+# Não precisa configurar IDs manualmente
 
 # === API HubSoft (Opcional) ===
 HUBSOFT_ENABLED="true"       # true/false para habilitar integração
@@ -187,28 +193,71 @@ HUBSOFT_CLIENT_SECRET="SEU_CLIENT_SECRET"
 HUBSOFT_USER="seu_usuario@email.com"
 HUBSOFT_PASSWORD="SUA_SENHA"
 
+# === Configurações Específicas de Gaming ===
+HUBSOFT_TIPO_ATENDIMENTO_GAMING="101"  # ID do tipo de atendimento no HubSoft
+HUBSOFT_STATUS_ATENDIMENTO_ABERTO="2"  # ID do status inicial (2 = Aguardando Análise)
+
 # === Configurações ===
-INVITE_LINK_EXPIRE_TIME=3600  # 1 hora
-DATABASE_FILE="data/database/sentinela.db"
+INVITE_LINK_EXPIRE_TIME=3600  # 1 hora (em segundos)
+INVITE_LINK_MEMBER_LIMIT=1    # 1 pessoa por link
+DATABASE_FILE="/app/data/database/sentinela.db"  # Docker: /app/data | Local: data/database
 ```
 
 ### 🎯 **Como Obter IDs dos Tópicos**
-Siga o guia: **[docs/TOPICS_DISCOVERY_GUIDE.md](docs/TOPICS_DISCOVERY_GUIDE.md)**
+Use o bot **@userinfobot** dentro do grupo e dos tópicos para obter os IDs necessários.
+Ou consulte: **[Documentação de Deployment](docs/guides/DEPLOYMENT.md)** para mais detalhes.
 
 ### 🤖 **Comandos do Bot**
 ```bash
 # === Comandos para Usuários ===
 /start              # Validação de CPF e acesso ao grupo
-/suporte           # Abrir ticket de suporte (grupo/privado)
+/suporte           # Abrir ticket de suporte (só funciona no tópico de suporte)
 /status            # Consultar status dos seus tickets
 
-# === Comandos Administrativos ===
-/admin_tickets     # Consulta avançada de tickets (admins apenas)
+# === Comandos Administrativos (EM DESENVOLVIMENTO) ===
+# ⚠️ Atualmente exibem "Funcionalidade em manutenção"
+# Veja Issue #8 para acompanhar implementação
+/admin              # Menu administrativo com botões interativos
+/stats              # Estatísticas do bot (planejado)
+
+# Botões Admin (aparece no /start para admins):
+# 📋 Listar Tickets - Listar tickets com filtros (planejado)
+# 📊 Estatísticas - Estatísticas detalhadas do bot (planejado)
+# 🔄 Sync HubSoft - Sincronizar dados com HubSoft (planejado)
+# ⚙️ Configurações - Gerenciar configurações (planejado)
+
+# === Comandos Legados (Descontinuados) ===
 /topics            # Listar tópicos descobertos
 /auto_config       # Gerar configuração automática de tópicos
 /test_topics       # Testar configuração atual de tópicos
 /scan_topics       # Escanear grupo em busca de tópicos
 ```
+
+### 🎭 **Comportamento do Bot por Contexto**
+
+O bot tem comportamentos diferentes dependendo de onde você interage com ele:
+
+#### 📱 **No Privado (DM)**
+- ✅ Responde a **todos** os comandos
+- ✅ Responde a mensagens aleatórias com menu de ajuda
+- ✅ Aceita fotos durante fluxo de suporte
+- ✅ Processa fluxos completos de CPF e suporte
+- ✅ Envia confirmações e notificações
+
+#### 👥 **No Grupo - Tópico de Suporte** (🆘 Suporte Gamer)
+- ✅ Responde ao comando `/suporte` (redireciona para privado)
+- ✅ Envia notificações de novos tickets (para equipe)
+- ❌ **Ignora** mensagens e fotos aleatórias
+- ❌ **Ignora** outros comandos
+
+#### 🔇 **No Grupo - Outros Tópicos**
+- ❌ **Ignora TUDO** (mensagens, fotos, comandos)
+- 🗑️ Deleta comando `/suporte` se enviado fora do tópico correto
+
+**💡 Por que isso?**
+Para manter o grupo organizado e evitar spam do bot em conversas não relacionadas ao suporte.
+
+**📖 Detalhes completos:** Veja [MAPEAMENTO_RESPOSTAS_BOT.md](docs/MAPEAMENTO_RESPOSTAS_BOT.md) para entender todas as interações
 
 ---
 
@@ -274,16 +323,27 @@ docker exec -it oncabo-gaming-bot /bin/bash
 
 ## 📚 **DOCUMENTAÇÃO**
 
-### 📖 **Guias Principais**
-- **[🚀 Deploy Manual Guide](docs/DEPLOY_MANUAL_GUIDE.md)** - Deploy simplificado (NOVO)
-- **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Instalação em servidor
-- **[Topics Setup](docs/TOPICS_SETUP_GUIDE.md)** - Configuração de tópicos
-- **[Messages Templates](docs/MENSAGENS_TOPICOS.md)** - Templates para tópicos
+### 📖 **Guias de Uso**
+- **[🤖 Mapeamento de Respostas](docs/MAPEAMENTO_RESPOSTAS_BOT.md)** - Todas as interações do bot por contexto
+- **[🚀 Deploy em Produção Local](docs/DEPLOY_PRODUCAO_LOCAL.md)** - Deploy simplificado com Docker
+- **[📘 Início Rápido](docs/guides/QUICK_START.md)** - Primeiros passos com o bot
+- **[📦 Deployment Guide](docs/guides/DEPLOYMENT.md)** - Guia completo de instalação
+- **[🐳 GitHub Registry Deploy](docs/guides/GITHUB_REGISTRY_DEPLOY.md)** - Deploy via GHCR
+- **[🧪 Testing Setup](docs/guides/TESTING_SETUP.md)** - Configuração de testes
 
-### 🔧 **Guias Técnicos**
-- **[Topics Discovery](docs/TOPICS_DISCOVERY_GUIDE.md)** - Auto-descoberta de IDs
-- **[Restricted Topics](docs/RESTRICTED_TOPICS_GUIDE.md)** - Sistema de permissões
-- **[Notifications](docs/NOTIFICATIONS_SETUP.md)** - Configuração de alertas
+### 🏗️ **Arquitetura e Estrutura**
+- **[📋 Visão Geral da Arquitetura](docs/architecture/OVERVIEW.md)** - Clean Architecture + DDD
+- **[🏛️ Decisões Arquiteturais](docs/architecture/ARCHITECTURAL_DECISIONS.md)** - ADRs do projeto
+- **[📁 Estrutura do Projeto](docs/architecture/PROJECT_STRUCTURE.md)** - Organização de pastas
+
+### 🔌 **API e Integrações**
+- **[📡 Documentação API HubSoft](docs/api/HUBSOFT_API_DOCUMENTATION.md)** - Integração com ERP
+
+### 📊 **Análises e Processos**
+- **[🔄 Mapeamento de Interações](docs/analysis/MAPEAMENTO_COMPLETO_MENSAGENS_INTERACOES.md)** - Fluxos completos
+- **[📈 Diagramas de Fluxo](docs/analysis/DIAGRAMAS_FLUXOS_BOT.md)** - Visualização dos processos
+- **[⚠️ Inconsistências Resolvidas](docs/processes/INCONSISTENCIAS_RESOLUCOES.md)** - Histórico de correções
+- **[🐛 Inconsistências de Lógica](docs/processes/INCONSISTENCIAS_LOGICA_INTERACOES.md)** - Problemas identificados
 
 ---
 
@@ -382,7 +442,7 @@ crontab -l
 - **Issues:** GitHub Issues
 - **Logs:** `logs/checkup.log` e `docker logs oncabito-bot`
 - **Documentação:** Pasta `docs/`
-- **Troubleshooting:** [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
+- **Troubleshooting:** [docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)
 
 ---
 
@@ -429,9 +489,17 @@ Este projeto é propriedade da **OnCabo Gaming Community**.
 
 ---
 
-*Documentação atualizada em 21/10/2025 - OnCabito Gaming Bot v2.3*
+*Documentação atualizada em 30/10/2025 - OnCabito Gaming Bot v2.4*
 
-### 🆕 **Novidades v2.3**
+### 🆕 **Novidades v2.4**
+- 🎯 **Validação Global de Tópicos**: Bot agora só responde no tópico de suporte configurado
+- 📢 **Sistema Duplo de Notificações**: Notificação completa (HTML) para admin + simples (Markdown) para suporte
+- 🤖 **Respostas Contextualizadas**: Comportamento diferenciado entre privado e grupo
+- 📚 **Mapeamento Completo de Respostas**: Documentação detalhada de todas as interações do bot
+- 🔧 **Infraestrutura Admin Preparada**: Base para comandos administrativos (Issue #8)
+- 🧹 **Limpeza de Código**: Remoção de comandos inexistentes e código morto
+
+### 📦 **v2.3 (Anterior)**
 - 🏗️ **Arquitetura Clean + DDD**: Migração completa para Clean Architecture + Domain-Driven Design
 - 🔒 **Sistema de Locks Distribuídos**: Prevenção de race conditions em verificação de CPF
 - 🐛 **7 Inconsistências Resolvidas**: Correção de bugs críticos identificados em auditoria
