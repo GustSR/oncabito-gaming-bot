@@ -786,23 +786,68 @@ class SupportFormHandler:
 
             # 5. Notificar a equipe
             try:
-                notification_desc = state['description'][:200] + '...' if len(state['description']) > 200 else state['description']
-                notification = (
-                    f"🎫 **NOVO CHAMADO - VIA BOT**\n\n"
-                    f"📋 **Protocolo:** `{hubsoft_protocol}`\n"
-                    f"👤 **Cliente:** {user_mention}\n"
-                    f"🎯 **Categoria:** {state['category_name']}\n"
-                    f"🎮 **Jogo:** {state['game_name']}\n"
-                    f"📝 **Descrição:**\n{notification_desc}"
-                )
-                await context.bot.send_message(
-                    chat_id=int(TELEGRAM_GROUP_ID),
-                    message_thread_id=int(SUPPORT_TOPIC_ID),
-                    text=notification,
-                    parse_mode='Markdown'
-                )
+                from src.sentinela.domain.services.notification_formatter_service import NotificationFormatterService
+                from src.sentinela.core.config import TECH_NOTIFICATION_CHANNEL_ID
+
+                formatter = NotificationFormatterService()
+
+                # Prepara dados para notificação
+                ticket_data = {
+                    'hubsoft_protocol': hubsoft_protocol,
+                    'category': state['category'],
+                    'affected_game': state['game_name'],
+                    'problem_started': state['timing'],
+                    'description': state['description'],
+                    'user_id': user_id,
+                    'attachments': state.get('attachments', [])
+                }
+
+                user_data = {
+                    'client_name': user.first_name,
+                    'cpf': ticket_data.get('cpf', ''),
+                    'service_name': 'OnCabo Gaming'
+                }
+
+                # Notificação COMPLETA no canal de admin (se configurado)
+                if TECH_NOTIFICATION_CHANNEL_ID:
+                    try:
+                        admin_notification = formatter.format_critical_notification(
+                            ticket_data=ticket_data,
+                            user_data=user_data,
+                            protocol=hubsoft_protocol
+                        )
+                        await context.bot.send_message(
+                            chat_id=int(TECH_NOTIFICATION_CHANNEL_ID),
+                            text=admin_notification,
+                            parse_mode='HTML'
+                        )
+                        logger.info(f"Notificação enviada ao canal de admin para ticket {hubsoft_protocol}")
+                    except Exception as e:
+                        logger.error(f"Erro ao enviar notificação ao canal admin: {e}")
+
+                # Notificação SIMPLES no tópico de suporte do grupo
+                try:
+                    notification_desc = state['description'][:200] + '...' if len(state['description']) > 200 else state['description']
+                    support_notification = (
+                        f"🎫 **NOVO CHAMADO - VIA BOT**\n\n"
+                        f"📋 **Protocolo:** `{hubsoft_protocol}`\n"
+                        f"👤 **Cliente:** {user.first_name}\n"
+                        f"🎯 **Categoria:** {state['category_name']}\n"
+                        f"🎮 **Jogo:** {state['game_name']}\n"
+                        f"📝 **Descrição:**\n{notification_desc}"
+                    )
+                    await context.bot.send_message(
+                        chat_id=int(TELEGRAM_GROUP_ID),
+                        message_thread_id=int(SUPPORT_TOPIC_ID),
+                        text=support_notification,
+                        parse_mode='Markdown'
+                    )
+                    logger.info(f"Notificação enviada ao tópico de suporte para ticket {hubsoft_protocol}")
+                except Exception as e:
+                    logger.error(f"Erro ao enviar notificação ao tópico de suporte: {e}")
+
             except Exception as e:
-                logger.error(f"Erro ao enviar notificação de novo ticket ao grupo: {e}")
+                logger.error(f"Erro ao enviar notificações de novo ticket: {e}")
 
             await self._clear_support_state(user_id)
             logger.info(f"Ticket {hubsoft_protocol} criado com sucesso para usuário {user_id}")

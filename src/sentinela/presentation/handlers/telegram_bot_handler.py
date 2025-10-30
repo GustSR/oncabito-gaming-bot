@@ -485,8 +485,18 @@ class TelegramBotHandler:
                 await update.message.reply_text(message_text, parse_mode='Markdown')
                 return
 
-            # Se foi enviado no grupo, notifica e sai
+            # Se foi enviado no grupo, verifica se está no tópico correto
             if is_group:
+                # Verifica se foi enviado no tópico de suporte
+                message_thread_id = update.message.message_thread_id
+
+                if SUPPORT_TOPIC_ID and message_thread_id != int(SUPPORT_TOPIC_ID):
+                    # Ignora se não for no tópico de suporte
+                    await update.message.delete()
+                    logger.info(f"Comando /suporte ignorado - tópico incorreto (esperado: {SUPPORT_TOPIC_ID}, recebido: {message_thread_id})")
+                    return
+
+                # Deleta a mensagem e confirma no tópico correto
                 await update.message.delete()
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -1046,6 +1056,18 @@ class TelegramBotHandler:
             if not user:
                 return
 
+            # BLOQUEIO GLOBAL: Se for no grupo, só responde no tópico de suporte
+            chat_id = update.effective_chat.id
+            is_group = chat_id != user.id
+
+            if is_group:
+                message_thread_id = update.message.message_thread_id
+
+                # Se tiver tópico configurado e não for o de suporte, ignora silenciosamente
+                if SUPPORT_TOPIC_ID and message_thread_id != int(SUPPORT_TOPIC_ID):
+                    logger.info(f"Mensagem ignorada - tópico incorreto (esperado: {SUPPORT_TOPIC_ID}, recebido: {message_thread_id})")
+                    return
+
             text = update.message.text
 
             # Verifica se está aguardando CPF (contexto de verificação ativa)
@@ -1082,14 +1104,15 @@ class TelegramBotHandler:
             # Usuário já interagiu - Verifica se está realmente ativo
             is_active = await self._check_user_verified(user.id)
             if is_active:
-                # Usuário verificado e ativo - outras mensagens de texto
-                message = (
-                    "💬 Mensagem recebida!\n\n"
-                    "Para criar um atendimento, use /suporte\n"
-                    "Para verificar status, use /status\n\n"
-                    "📋 Digite /ajuda para ver todos os comandos."
-                )
-                await update.message.reply_text(message)
+                # Usuário verificado e ativo - responde APENAS NO PRIVADO
+                # No grupo/tópico, ignora mensagens aleatórias
+                if not is_group:
+                    message = (
+                        "💬 Mensagem recebida!\n\n"
+                        "Para criar um atendimento, use /suporte\n"
+                        "Para verificar status, use /status"
+                    )
+                    await update.message.reply_text(message)
                 return
 
             # Se não está ativo, busca a mensagem de status contextualizada
@@ -1134,18 +1157,32 @@ class TelegramBotHandler:
             if not user:
                 return
 
+            # BLOQUEIO GLOBAL: Se for no grupo, só responde no tópico de suporte
+            chat_id = update.effective_chat.id
+            is_group = chat_id != user.id
+
+            if is_group:
+                message_thread_id = update.message.message_thread_id
+
+                # Se tiver tópico configurado e não for o de suporte, ignora silenciosamente
+                if SUPPORT_TOPIC_ID and message_thread_id != int(SUPPORT_TOPIC_ID):
+                    logger.info(f"Foto ignorada - tópico incorreto (esperado: {SUPPORT_TOPIC_ID}, recebido: {message_thread_id})")
+                    return
+
             # Verifica se está em fluxo de suporte - delega para SupportFormHandler
             # O handler agora verifica internamente se há sessão ativa no banco
             handled = await self._support_handler.handle_photo_attachment(update, context)
             if handled:
                 return
 
-            # Se não está em suporte, informa o usuário
-            await update.message.reply_text(
-                "📷 Foto recebida!\n\n"
-                "Para criar um atendimento com anexos, use /suporte",
-                parse_mode='Markdown'
-            )
+            # Se não está em suporte, informa o usuário APENAS NO PRIVADO
+            # No grupo/tópico, ignora fotos aleatórias
+            if not is_group:
+                await update.message.reply_text(
+                    "📷 Foto recebida!\n\n"
+                    "Para criar um atendimento com anexos, use /suporte",
+                    parse_mode='Markdown'
+                )
 
         except Exception as e:
             logger.error(f"Erro ao processar foto: {e}")
