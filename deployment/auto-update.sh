@@ -62,15 +62,17 @@ check_login() {
     fi
 }
 
-# Obtém SHA256 da imagem local
-get_local_image_sha() {
-    docker image inspect "$FULL_IMAGE" --format='{{.Id}}' 2>/dev/null || echo ""
+# Obtém digest da imagem local
+get_local_image_digest() {
+    docker image inspect "$FULL_IMAGE" --format='{{index .RepoDigests 0}}' 2>/dev/null | \
+        grep -oP 'sha256:[a-f0-9]+' || echo ""
 }
 
-# Obtém SHA256 da imagem remota (registry)
-get_remote_image_sha() {
-    docker pull "$FULL_IMAGE" --quiet 2>/dev/null
-    docker image inspect "$FULL_IMAGE" --format='{{.Id}}' 2>/dev/null || echo ""
+# Obtém digest da imagem remota (registry) SEM fazer pull
+get_remote_image_digest() {
+    # Usa docker manifest inspect para verificar digest remoto sem baixar a imagem
+    docker manifest inspect "$FULL_IMAGE" 2>/dev/null | \
+        python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('config', {}).get('digest', ''))" 2>/dev/null || echo ""
 }
 
 # Verifica se container está rodando
@@ -232,28 +234,28 @@ main() {
     # Verifica se está logado no registry
     check_login
 
-    # Obtém SHA da imagem local atual
-    local_sha=$(get_local_image_sha)
-    if [ -z "$local_sha" ]; then
+    # Obtém digest da imagem local atual
+    local_digest=$(get_local_image_digest)
+    if [ -z "$local_digest" ]; then
         log_info "Nenhuma imagem local encontrada - primeira execução"
-        local_sha="none"
+        local_digest="none"
     else
-        log_info "Imagem local: ${local_sha:0:12}"
+        log_info "Imagem local: ${local_digest:7:12}"
     fi
 
-    # Verifica imagem remota (faz pull)
-    log_info "Verificando nova imagem no registry..."
-    remote_sha=$(get_remote_image_sha)
+    # Verifica digest da imagem remota (SEM fazer pull - apenas consulta)
+    log_info "Verificando nova imagem no registry (sem pull)..."
+    remote_digest=$(get_remote_image_digest)
 
-    if [ -z "$remote_sha" ]; then
+    if [ -z "$remote_digest" ]; then
         log_error "Falha ao verificar imagem remota"
         exit 1
     fi
 
-    log_info "Imagem remota: ${remote_sha:0:12}"
+    log_info "Imagem remota: ${remote_digest:7:12}"
 
     # Compara versões
-    if [ "$local_sha" = "$remote_sha" ]; then
+    if [ "$local_digest" = "$remote_digest" ]; then
         log_info "Já está na versão mais recente - nenhuma atualização necessária"
 
         # Verifica se container está rodando mesmo sem atualização
@@ -268,19 +270,26 @@ main() {
     # Nova versão disponível!
     log_info "=========================================="
     log_info "NOVA VERSÃO DISPONÍVEL!"
-    log_info "Local:  ${local_sha:0:12}"
-    log_info "Remota: ${remote_sha:0:12}"
+    log_info "Local:  ${local_digest:7:12}"
+    log_info "Remota: ${remote_digest:7:12}"
     log_info "=========================================="
 
     # Faz backup da versão atual
     backup_tag=$(backup_current_image)
 
+    # Faz pull da nova versão AGORA (só quando detectar mudança)
+    log_info "Baixando nova versão da imagem..."
+    if ! docker pull "$FULL_IMAGE" --quiet; then
+        log_error "Falha ao baixar nova imagem"
+        exit 1
+    fi
+
     # Deploy da nova versão
     if deploy_new_version; then
         log_success "=========================================="
         log_success "ATUALIZAÇÃO CONCLUÍDA COM SUCESSO!"
-        log_success "Versão anterior: ${local_sha:0:12}"
-        log_success "Nova versão: ${remote_sha:0:12}"
+        log_success "Versão anterior: ${local_digest:7:12}"
+        log_success "Nova versão: ${remote_digest:7:12}"
         log_success "=========================================="
 
         # Limpeza
