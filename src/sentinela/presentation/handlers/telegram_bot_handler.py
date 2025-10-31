@@ -373,83 +373,119 @@ class TelegramBotHandler:
                 "❌ Ocorreu um erro inesperado. Tente novamente mais tarde."
             )
 
+    async def _is_group_member(self, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Verifica se usuário é MEMBRO ATIVO do grupo OnCabo Gaming.
+
+        Returns:
+            True se usuário é creator, administrator ou member do grupo
+            False se usuário não é membro ou em caso de erro
+        """
+        try:
+            from telegram.error import BadRequest, TelegramError
+            member = await context.bot.get_chat_member(chat_id=TELEGRAM_GROUP_ID, user_id=user_id)
+            is_member = member and member.status in ['creator', 'administrator', 'member']
+            logger.info(f"Verificação de membership: user_id={user_id}, status={member.status if member else 'None'}, is_member={is_member}")
+            return is_member
+        except BadRequest as e:
+            # BadRequest geralmente significa que usuário não é membro
+            logger.info(f"Usuário {user_id} não é membro do grupo (BadRequest: {e})")
+            return False
+        except TelegramError as e:
+            logger.error(f"Erro do Telegram ao verificar membership do usuário {user_id}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao verificar membership do usuário {user_id}: {e}", exc_info=True)
+            return False
+
+    async def _send_not_member_message(self, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Envia mensagem informando que usuário não é membro e deve usar /start para obter novo link."""
+        message = (
+            "❌ **Você não está no grupo OnCabo Gaming!**\n\n"
+            "Seu link de acesso pode ter:\n"
+            "• ⏰ **Expirado** (links são válidos por 1 hora)\n"
+            "• ✅ **Já sido usado** (cada link é de uso único)\n"
+            "• 🚫 **Não foi utilizado** ainda\n\n"
+            "🔄 **Para receber um novo link de acesso:**\n"
+            "Digite /start e informe seu CPF novamente.\n\n"
+            "💡 **Dica:** Entre no grupo assim que receber o link!"
+        )
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
+            logger.info(f"Mensagem de 'não é membro' enviada para usuário {user_id}")
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem de 'não é membro' para usuário {user_id}: {e}")
+
     async def _check_and_redirect_unverified_group_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        """Verifica se o usuário não é verificado em um grupo e o redireciona para o privado."""
+        """Valida se usuário está no grupo e verificado antes de permitir comandos.
+
+        FLUXO DE VALIDAÇÃO (CRÍTICO PARA SEGURANÇA):
+        1. Comando no privado? → Permite (return True)
+        2. Comando no grupo:
+           a. Usuário É membro do grupo?
+              - Sim e verificado → Permite (return True)
+              - Sim mas não verificado → Bloqueia silenciosamente (return False)
+           b. Usuário NÃO é membro do grupo?
+              - Deleta mensagem do grupo
+              - Envia notificação no privado: "Use /start para novo link"
+              - Bloqueia comando (return False)
+
+        Returns:
+            True: Permite execução do comando (usuário válido)
+            False: Bloqueia comando (usuário inválido ou não-membro)
+        """
         user = update.effective_user
         is_group = update.effective_chat.id != user.id
 
-        if is_group and not await self._check_user_verified(user.id):
-            try:
-                # VERIFICAÇÃO CRÍTICA: Checa se usuário já é membro do grupo
-                # Se já é membro, significa que está em processo de aceitar regras ou aguardando ativação
-                # Nesse caso, NÃO devemos criar nova verificação nem enviar mensagens de CPF
-                from telegram.error import BadRequest
+        # Comando no privado → sempre permite
+        if not is_group:
+            return True
+
+        # Comando no grupo → valida membership PRIMEIRO
+        try:
+            is_member = await self._is_group_member(user.id, context)
+
+            # CASO 1: Usuário NÃO é membro do grupo
+            if not is_member:
+                logger.warning(f"🚫 BLOQUEIO: Usuário {user.id} tentou usar comando no grupo mas NÃO é membro!")
+
+                # Deleta mensagem do grupo
                 try:
-                    member = await context.bot.get_chat_member(chat_id=TELEGRAM_GROUP_ID, user_id=user.id)
-                    if member and member.status in ['creator', 'administrator', 'member']:
-                        # Usuário JÁ ESTÁ no grupo - apenas bloqueia o comando sem criar verificação
-                        logger.info(f"Usuário {user.id} é membro do grupo (status: {member.status}) mas não está totalmente ativo. Bloqueando comando sem criar verificação.")
-                        await update.message.delete()
-                        # Não envia mensagem, não cria verificação, não agenda lembrete
-                        return False  # Para a execução do handler principal
-                except BadRequest as bad_request_error:
-                    # Usuário NÃO é membro do grupo - continua com fluxo normal de redirecionamento
-                    logger.info(f"Usuário {user.id} não é membro do grupo (BadRequest). Iniciando fluxo de verificação.")
-                except Exception as member_check_error:
-                    # CORREÇÃO BUG #4: Diferencia erros de permissão de outros erros
-                    error_msg = str(member_check_error).lower()
+                    await update.message.delete()
+                except Exception as delete_error:
+                    logger.error(f"Erro ao deletar mensagem do grupo: {delete_error}")
 
-                    # Erros de permissão são esperados se o bot não tiver acesso ao grupo
-                    if 'not enough rights' in error_msg or 'forbidden' in error_msg or 'bot was kicked' in error_msg:
-                        logger.warning(f"Bot não tem permissão para verificar membros do grupo. Erro: {member_check_error}")
-                        # Permite que o comando continue, assume que usuário não é membro
-                        logger.info(f"Assumindo que usuário {user.id} não é membro devido a erro de permissão.")
-                        # Não faz 'return False' - continua o fluxo normal
-                    else:
-                        # Outros erros inesperados - bloqueia por segurança
-                        logger.error(f"Erro inesperado ao verificar se usuário {user.id} é membro do grupo: {member_check_error}")
-                        await update.message.delete()
-                        # Notifica usuário sobre o erro temporário
-                        try:
-                            await context.bot.send_message(
-                                chat_id=user.id,
-                                text="⚠️ Erro temporário ao processar seu comando. Tente novamente em alguns instantes."
-                            )
-                        except Exception:
-                            pass  # Falha silenciosa se não conseguir enviar DM
-                        return False
+                # Envia notificação no privado
+                await self._send_not_member_message(user.id, context)
 
-                # Se chegou aqui, usuário NÃO é membro - cria verificação e redireciona
+                # Bloqueia execução do comando
+                return False
+
+            # CASO 2: Usuário É membro do grupo
+            # Agora verificamos se está com status ativo no sistema
+            is_verified = await self._check_user_verified(user.id)
+
+            if is_verified:
+                # Membro do grupo E verificado → permite comando
+                logger.info(f"✅ PERMITIDO: Usuário {user.id} é membro do grupo e está verificado.")
+                return True
+            else:
+                # Membro do grupo mas NÃO verificado → bloqueia silenciosamente
+                # (Provavelmente em processo de aceitar regras ou aguardando ativação)
+                logger.info(f"⏸️ BLOQUEIO SILENCIOSO: Usuário {user.id} é membro mas não está verificado/ativo.")
+                try:
+                    await update.message.delete()
+                except Exception as delete_error:
+                    logger.error(f"Erro ao deletar mensagem: {delete_error}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Erro crítico na validação de membership para usuário {user.id}: {e}", exc_info=True)
+            # Em caso de erro, bloqueia por segurança
+            try:
                 await update.message.delete()
-
-                # Envia instrução no privado
-                await context.bot.send_message(
-                    chat_id=user.id,
-                    text=(
-                        "Olá! Para usar os comandos do bot no grupo, você precisa primeiro verificar seu CPF.\n\n"
-                        "Vamos fazer isso agora! Por favor, me envie seu CPF (apenas números) aqui no privado."
-                    )
-                )
-
-                # Inicia o fluxo de verificação silenciosamente
-                await self._cpf_use_case.start_verification(
-                    user_id=user.id,
-                    username=user.username or user.first_name,
-                    user_mention=user.mention_html,
-                    source_action="unverified_group_command"
-                )
-                context.user_data['waiting_cpf'] = True
-
-                # Agenda um lembrete para 5 minutos (300 segundos) via CPF handler
-                self._cpf_handler.schedule_cpf_reminder(context, user.id, delay_seconds=300)
-
-                logger.info(f"Usuário {user.id} (NÃO membro do grupo) tentou usar comando. Verificação criada e redirecionado para o privado.")
-                return False  # Indica que a execução do handler principal deve parar
-            except Exception as e:
-                logger.error(f"Erro ao redirecionar usuário não verificado: {e}")
-                return False # Impede a continuação em caso de erro
-
-        return True # Indica que o usuário está verificado ou no privado, pode continuar
+            except Exception:
+                pass
+            return False
 
     async def handle_support_command(
         self,
@@ -675,7 +711,13 @@ class TelegramBotHandler:
         try:
             user = query.from_user
 
-            # VALIDAÇÃO CRÍTICA: Usuário deve estar verificado.
+            # VALIDAÇÃO CRÍTICA 1: Usuário deve ser membro do grupo
+            is_member = await self._is_group_member(user.id, context)
+            if not is_member:
+                await self._send_not_member_message(user.id, context)
+                return
+
+            # VALIDAÇÃO CRÍTICA 2: Usuário deve estar verificado.
             is_verified = await self._check_user_verified(user.id)
             if not is_verified:
                 await context.bot.send_message(chat_id=user.id, text="⚠️ Sua verificação não foi encontrada. Por favor, use /start para se verificar novamente.")
@@ -755,7 +797,13 @@ class TelegramBotHandler:
         try:
             user = query.from_user
 
-            # VALIDAÇÃO CRÍTICA: Usuário deve estar verificado.
+            # VALIDAÇÃO CRÍTICA 1: Usuário deve ser membro do grupo
+            is_member = await self._is_group_member(user.id, context)
+            if not is_member:
+                await self._send_not_member_message(user.id, context)
+                return
+
+            # VALIDAÇÃO CRÍTICA 2: Usuário deve estar verificado.
             is_verified = await self._check_user_verified(user.id)
             if not is_verified:
                 await context.bot.send_message(chat_id=user.id, text="⚠️ Sua verificação não foi encontrada. Por favor, use /start para se verificar novamente.")

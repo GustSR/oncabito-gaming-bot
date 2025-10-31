@@ -299,16 +299,48 @@ class CPFVerificationHandler:
                     client_data = result.data.get('client_data', {})
                     client_name = client_data.get('name', user.first_name)
                     try:
+                        # PASSO 1: Verifica se usuário está banido e desbane se necessário
+                        # CRÍTICO: Usuário banido/kicked não consegue usar links de convite!
+                        try:
+                            from telegram.error import BadRequest
+                            member = await update.get_bot().get_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=user.id)
+
+                            if member.status == 'kicked':
+                                logger.warning(f"⚠️ Usuário {user.id} está BANIDO! Desbanindo automaticamente...")
+                                await update.get_bot().unban_chat_member(
+                                    chat_id=int(TELEGRAM_GROUP_ID),
+                                    user_id=user.id,
+                                    only_if_banned=True
+                                )
+                                logger.info(f"✅ Usuário {user.id} desbanido com sucesso! Agora pode usar o link.")
+                            else:
+                                logger.info(f"ℹ️ Usuário {user.id} status: {member.status} (não precisa desbanir)")
+
+                        except BadRequest as e:
+                            # Usuário nunca esteve no grupo - isso é normal
+                            logger.info(f"ℹ️ Usuário {user.id} nunca entrou no grupo (normal para primeira vez)")
+                        except Exception as check_error:
+                            logger.warning(f"Erro ao verificar status do usuário {user.id}: {check_error}")
+
+                        # PASSO 2: Cria novo link
                         # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
                         # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
                         expire_seconds = max(INVITE_LINK_EXPIRE_TIME, 60)
-                        expire_timestamp = int((datetime.now() + timedelta(seconds=expire_seconds)).timestamp())
+                        now_dt = datetime.now()
+                        expire_dt = now_dt + timedelta(seconds=expire_seconds)
+                        expire_timestamp = int(expire_dt.timestamp())
+
+                        logger.info(f"🔗 CRIANDO LINK: user_id={user.id}, name={client_name}, now={now_dt}, expire={expire_dt}, timestamp={expire_timestamp}, diff={expire_seconds}s")
+
                         invite_link = await update.get_bot().create_chat_invite_link(
                             chat_id=int(TELEGRAM_GROUP_ID),
                             member_limit=3,
                             expire_date=expire_timestamp,
                             name=f"{client_name} (ID:{user.id})"
                         )
+
+                        logger.info(f"✅ LINK CRIADO: {invite_link.invite_link}, expire_date={invite_link.expire_date}, member_limit={invite_link.member_limit}, name={invite_link.name}")
+
                         message = (
                             f"✅ <b>PARABÉNS, {client_name}!</b> 🎉\n\n"
                             "Seu plano OnCabo Gaming está ativo e verificado com sucesso!\n\n"
@@ -586,6 +618,24 @@ class CPFVerificationHandler:
             else:
                 # A conta escolhida é a mesma que respondeu - gera link de convite
                 try:
+                    # PASSO 1: Verifica se usuário está banido e desbane
+                    try:
+                        from telegram.error import BadRequest
+                        member = await query.get_bot().get_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=query.from_user.id)
+                        if member.status == 'kicked':
+                            logger.warning(f"⚠️ Usuário {query.from_user.id} está BANIDO! Desbanindo...")
+                            await query.get_bot().unban_chat_member(
+                                chat_id=int(TELEGRAM_GROUP_ID),
+                                user_id=query.from_user.id,
+                                only_if_banned=True
+                            )
+                            logger.info(f"✅ Usuário {query.from_user.id} desbanido!")
+                    except BadRequest:
+                        pass  # Normal para primeira vez
+                    except Exception as e:
+                        logger.warning(f"Erro ao desbanir {query.from_user.id}: {e}")
+
+                    # PASSO 2: Cria link
                     # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
                     # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
                     expire_seconds = max(INVITE_LINK_EXPIRE_TIME, 60)
@@ -693,6 +743,24 @@ class CPFVerificationHandler:
             if result.success and result.data.get('verified'):
                 # A resolução foi um sucesso e a verificação foi completada.
                 try:
+                    # PASSO 1: Verifica se usuário está banido e desbane
+                    try:
+                        from telegram.error import BadRequest
+                        member = await query.get_bot().get_chat_member(chat_id=int(TELEGRAM_GROUP_ID), user_id=query.from_user.id)
+                        if member.status == 'kicked':
+                            logger.warning(f"⚠️ Usuário {query.from_user.id} está BANIDO! Desbanindo...")
+                            await query.get_bot().unban_chat_member(
+                                chat_id=int(TELEGRAM_GROUP_ID),
+                                user_id=query.from_user.id,
+                                only_if_banned=True
+                            )
+                            logger.info(f"✅ Usuário {query.from_user.id} desbanido!")
+                    except BadRequest:
+                        pass  # Normal para primeira vez
+                    except Exception as e:
+                        logger.warning(f"Erro ao desbanir {query.from_user.id}: {e}")
+
+                    # PASSO 2: Cria link
                     client_name = query.from_user.first_name
                     # CORREÇÃO: Converte datetime para timestamp Unix (int) para compatibilidade com API do Telegram
                     # Garante pelo menos 60 segundos no futuro (requisito da API do Telegram)
