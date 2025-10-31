@@ -71,8 +71,9 @@ get_local_image_digest() {
 # Obtém digest da imagem remota (registry) SEM fazer pull
 get_remote_image_digest() {
     # Usa docker manifest inspect para verificar digest remoto sem baixar a imagem
+    # Para imagens multi-arch, pega o digest da plataforma amd64/linux
     docker manifest inspect "$FULL_IMAGE" 2>/dev/null | \
-        python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('config', {}).get('digest', ''))" 2>/dev/null || echo ""
+        python3 -c "import sys, json; data = json.load(sys.stdin); manifests = data.get('manifests', []); amd64 = next((m for m in manifests if m.get('platform', {}).get('architecture') == 'amd64'), manifests[0] if manifests else {}); print(amd64.get('digest', ''))" 2>/dev/null || echo ""
 }
 
 # Verifica se container está rodando
