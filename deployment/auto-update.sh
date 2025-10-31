@@ -62,18 +62,28 @@ check_login() {
     fi
 }
 
-# Obtém digest da imagem local
+# Obtém digest da imagem local (RepoDigest)
 get_local_image_digest() {
+    # RepoDigest é o digest que o registry retornou quando a imagem foi baixada
     docker image inspect "$FULL_IMAGE" --format='{{index .RepoDigests 0}}' 2>/dev/null | \
         grep -oP 'sha256:[a-f0-9]+' || echo ""
 }
 
 # Obtém digest da imagem remota (registry) SEM fazer pull
 get_remote_image_digest() {
-    # Usa docker manifest inspect para verificar digest remoto sem baixar a imagem
-    # Para imagens multi-arch, pega o digest da plataforma amd64/linux
-    docker manifest inspect "$FULL_IMAGE" 2>/dev/null | \
-        python3 -c "import sys, json; data = json.load(sys.stdin); manifests = data.get('manifests', []); amd64 = next((m for m in manifests if m.get('platform', {}).get('architecture') == 'amd64'), manifests[0] if manifests else {}); print(amd64.get('digest', ''))" 2>/dev/null || echo ""
+    # Usa skopeo inspect para pegar o MESMO digest que aparece no RepoDigest
+    # Se skopeo não estiver disponível, usa API do registry diretamente
+
+    # Método 1: Usar curl para pegar o digest do header Docker-Content-Digest
+    local token=$(curl -s "https://ghcr.io/token?scope=repository:$IMAGE_NAME:pull" | grep -oP '"token":"\K[^"]+')
+    if [ -n "$token" ]; then
+        curl -s -H "Authorization: Bearer $token" \
+             -H "Accept: application/vnd.oci.image.index.v1+json" \
+             -I "https://ghcr.io/v2/$IMAGE_NAME/manifests/$IMAGE_TAG" 2>/dev/null | \
+             grep -i "docker-content-digest" | grep -oP 'sha256:[a-f0-9]+' || echo ""
+    else
+        echo ""
+    fi
 }
 
 # Verifica se container está rodando
