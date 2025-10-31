@@ -307,7 +307,7 @@ class CPFVerificationHandler:
                             chat_id=int(TELEGRAM_GROUP_ID),
                             member_limit=3,
                             expire_date=expire_timestamp,
-                            name=f"Link para {client_name}"
+                            name=f"{client_name} (ID:{user.id})"
                         )
                         message = (
                             f"✅ <b>PARABÉNS, {client_name}!</b> 🎉\n\n"
@@ -594,7 +594,7 @@ class CPFVerificationHandler:
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
                         expire_date=expire_timestamp,
-                        name=f"Link para {client_name} (pós-resolução)"
+                        name=f"{client_name} (ID:{query.from_user.id})"
                     )
                     invite_message = (
                         f"\n\n🔗 **Seu link de acesso ao grupo:**\n"
@@ -702,7 +702,7 @@ class CPFVerificationHandler:
                         chat_id=int(TELEGRAM_GROUP_ID),
                         member_limit=3,
                         expire_date=expire_timestamp,
-                        name=f"Link para {client_name}"
+                        name=f"{client_name} (ID:{query.from_user.id})"
                     )
                     message = (
                         f"✅ **Conflito Resolvido!**\n\n"
