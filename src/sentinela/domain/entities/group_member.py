@@ -74,8 +74,7 @@ class GroupMember(Entity):
     message_count: int = 0
     warnings_count: int = 0
     kick_reason: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    # created_at e updated_at já vêm da classe Entity base como properties read-only
 
     def is_active_member(self) -> bool:
         """Verifica se é membro ativo do grupo."""

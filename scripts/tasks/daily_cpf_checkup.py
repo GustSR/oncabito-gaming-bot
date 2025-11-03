@@ -623,10 +623,12 @@ class DailyCPFCheckup:
 
     async def cleanup(self):
         """Limpeza de recursos."""
-        # Fecha sessão do bot Telegram para evitar warnings de sessão não fechada
+        # Fecha sessão HTTP do bot Telegram para evitar warnings de sessão não fechada
         if self.bot:
             try:
-                await self.bot.shutdown()
+                # Bot usa httpx internamente, precisa fechar explicitamente
+                if hasattr(self.bot, '_request') and self.bot._request:
+                    await self.bot._request.shutdown()
             except Exception as e:
                 logger.warning(f"Erro ao fechar bot: {e}")
 

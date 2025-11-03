@@ -340,9 +340,11 @@ class DuplicateCPFService:
             logger.info(f"Encontrados {len(users_with_cpf)} usuários com CPF para verificar")
 
             # 2. Agrupa usuários por CPF hash
+            from ..services.cpf_validation_service import CPFValidationService
             cpf_groups: Dict[str, List] = {}
             for user in users_with_cpf:
-                cpf_hash = user.cpf.hashed  # Hash do CPF
+                # Obtém hash do CPF usando CPFValidationService
+                cpf_hash = CPFValidationService.hash_cpf(user.cpf.value)
                 if cpf_hash not in cpf_groups:
                     cpf_groups[cpf_hash] = []
                 cpf_groups[cpf_hash].append(user)
