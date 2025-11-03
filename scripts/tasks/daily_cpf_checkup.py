@@ -29,7 +29,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 # Imports da nova arquitetura
-from sentinela.infrastructure.config.container import get_container, shutdown_container
+from sentinela.infrastructure.config.dependency_injection import get_container
 from sentinela.domain.value_objects.identifiers import UserId
 from sentinela.domain.entities.cpf_verification import VerificationStatus
 
@@ -78,7 +78,7 @@ class DailyCPFCheckup:
         self.bot = Bot(token=token)
 
         # Inicializa container DI
-        self.container = await get_container()
+        self.container = get_container()
         self.user_repo = self.container.get("user_repository")
         self.cpf_verification_repo = self.container.get("cpf_verification_repository")
         self.cpf_use_case = self.container.get("cpf_verification_use_case")
@@ -610,8 +610,7 @@ class DailyCPFCheckup:
 
     async def cleanup(self):
         """Limpeza de recursos."""
-        if self.container:
-            await shutdown_container()
+        # Container não precisa de cleanup explícito
         logger.info("🧹 Recursos liberados")
 
 
