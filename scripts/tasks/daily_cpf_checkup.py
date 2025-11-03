@@ -626,9 +626,12 @@ class DailyCPFCheckup:
         # Fecha sessão HTTP do bot Telegram para evitar warnings de sessão não fechada
         if self.bot:
             try:
-                # Bot usa httpx internamente, precisa fechar explicitamente
-                if hasattr(self.bot, '_request') and self.bot._request:
-                    await self.bot._request.shutdown()
+                # Bot python-telegram-bot v20+ usa httpx que precisa ser fechado
+                # O _request é um HTTPXRequest que tem um atributo _client
+                if hasattr(self.bot, '_request'):
+                    request = self.bot._request
+                    if hasattr(request, '_client') and request._client:
+                        await request._client.aclose()
             except Exception as e:
                 logger.warning(f"Erro ao fechar bot: {e}")
 

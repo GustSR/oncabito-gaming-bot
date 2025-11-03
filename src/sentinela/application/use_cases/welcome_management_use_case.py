@@ -363,7 +363,6 @@ class WelcomeManagementUseCase(UseCase):
 
             await self.event_bus.publish(
                 UserBanned(
-                    aggregate_id=str(user_id),
                     user_id=user_id,
                     username=username,
                     reason="Não aceitou regras em 24 horas",
