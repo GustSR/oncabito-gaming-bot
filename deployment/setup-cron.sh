@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Setup Cron - Configuração de Auto-Update
-# Instala cron job para verificar atualizações a cada 10 minutos
+# Setup Cron - Configuração de Todos os Cron Jobs
+# Instala cron jobs de auto-update E verificações diárias
 #
 
 set -e
@@ -52,61 +52,83 @@ fi
 
 echo -e "${GREEN}✅ crontab está instalado${NC}"
 
-# Define entrada do cron
-CRON_ENTRY="*/10 * * * * $AUTO_UPDATE_SCRIPT >> $LOG_FILE 2>&1"
+# Verifica se outros scripts existem
+CHECKUP_SCRIPT="$SCRIPT_DIR/run_checkup.sh"
+INTEGRITY_SCRIPT="$SCRIPT_DIR/run_integrity_check.sh"
+EXPORT_SCRIPT="$SCRIPT_DIR/run_data_export.sh"
+
+# Torna todos os scripts executáveis
+chmod +x "$CHECKUP_SCRIPT" 2>/dev/null || true
+chmod +x "$INTEGRITY_SCRIPT" 2>/dev/null || true
+chmod +x "$EXPORT_SCRIPT" 2>/dev/null || true
+
+# Define entradas dos cron jobs
+# Auto-Update: A cada 10 min, MAS apenas entre 00:00 e 05:00 (madrugada)
+# Evita conflito com jobs de verificação que rodam durante o dia
+CRON_AUTO_UPDATE="*/10 0-5 * * * $AUTO_UPDATE_SCRIPT >> $LOG_FILE 2>&1"
+# Checkup: A cada 30 minutos das 6:00 até 23:59 (processa conflitos mais rapidamente)
+CRON_CHECKUP="*/30 6-23 * * * $CHECKUP_SCRIPT >> $PROJECT_DIR/logs/checkup.log 2>&1"
+CRON_INTEGRITY="0 6 * * * $INTEGRITY_SCRIPT >> $PROJECT_DIR/logs/integrity.log 2>&1"
+CRON_EXPORT="30 6 * * * $EXPORT_SCRIPT >> $PROJECT_DIR/logs/export.log 2>&1"
 
 # Verifica se entrada já existe
-if crontab -l 2>/dev/null | grep -q "auto-update.sh"; then
+if crontab -l 2>/dev/null | grep -q "auto-update.sh\|run_checkup.sh"; then
     echo ""
-    echo -e "${YELLOW}⚠️  Cron job já existe!${NC}"
+    echo -e "${YELLOW}⚠️  Cron jobs já existem!${NC}"
     echo ""
-    echo "Cron atual:"
-    crontab -l | grep "auto-update.sh"
+    echo "Cron jobs atuais:"
+    crontab -l | grep -E "auto-update.sh|run_checkup.sh|run_integrity|run_data_export" || echo "(nenhum)"
     echo ""
-    echo -e "${BLUE}Deseja substituir? (s/n)${NC}"
+    echo -e "${BLUE}Deseja substituir TODOS os cron jobs? (s/n)${NC}"
     read -r response
 
     if [[ "$response" =~ ^[Ss]$ ]]; then
-        # Remove entrada antiga
-        (crontab -l 2>/dev/null | grep -v "auto-update.sh") | crontab -
-        echo -e "${GREEN}✅ Entrada antiga removida${NC}"
+        # Remove entradas antigas
+        (crontab -l 2>/dev/null | grep -v "auto-update.sh\|run_checkup.sh\|run_integrity\|run_data_export\|OnCabo\|Sentinela") | crontab -
+        echo -e "${GREEN}✅ Entradas antigas removidas${NC}"
     else
         echo -e "${YELLOW}Mantendo configuração existente${NC}"
         exit 0
     fi
 fi
 
-# Adiciona nova entrada
+# Adiciona novas entradas
 echo ""
-echo -e "${BLUE}📝 Adicionando cron job...${NC}"
-(crontab -l 2>/dev/null; echo "$CRON_ENTRY") | crontab -
+echo -e "${BLUE}📝 Adicionando cron jobs...${NC}"
+(crontab -l 2>/dev/null; echo ""; echo "# OnCabo Gaming Bot - Automated Tasks"; echo "$CRON_AUTO_UPDATE"; echo "$CRON_CHECKUP"; echo "$CRON_INTEGRITY"; echo "$CRON_EXPORT") | crontab -
 
-echo -e "${GREEN}✅ Cron job instalado com sucesso!${NC}"
+echo -e "${GREEN}✅ Todos os cron jobs instalados com sucesso!${NC}"
 echo ""
 
 # Mostra configuração
 echo -e "${BLUE}📊 CONFIGURAÇÃO:${NC}"
-echo "==========================================
-
-"
-echo "• Frequência: A cada 10 minutos"
-echo "• Script: $AUTO_UPDATE_SCRIPT"
-echo "• Log: $LOG_FILE"
+echo "=========================================="
 echo ""
-
-# Mostra próximas execuções (aproximado)
-echo -e "${BLUE}⏰ PRÓXIMAS EXECUÇÕES (aproximado):${NC}"
-current_minute=$(date +%M)
-next_run=$((10 - current_minute % 10))
-echo "• Próxima: ~$next_run minutos"
-echo "• Depois: ~$((next_run + 10)) minutos"
-echo "• Depois: ~$((next_run + 20)) minutos"
+echo "✅ Auto-Update (Deploy Automático)"
+echo "   Frequência: A cada 10 minutos (00:00-05:00 apenas)"
+echo "   Script: $AUTO_UPDATE_SCRIPT"
+echo "   Log: $LOG_FILE"
+echo ""
+echo "✅ Daily CPF Checkup"
+echo "   Frequência: A cada 30 minutos (6:00-23:59)"
+echo "   Script: $CHECKUP_SCRIPT"
+echo "   Log: $PROJECT_DIR/logs/checkup.log"
+echo ""
+echo "✅ Data Integrity Check"
+echo "   Frequência: Diário às 6:00 AM"
+echo "   Script: $INTEGRITY_SCRIPT"
+echo "   Log: $PROJECT_DIR/logs/integrity.log"
+echo ""
+echo "✅ Critical Data Export"
+echo "   Frequência: Diário às 6:30 AM"
+echo "   Script: $EXPORT_SCRIPT"
+echo "   Log: $PROJECT_DIR/logs/export.log"
 echo ""
 
 # Verifica cron atual
 echo -e "${BLUE}📋 CRONTAB ATUAL:${NC}"
 echo "=========================================="
-crontab -l | grep "auto-update" || echo "(vazio)"
+crontab -l | grep -E "auto-update|run_checkup|run_integrity|run_data_export" || echo "(vazio)"
 echo ""
 
 # Instruções
@@ -116,22 +138,33 @@ echo -e "${BLUE}📚 PRÓXIMOS PASSOS:${NC}"
 echo ""
 echo "1. Testar manualmente:"
 echo "   ${YELLOW}$AUTO_UPDATE_SCRIPT${NC}"
+echo "   ${YELLOW}$CHECKUP_SCRIPT${NC}"
+echo "   ${YELLOW}$INTEGRITY_SCRIPT${NC}"
+echo "   ${YELLOW}$EXPORT_SCRIPT${NC}"
 echo ""
 echo "2. Monitorar logs:"
+echo "   ${YELLOW}tail -f $PROJECT_DIR/logs/checkup.log${NC}"
+echo "   ${YELLOW}tail -f $PROJECT_DIR/logs/integrity.log${NC}"
+echo "   ${YELLOW}tail -f $PROJECT_DIR/logs/export.log${NC}"
 echo "   ${YELLOW}tail -f $LOG_FILE${NC}"
 echo ""
 echo "3. Ver cron jobs:"
 echo "   ${YELLOW}crontab -l${NC}"
 echo ""
-echo "4. Remover cron (se necessário):"
+echo "4. Editar cron jobs:"
 echo "   ${YELLOW}crontab -e${NC}"
-echo "   (Remova a linha do auto-update.sh)"
 echo ""
 echo -e "${BLUE}ℹ️  INFORMAÇÕES:${NC}"
-echo "• O script verificará atualizações a cada 10 minutos"
-echo "• Apenas baixa e atualiza se houver nova versão"
-echo "• Faz rollback automático se algo falhar"
-echo "• Logs completos em: $LOG_FILE"
+echo "• Auto-update: Verifica atualizações a cada 10 min (00:00-05:00)"
+echo "• Checkup: Verifica CPFs, contratos, remove inativos (cada 30 min, 6:00-23:59)"
+echo "• Integrity: Monitora saúde do banco de dados (6:00 AM)"
+echo "• Export: Backup incremental dos dados (6:30 AM)"
+echo "• Logs completos em: $PROJECT_DIR/logs/"
 echo ""
-echo -e "${GREEN}🚀 Sistema de auto-update está ativo!${NC}"
+echo -e "${YELLOW}⚠️  DEPLOY MANUAL:${NC}"
+echo "Para atualizar fora do horário automático (6:00-23:59):"
+echo "  ${YELLOW}$AUTO_UPDATE_SCRIPT${NC}"
+echo "  ou: ${YELLOW}$SCRIPT_DIR/../deploy.sh${NC} (se existir)"
+echo ""
+echo -e "${GREEN}🚀 Sistema de automação está ativo!${NC}"
 echo ""

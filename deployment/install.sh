@@ -49,7 +49,7 @@ echo "Diretório: $SCRIPT_DIR"
 echo "----------------------------------------"
 
 # Executa o script dentro do container
-docker exec oncabito-bot python3 scripts/daily_checkup.py
+docker exec oncabo-gaming-bot python3 scripts/tasks/daily_cpf_checkup.py
 
 echo "----------------------------------------"
 echo "✅ Checkup concluído em $(date)"
@@ -84,36 +84,36 @@ cd "$SCRIPT_DIR"
 echo "🚀 Deployando OnCabito Bot..."
 
 # Para container se estiver rodando
-if [ "$(docker ps -q -f name=oncabito-bot)" ]; then
+if [ "$(docker ps -q -f name=oncabo-gaming-bot)" ]; then
     echo "⏹️ Parando container existente..."
-    docker stop oncabito-bot
-    docker rm oncabito-bot
+    docker stop oncabo-gaming-bot
+    docker rm oncabo-gaming-bot
 fi
 
 # Remove imagem antiga se existir
-if [ "$(docker images -q oncabito-bot)" ]; then
+if [ "$(docker images -q oncabo-gaming-bot)" ]; then
     echo "🗑️ Removendo imagem antiga..."
-    docker rmi oncabito-bot
+    docker rmi oncabo-gaming-bot
 fi
 
 # Build nova imagem
 echo "🔨 Buildando nova imagem..."
-docker build -t oncabito-bot .
+docker build -t oncabo-gaming-bot .
 
 # Inicia novo container
 echo "▶️ Iniciando container..."
-docker run -d --name oncabito-bot \
+docker run -d --name oncabo-gaming-bot \
   --env-file .env \
   -v "$SCRIPT_DIR/data:/app/data" \
   -v "$SCRIPT_DIR/logs:/app/logs" \
-  oncabito-bot
+  oncabo-gaming-bot
 
 echo "✅ OnCabito Bot deployado com sucesso!"
 echo "📊 Status do container:"
-docker ps | grep oncabito-bot
+docker ps | grep oncabo-gaming-bot
 
 echo "📝 Para ver logs:"
-echo "   docker logs oncabito-bot"
+echo "   docker logs oncabo-gaming-bot"
 EOF
 
 chmod +x "$INSTALL_DIR/deploy.sh"
