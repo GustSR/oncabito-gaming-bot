@@ -72,7 +72,9 @@ class DailyCPFCheckup:
         from dotenv import load_dotenv
         load_dotenv()
 
-        self.group_id = int(os.getenv("TELEGRAM_GROUP_ID", "0"))
+        # Remove aspas do group_id se existirem (ex: '"-123"' -> -123)
+        group_id_str = os.getenv("TELEGRAM_GROUP_ID", "0").strip('"').strip("'")
+        self.group_id = int(group_id_str)
         token = os.getenv("TELEGRAM_TOKEN")
 
         if not token or not self.group_id:
