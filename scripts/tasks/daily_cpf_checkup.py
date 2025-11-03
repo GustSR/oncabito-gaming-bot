@@ -96,7 +96,7 @@ class DailyCPFCheckup:
         self.hubsoft_use_case = self.container.get("hubsoft_integration_use_case")
         self.admin_repo = self.container.get("admin_repository")
         self.welcome_use_case = self.container.get("welcome_management_use_case")
-        from sentinela.domain.repositories.hubsoft_repository import HubSoftAPIRepository
+        from src.sentinela.domain.repositories.hubsoft_repository import HubSoftAPIRepository
         self.hubsoft_api = self.container.get(HubSoftAPIRepository)
 
         logger.info("✅ Checkup inicializado com sucesso!")
