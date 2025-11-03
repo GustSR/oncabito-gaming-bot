@@ -635,6 +635,13 @@ class DailyCPFCheckup:
             except Exception as e:
                 logger.warning(f"Erro ao fechar bot: {e}")
 
+        # Fecha sessão aiohttp do HubSoft API Service
+        if self.hubsoft_api:
+            try:
+                await self.hubsoft_api.close()
+            except Exception as e:
+                logger.warning(f"Erro ao fechar HubSoft API: {e}")
+
         logger.info("🧹 Recursos liberados")
 
 
