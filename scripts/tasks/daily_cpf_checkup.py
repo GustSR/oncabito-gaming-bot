@@ -408,7 +408,9 @@ class DailyCPFCheckup:
         logger.info("=" * 60)
 
         try:
-            duplicate_service = self.container.get("duplicate_cpf_service")
+            # Importa DuplicateCPFService para pegar do container
+            from src.sentinela.domain.services.duplicate_cpf_service import DuplicateCPFService
+            duplicate_service = self.container.get(DuplicateCPFService)
             conflict_repo = self.container.get("duplicate_conflict_repository")
 
             # 1. Detecta e cria novos conflitos
@@ -621,7 +623,13 @@ class DailyCPFCheckup:
 
     async def cleanup(self):
         """Limpeza de recursos."""
-        # Container não precisa de cleanup explícito
+        # Fecha sessão do bot Telegram para evitar warnings de sessão não fechada
+        if self.bot:
+            try:
+                await self.bot.shutdown()
+            except Exception as e:
+                logger.warning(f"Erro ao fechar bot: {e}")
+
         logger.info("🧹 Recursos liberados")
 
 

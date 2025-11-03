@@ -451,10 +451,11 @@ class CPFVerificationUseCase(UseCase):
             command = ProcessExpiredVerificationsCommand()
             result = await self.expire_handler.handle(command)
 
+            # Handler retorna dict, não objeto
             return {
-                "success": result.success,
-                "message": result.message,
-                "data": result.data
+                "success": result["success"],
+                "message": f"Processadas {result['processed_count']} verificações expiradas",
+                "data": result
             }
 
         except Exception as e:

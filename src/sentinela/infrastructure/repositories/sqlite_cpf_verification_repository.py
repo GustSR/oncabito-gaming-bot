@@ -328,8 +328,9 @@ class SQLiteCPFVerificationRepository(CPFVerificationRepository):
     async def cleanup_expired(self, older_than_days: int = 7) -> int:
         """Remove verificações expiradas antigas."""
         try:
-            cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            cutoff_date = cutoff_date.replace(day=cutoff_date.day - older_than_days)
+            from datetime import timedelta
+            cutoff_date = datetime.now() - timedelta(days=older_than_days)
+            cutoff_date = cutoff_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()

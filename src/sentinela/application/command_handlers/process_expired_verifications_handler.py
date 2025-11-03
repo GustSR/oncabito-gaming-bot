@@ -49,9 +49,8 @@ class ProcessExpiredVerificationsHandler(CommandHandler[ProcessExpiredVerificati
 
             for verification in expired_verifications:
                 try:
-                    # Atualiza status para expirado
-                    verification.status = VerificationStatus.EXPIRED
-                    verification.completed_at = datetime.now()
+                    # Marca verificação como expirada usando o método da entidade
+                    verification.expire_verification()
 
                     # Salva no repositório
                     await self.verification_repository.save(verification)

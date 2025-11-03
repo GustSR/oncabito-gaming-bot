@@ -101,7 +101,6 @@ class SQLiteGroupMemberRepository(GroupMemberRepository):
                     # Converte a linha para um objeto GroupMember simplificado, pois não temos todos os dados de User aqui
                     joined_at = datetime.fromisoformat(row["created_at"]) if row["created_at"] else datetime.now()
                     member = GroupMember(
-                        id=None,
                         user_id=UserId(row["telegram_user_id"]),
                         telegram_id=row["telegram_user_id"],
                         username=row["username"],
