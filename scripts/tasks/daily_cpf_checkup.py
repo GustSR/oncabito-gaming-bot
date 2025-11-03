@@ -34,12 +34,16 @@ from sentinela.domain.value_objects.identifiers import UserId
 from sentinela.domain.entities.cpf_verification import VerificationStatus
 
 # Configuração de logging
+# Cria diretório de logs se não existir
+logs_dir = root_dir / 'logs'
+logs_dir.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(root_dir / 'logs' / 'daily_cpf_checkup.log')
+        logging.FileHandler(logs_dir / 'daily_cpf_checkup.log')
     ]
 )
 logger = logging.getLogger(__name__)

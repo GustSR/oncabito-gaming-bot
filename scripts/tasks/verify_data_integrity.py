@@ -24,6 +24,10 @@ except ImportError:
     DATABASE_FILE = "data/database/sentinela.db"
 
 # Configuração de logging
+# Cria diretório de logs se não existir
+import os
+os.makedirs('logs', exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [%(levelname)s] - %(message)s',
