@@ -21,17 +21,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Adiciona o diretório raiz ao path
+# IMPORTANTE: Adiciona apenas root_dir (/app), não root_dir/src
+# Isso permite imports como: from src.sentinela.* (consistente com main.py)
 root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
-sys.path.insert(0, str(root_dir / "src"))
 
 from telegram import Bot
 from telegram.error import TelegramError
 
 # Imports da nova arquitetura
-from sentinela.infrastructure.config.dependency_injection import get_container, configure_dependencies
-from sentinela.domain.value_objects.identifiers import UserId
-from sentinela.domain.entities.cpf_verification import VerificationStatus
+from src.sentinela.infrastructure.config.dependency_injection import get_container, configure_dependencies
+from src.sentinela.domain.value_objects.identifiers import UserId
+from src.sentinela.domain.entities.cpf_verification import VerificationStatus
 
 # Configuração de logging
 # Cria diretório de logs se não existir
