@@ -13,9 +13,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Adiciona o diretório raiz ao path
-root_dir = os.path.join(os.path.dirname(__file__), '..')
-sys.path.append(root_dir)
-sys.path.append(os.path.join(root_dir, 'src'))
+# IMPORTANTE: Sobe dois níveis (.., ..) para chegar em /app
+# __file__ = /app/scripts/tasks/verify_data_integrity.py -> /app
+root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, root_dir)
 
 # Tenta importar config, se falhar usa caminho padrão
 try:
@@ -25,7 +26,6 @@ except ImportError:
 
 # Configuração de logging
 # Cria diretório de logs se não existir
-import os
 os.makedirs('logs', exist_ok=True)
 
 logging.basicConfig(
