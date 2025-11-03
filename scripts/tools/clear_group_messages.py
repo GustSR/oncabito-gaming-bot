@@ -6,11 +6,12 @@ ATENÇÃO: Este script deleta mensagens permanentemente!
 Use com cuidado e apenas quando realmente necessário.
 
 Uso:
-    python3 scripts/tools/clear_group_messages.py [--dry-run] [--limit LIMIT]
+    python3 scripts/tools/clear_group_messages.py [--dry-run] [--limit LIMIT] [--confirm]
 
 Opções:
     --dry-run    Mostra o que seria deletado sem realmente deletar
     --limit N    Limita quantas mensagens processar (padrão: 1000)
+    --confirm    Pula confirmação interativa (necessário para docker exec)
 """
 
 import sys
@@ -200,19 +201,33 @@ def main():
         default=1000,
         help="Número máximo de mensagens a processar (padrão: 1000)"
     )
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Confirma a deleção sem pedir confirmação interativa (use com cuidado!)"
+    )
 
     args = parser.parse_args()
 
     # Confirmação em modo produção
     if not args.dry_run:
-        print("⚠️  ATENÇÃO: Você está prestes a DELETAR mensagens do grupo!")
-        print("⚠️  Esta ação é IRREVERSÍVEL!")
-        print()
-        confirm = input("Digite 'CONFIRMO' para continuar: ")
-        if confirm != "CONFIRMO":
-            print("❌ Operação cancelada")
-            sys.exit(0)
-        print()
+        if not args.confirm:
+            print("⚠️  ATENÇÃO: Você está prestes a DELETAR mensagens do grupo!")
+            print("⚠️  Esta ação é IRREVERSÍVEL!")
+            print()
+            try:
+                confirm = input("Digite 'CONFIRMO' para continuar: ")
+                if confirm != "CONFIRMO":
+                    print("❌ Operação cancelada")
+                    sys.exit(0)
+            except (EOFError, KeyboardInterrupt):
+                print("\n❌ Operação cancelada")
+                print("💡 Dica: Use --confirm para pular a confirmação interativa")
+                sys.exit(0)
+            print()
+        else:
+            print("⚠️  ATENÇÃO: Deletando mensagens com --confirm ativado!")
+            print()
 
     asyncio.run(clear_group_messages(dry_run=args.dry_run, limit=args.limit))
 
