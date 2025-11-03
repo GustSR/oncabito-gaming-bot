@@ -13,9 +13,9 @@ from datetime import datetime
 from pathlib import Path
 
 # Adiciona o diretório raiz ao path
-# IMPORTANTE: Sobe dois níveis (.., ..) para chegar em /app
+# IMPORTANTE: Sobe três níveis (.., .., ..) para chegar em /app
 # __file__ = /app/scripts/tasks/export_critical_data.py -> /app
-root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+root_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..')
 sys.path.insert(0, root_dir)
 
 # Tenta importar config, se falhar usa caminho padrão

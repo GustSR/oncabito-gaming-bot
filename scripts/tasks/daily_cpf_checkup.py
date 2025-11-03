@@ -21,9 +21,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Adiciona o diretório raiz ao path
-# IMPORTANTE: Adiciona apenas root_dir (/app), não root_dir/src
+# IMPORTANTE: Sobe três níveis (.parent.parent.parent) para chegar em /app
+# __file__ = /app/scripts/tasks/daily_cpf_checkup.py -> /app
 # Isso permite imports como: from src.sentinela.* (consistente com main.py)
-root_dir = Path(__file__).parent.parent
+root_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
 from telegram import Bot
