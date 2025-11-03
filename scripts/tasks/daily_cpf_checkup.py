@@ -29,7 +29,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 # Imports da nova arquitetura
-from sentinela.infrastructure.config.dependency_injection import get_container
+from sentinela.infrastructure.config.dependency_injection import get_container, configure_dependencies
 from sentinela.domain.value_objects.identifiers import UserId
 from sentinela.domain.entities.cpf_verification import VerificationStatus
 
@@ -82,6 +82,9 @@ class DailyCPFCheckup:
 
         # Inicializa bot
         self.bot = Bot(token=token)
+
+        # Configura dependências (CRÍTICO: deve ser chamado antes de get_container)
+        configure_dependencies()
 
         # Inicializa container DI
         self.container = get_container()
