@@ -26,7 +26,9 @@ def register_handlers(app: Application) -> None:
     handler = TelegramBotHandler()
 
     # Comandos de usuário
-    app.add_handler(CommandHandler("start", handler.handle_start_command))
+    # /start: APENAS no privado (não funciona no grupo)
+    app.add_handler(CommandHandler("start", handler.handle_start_command, filters=filters.ChatType.PRIVATE))
+    # /suporte e /status: funcionam no grupo e no privado
     app.add_handler(CommandHandler("suporte", handler.handle_support_command))
     app.add_handler(CommandHandler("status", handler.handle_status_command))
 
@@ -37,10 +39,12 @@ def register_handlers(app: Application) -> None:
     app.add_handler(ChatMemberHandler(handler.handle_new_member, ChatMemberHandler.CHAT_MEMBER))
 
     # Mensagens de texto (para CPF, descrição de suporte, etc.)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler.handle_text_message))
+    # IMPORTANTE: Apenas no privado! Bot não responde mensagens em grupos/canais
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handler.handle_text_message))
 
     # Mensagens de foto (para anexos de suporte)
-    app.add_handler(MessageHandler(filters.PHOTO, handler.handle_photo_message))
+    # IMPORTANTE: Apenas no privado! Bot não responde mensagens em grupos/canais
+    app.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handler.handle_photo_message))
 
     # Handler de erros
     app.add_error_handler(handler.handle_error)
