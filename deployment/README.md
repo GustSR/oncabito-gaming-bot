@@ -32,14 +32,18 @@ Este diretório contém todos os scripts relacionados a deploy, produção e man
 
 ---
 
-### ⚙️ `setup-cron.sh` - Configuração Inicial do Auto-Update
+### ⚙️ `setup-cron.sh` - Configuração de Todos os Cron Jobs
 **Quando usar**: UMA VEZ após instalar o bot no servidor
 
 **O que faz**:
-- Configura cron job para rodar `auto-update.sh` a cada 10 minutos
+- Configura **4 cron jobs** automatizados:
+  1. **Auto-Update**: Deploy automático via GHCR (cada 10 min, 00:00-05:00)
+  2. **Daily Checkup**: Verificações de saúde (cada 30 min, 6:00-23:59)
+  3. **Integrity Check**: Verificação de integridade do banco (diário às 6:00)
+  4. **Data Export**: Backup incremental em JSON (diário às 6:30)
 - Cria diretórios necessários com permissões corretas (chmod 777)
 - Valida se crontab está instalado
-- Mostra próximas execuções agendadas
+- Mostra configuração completa e próximas execuções
 
 **Como usar**:
 ```bash
@@ -47,10 +51,13 @@ cd /opt/oncabito-gaming-bot
 ./deployment/setup-cron.sh
 ```
 
-**Verificar cron**:
+**Verificar crons**:
 ```bash
-crontab -l                    # Ver cron jobs instalados
-tail -f logs/auto-update.log  # Monitorar execuções
+crontab -l                    # Ver todos os cron jobs instalados
+tail -f logs/auto-update.log  # Monitorar auto-update
+tail -f logs/checkup.log      # Monitorar checkup diário
+tail -f logs/integrity.log    # Monitorar verificação de integridade
+tail -f logs/export.log       # Monitorar export de dados
 ```
 
 ---
@@ -102,25 +109,65 @@ cd /path/to/projeto
 
 ## 🔧 Scripts de Manutenção
 
-### 🏥 `run_checkup.sh` - Checkup Diário de Saúde
-**Quando usar**: Via cron para manutenção diária automática
+### 🏥 `run_checkup.sh` - Checkup Diário Completo
+**Quando usar**: Automático via cron (cada 30 min, 6:00-23:59) ou manual
 
-**O que faz**:
-- Executa `scripts/daily_checkup.py` dentro do container
-- Verifica integridade do banco de dados
-- Limpa registros expirados
-- Gera relatório de saúde do sistema
-
-**Configurar cron diário**:
-```bash
-# Adicionar ao crontab para rodar todo dia às 3h da manhã
-0 3 * * * /opt/oncabito-gaming-bot/deployment/run_checkup.sh >> /opt/oncabito-gaming-bot/logs/checkup.log 2>&1
-```
+**O que faz** (6 fases):
+1. **Sincroniza administradores** do Telegram → banco de dados
+2. **Processa conflitos de CPF** duplicados expirados (timeout 24h)
+3. **Detecta CPFs duplicados** entre usuários ativos
+4. **Remove verificações expiradas** de CPF não completadas
+5. **Verifica contratos cancelados** na HubSoft API
+6. **Remove usuários não-verificados** após 24h (protege admins)
 
 **Executar manualmente**:
 ```bash
 ./deployment/run_checkup.sh
+# ou dentro do container:
+docker exec oncabo-gaming-bot python3 /app/scripts/tasks/daily_cpf_checkup.py
 ```
+
+**Logs**: `logs/checkup.log`
+
+---
+
+### 🔍 `run_integrity_check.sh` - Verificação de Integridade
+**Quando usar**: Automático via cron (diário às 6:00) ou manual
+
+**O que faz**:
+- Verifica saúde do banco de dados SQLite
+- Detecta anomalias e perda de dados (alerta se > 5%)
+- Valida consistência entre tabelas relacionadas
+- Gera relatório detalhado de integridade
+
+**Executar manualmente**:
+```bash
+./deployment/run_integrity_check.sh
+# ou dentro do container:
+docker exec oncabo-gaming-bot python3 /app/scripts/tasks/verify_data_integrity.py
+```
+
+**Logs**: `logs/integrity.log`
+
+---
+
+### 💾 `run_data_export.sh` - Export de Dados Críticos
+**Quando usar**: Automático via cron (diário às 6:30) ou manual
+
+**O que faz**:
+- Exporta dados críticos para backup em JSON
+- Inclui: usuários, verificações de CPF, tickets
+- Backup incremental com timestamp
+- Útil para auditoria e recuperação de desastres
+
+**Executar manualmente**:
+```bash
+./deployment/run_data_export.sh
+# ou dentro do container:
+docker exec oncabo-gaming-bot python3 /app/scripts/tasks/export_critical_data.py
+```
+
+**Logs**: `logs/export.log`
 
 ---
 

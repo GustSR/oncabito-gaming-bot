@@ -181,8 +181,11 @@ SUPPORT_TOPIC_ID="XXX"       # ID do tópico de suporte gamer (OBRIGATÓRIO)
 TECH_NOTIFICATION_CHANNEL_ID="-100XXXXXXXXXXXX"  # Canal técnico privado
 
 # === Administração ===
-# ⚠️ Admins são detectados AUTOMATICAMENTE via getChatAdministrators
-# Não precisa configurar IDs manualmente
+# ⚠️ Administradores são detectados e sincronizados AUTOMATICAMENTE
+# - Sincronização a cada 30 min via daily_cpf_checkup
+# - Armazenados na tabela `administrators` do banco
+# - Protegidos de verificações e remoções automáticas
+# - Não precisa configurar IDs manualmente
 
 # === API HubSoft (Opcional) ===
 HUBSOFT_ENABLED="true"       # true/false para habilitar integração
@@ -349,11 +352,38 @@ docker exec -it oncabo-gaming-bot /bin/bash
 
 ### ⏰ **Checkups e Monitoramento**
 ```bash
-# Checkup manual
+# Checkup manual completo
 ./deployment/run_checkup.sh
 
-# Teste do cron
-./scripts/test_cron.sh
+# Verificação de integridade
+./deployment/run_integrity_check.sh
+
+# Export de dados críticos
+./deployment/run_data_export.sh
+
+# Ver cron jobs ativos
+crontab -l
+
+# Monitorar logs dos cron jobs
+tail -f logs/checkup.log
+tail -f logs/integrity.log
+tail -f logs/export.log
+tail -f logs/auto-update.log
+```
+
+### 🧹 **Ferramentas de Manutenção**
+```bash
+# Limpar mensagens do grupo (mantém fixadas)
+# ATENÇÃO: Use com cuidado! Deleção é irreversível!
+
+# Teste em dry-run (simulação)
+docker exec oncabo-gaming-bot python3 /app/scripts/tools/clear_group_messages.py --dry-run --limit 100
+
+# Execução real (requer --confirm para docker exec)
+docker exec oncabo-gaming-bot python3 /app/scripts/tools/clear_group_messages.py --confirm --limit 500
+
+# Limpar TODAS as mensagens (exceto fixadas)
+docker exec oncabo-gaming-bot python3 /app/scripts/tools/clear_group_messages.py --confirm
 ```
 
 ### 🧪 **Testes e Debug**
@@ -389,19 +419,27 @@ print(f'Sucessos últimas 24h: {stats[\"last_24h\"][\"successful\"]}')
 
 ### ⏰ **Cron Jobs Configurados (Automático)**
 ```bash
-# Setup automático via scripts/setup/setup_monitoring.sh
+# Setup automático via deployment/setup-cron.sh
 
-# Backup diário às 3:00 AM
-0 3 * * * ./scripts/db/backup_database.sh auto
+# Auto-Update: A cada 10 minutos (00:00-05:00 apenas - madrugada)
+*/10 0-5 * * * ./deployment/auto-update.sh
 
-# Checkup completo às 6:00 AM (contratos + CPF + integridade)
-0 6 * * * python3 ./scripts/daily_checkup.py
+# Checkup Diário: A cada 30 minutos (6:00-23:59)
+# - Sincroniza administradores do Telegram
+# - Processa conflitos de CPF duplicados expirados
+# - Verifica CPFs expirados e contratos cancelados
+# - Remove usuários inativos (com proteção de admins)
+*/30 6-23 * * * ./deployment/run_checkup.sh
 
-# Export de dados críticos às 9:00 AM
-0 9 * * * python3 ./scripts/export_critical_data.py
+# Verificação de Integridade: Diário às 6:00 AM
+# - Verifica saúde do banco de dados
+# - Detecta anomalias e perda de dados
+0 6 * * * ./deployment/run_integrity_check.sh
 
-# Verificação de integridade (manual)
-python3 ./scripts/verify_data_integrity.py
+# Export de Dados Críticos: Diário às 6:30 AM
+# - Backup incremental em JSON
+# - Exporta usuários, verificações e tickets
+30 6 * * * ./deployment/run_data_export.sh
 ```
 
 ### 📊 **Monitoramento Automático Completo**
