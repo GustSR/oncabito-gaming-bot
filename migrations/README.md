@@ -1,4 +1,4 @@
-# 🔄 Sistema de Migrations - OnCabito Bot
+# 🔄 Sistema de Migrations - OnCabo Gaming Bot
 
 ## 📋 **O que são Migrations?**
 
@@ -35,7 +35,7 @@ migrations/
 ### **Execução Manual:**
 ```bash
 # Via container (recomendado)
-docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
+docker exec oncabo-gaming-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
 
 # Localmente (se tiver permissões)
 python3 migrations/migration_engine.py data/database/sentinela.db
@@ -44,7 +44,7 @@ python3 migrations/migration_engine.py data/database/sentinela.db
 ### **Verificar Status:**
 ```bash
 # Mostra quais migrations foram aplicadas
-docker exec oncabito-bot python3 -c "
+docker exec oncabo-gaming-bot python3 -c "
 from migrations.migration_engine import MigrationEngine
 engine = MigrationEngine('/app/data/database/sentinela.db')
 status = engine.get_migration_status()
@@ -89,7 +89,7 @@ UPDATE users SET nova_coluna = 'valor_padrao' WHERE nova_coluna IS NULL;
 ./scripts/db/backup_database.sh manual
 
 # Executar migration
-docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
+docker exec oncabo-gaming-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
 
 # Se der erro, restaurar backup
 ./scripts/restore_database.sh backups/manual/backup_file.db
@@ -113,34 +113,42 @@ docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/d
 ### **Se Migration Falhar:**
 ```bash
 # 1. Verificar logs
-docker-compose logs oncabito-bot
+docker logs oncabo-gaming-bot
 
 # 2. Restaurar backup de segurança
-./scripts/restore_database.sh backups/auto/auto_backup_YYYYMMDD_HHMMSS.db
+./scripts/db/restore_database.sh backups/auto/auto_backup_YYYYMMDD_HHMMSS.db
 
 # 3. Corrigir migration e tentar novamente
 # (editar arquivo .sql)
 
 # 4. Aplicar migration corrigida
-docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
+docker exec oncabo-gaming-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
 ```
 
 ## 🔧 **Integração com Deploy**
 
-O sistema está integrado com os scripts de deploy:
+O sistema está integrado com os scripts de deploy automáticos:
 
-### **Deploy Seguro:**
+### **Deploy Automático (Produção):**
 ```bash
-./scripts/deploy/deploy_safe.sh
+./deployment/auto-update.sh
 ```
 
-### **Fluxo do Deploy Seguro:**
+### **Deploy Manual (Desenvolvimento):**
+```bash
+./deployment/deploy-compose.sh  # Com docker-compose
+./deployment/deploy-local.sh    # Build manual
+```
+
+### **Fluxo do Deploy Automático:**
 1. 💾 **Backup automático** do banco atual
-2. 📥 **Git pull** do código novo
-3. 🔄 **Executa migrations** pendentes
-4. 🔨 **Build da imagem** Docker
-5. 🆙 **Deploy da nova versão**
-6. ✅ **Verifica funcionamento**
+2. 📥 **Pull da imagem** do GitHub Container Registry
+3. 🔄 **Executa migrations** pendentes (se necessário)
+4. 🆙 **Deploy da nova versão**
+5. ✅ **Verifica funcionamento** (health check)
+6. 🔄 **Rollback automático** se falhar
+
+**Detalhes**: Ver [Deployment README](../deployment/README.md)
 
 ## 📊 **Tabela de Controle**
 
@@ -162,7 +170,7 @@ CREATE TABLE schema_migrations (
 # Verificar permissões
 ls -la data/database/
 # Executar via container onde há permissões corretas
-docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
+docker exec oncabo-gaming-bot python3 /app/migrations/migration_engine.py /app/data/database/sentinela.db
 ```
 
 ### **Erro: "duplicate column name"**
@@ -173,7 +181,7 @@ docker exec oncabito-bot python3 /app/migrations/migration_engine.py /app/data/d
 ### **Migration "perdida"**
 ```bash
 # Registrar migration manualmente se necessário
-docker exec oncabito-bot python3 -c "
+docker exec oncabo-gaming-bot python3 -c "
 import sqlite3
 conn = sqlite3.connect('/app/data/database/sentinela.db')
 conn.execute('INSERT INTO schema_migrations (version, filename) VALUES (1, \"001_create_initial_schema.sql\")')
@@ -183,4 +191,4 @@ conn.commit()
 
 ---
 
-**💡 Dica**: Use sempre o script `./scripts/deploy/deploy_safe.sh` para deploys em produção. Ele cuida de tudo automaticamente!
+**💡 Dica**: Em produção, o script `./deployment/auto-update.sh` roda automaticamente via cron a cada 10 minutos. Ele cuida de tudo automaticamente, incluindo migrations!

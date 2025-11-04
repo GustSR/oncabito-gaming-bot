@@ -1,9 +1,9 @@
-# 📚 Documentação - Sentinela Bot
+# 📚 Documentação - OnCabo Gaming Bot
 
-Bem-vindo à documentação do **Sentinela Bot** - Sistema de gerenciamento de comunidade gaming OnCabo.
+Bem-vindo à documentação do **OnCabo Gaming Bot** - Sistema completo de gerenciamento de comunidade gaming com integração ERP.
 
-> **Última atualização:** 21 de Outubro de 2025
-> **Status:** Documentação organizada e atualizada ✅
+> **Última atualização:** 04 de Novembro de 2025
+> **Status:** Documentação completa e atualizada ✅
 
 ---
 
@@ -18,6 +18,7 @@ Bem-vindo à documentação do **Sentinela Bot** - Sistema de gerenciamento de c
 - [Visão Geral da Arquitetura](./architecture/OVERVIEW.md) - Clean Architecture + DDD
 - [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md) - Organização de diretórios
 - [Decisões Arquiteturais](./architecture/ARCHITECTURAL_DECISIONS.md) - ADRs do projeto
+- [Sistema de Administradores](./architecture/ADMIN_SYSTEM.md) - Sincronização e proteções automáticas
 
 ### 🔌 API & Integrações
 - [Documentação API HubSoft - Guia de Uso](./api/Documentação%20API%20Hubsoft%20-%20Guia%20de%20Uso.md) - Índice da documentação HubSoft
@@ -43,44 +44,74 @@ Bem-vindo à documentação do **Sentinela Bot** - Sistema de gerenciamento de c
 
 Se você é desenvolvedor e vai trabalhar no projeto:
 
-1. Leia [Visão Geral da Arquitetura](./architecture/OVERVIEW.md)
-2. Entenda a [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md)
-3. Configure seu ambiente com [Guia de Instalação](./guides/INSTALLATION.md)
-4. Familiarize-se com os [Padrões Implementados](./architecture/PATTERNS.md)
+1. **Arquitetura**: Leia [Visão Geral da Arquitetura](./architecture/OVERVIEW.md)
+2. **Estrutura**: Entenda a [Estrutura do Projeto](./architecture/PROJECT_STRUCTURE.md)
+3. **Desenvolvimento**: Use `./dev.sh` - veja [Scripts README](../scripts/README.md)
+4. **Testes**: Configure ambiente com [Testing Setup](./guides/TESTING_SETUP.md)
+5. **Deploy**: Entenda [GitHub Registry Deploy](./guides/GITHUB_REGISTRY_DEPLOY.md)
 
 ## 🚀 Para Administradores
 
 Se você vai fazer deploy ou administrar o bot:
 
-1. Configure o ambiente seguindo [Configuração .env](./guides/CONFIGURATION.md)
-2. Faça deploy com [Deploy em Produção](./guides/DEPLOYMENT.md)
-3. Consulte [Comandos Disponíveis](./guides/COMMANDS.md) para operação
-4. Use [Troubleshooting](./guides/TROUBLESHOOTING.md) para problemas
+1. **Deploy Inicial**: Siga [Deployment Guide](./guides/DEPLOYMENT.md)
+2. **Cron Jobs**: Configure com [Deployment README](../deployment/README.md)
+3. **Administradores**: Entenda [Sistema de Admins](./architecture/ADMIN_SYSTEM.md)
+4. **Manutenção**: Veja ferramentas em [Scripts README](../scripts/README.md)
+5. **Monitoramento**: Confira comandos no [README Principal](../README.md)
 
 ## 🎮 Para Usuários Finais
 
 Se você é usuário da comunidade gaming:
 
-1. Veja [Primeiros Passos](./guides/GETTING_STARTED.md)
-2. Consulte [Comandos Disponíveis](./guides/COMMANDS.md)
+1. **Comandos**: Veja comandos disponíveis no [README Principal](../README.md)
+2. **Comportamento**: Entenda como bot responde em [Mapeamento de Respostas](./MAPEAMENTO_RESPOSTAS_BOT.md)
+3. **Suporte**: Use `/suporte` no tópico correto do grupo
 
 ## 📊 Status do Projeto
 
 - ✅ **Arquitetura:** Clean Architecture + DDD completa
 - ✅ **Migração:** 100% concluída
-- ✅ **Testes:** Em desenvolvimento
-- ✅ **Documentação:** Em atualização
+- ✅ **Automação:** 4 cron jobs configurados (auto-update, checkup, integrity, export)
+- ✅ **Administradores:** Sincronização automática a cada 30 min
+- ✅ **Documentação:** Completa e atualizada
+- 🔄 **Testes:** Em desenvolvimento
+- 🚀 **Produção:** Estável e rodando
+
+## ⚙️ Automação Implementada
+
+### Cron Jobs Ativos
+- **Auto-Update**: Deploy automático (cada 10 min, 00:00-05:00)
+- **Daily Checkup**: Verificações completas (cada 30 min, 6:00-23:59)
+  - Sincroniza administradores
+  - Detecta CPFs duplicados
+  - Verifica contratos cancelados
+  - Remove usuários não-verificados
+- **Integrity Check**: Verifica saúde do banco (diário às 6:00)
+- **Data Export**: Backup incremental JSON (diário às 6:30)
+
+Detalhes: [Deployment README](../deployment/README.md) | [Scripts README](../scripts/README.md)
+
+## 🛡️ Sistema de Proteção
+
+### Administradores
+- Detecção automática via Telegram API
+- Sincronização a cada 30 minutos
+- Proteção contra remoções automáticas
+- Histórico mantido no banco de dados
+
+Detalhes: [Admin System](./architecture/ADMIN_SYSTEM.md)
 
 ## 🔗 Links Úteis
 
-- [Repositório GitHub](https://github.com/seu-usuario/sentinela)
-- [Issues](https://github.com/seu-usuario/sentinela/issues)
-- [Changelog](../CHANGELOG.md)
+- [Repositório GitHub](https://github.com/GustSR/oncabito-gaming-bot)
+- [Issues](https://github.com/GustSR/oncabito-gaming-bot/issues)
+- [GitHub Container Registry](https://github.com/GustSR/oncabito-gaming-bot/pkgs/container/oncabito-gaming-bot)
 
 ## 📄 Licença
 
-Este projeto está sob licença proprietária OnCabo Gaming.
+Este projeto é propriedade da **OnCabo Gaming Community**.
 
 ---
 
-**Última atualização:** 30/09/2025
+**Última atualização:** 04/11/2025
