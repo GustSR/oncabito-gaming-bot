@@ -48,6 +48,8 @@ domain/
 │   ├── ticket_repository.py
 │   ├── group_member_repository.py
 │   ├── group_topic_repository.py
+│   ├── admin_repository.py          # 👤 Administradores
+│   ├── duplicate_conflict_repository.py  # Conflitos de CPF
 │   └── hubsoft_api_repository.py
 │
 ├── services/              # Domain Services
@@ -336,8 +338,53 @@ from sentinela.application.use_cases.cpf_verification_use_case import CPFVerific
 from ....domain.entities.user import User  # Não faça isso!
 ```
 
+## 📦 Scripts e Ferramentas
+
+**Localização:** `scripts/`
+
+**Responsabilidade:** Automação, manutenção e ferramentas operacionais
+
+```
+scripts/
+├── dev/                    # Ferramentas de desenvolvimento
+│   └── dev.sh             # Helper principal (./dev.sh start/stop/logs)
+│
+├── tasks/                 # Tarefas automatizadas (via cron)
+│   ├── daily_cpf_checkup.py       # Checkup diário completo (6 fases)
+│   │                              # - Sincroniza administradores
+│   │                              # - Detecta CPFs duplicados
+│   │                              # - Verifica contratos cancelados
+│   ├── verify_data_integrity.py   # Verificação de integridade
+│   └── export_critical_data.py    # Export de backup JSON
+│
+└── tools/                 # Ferramentas manuais
+    └── clear_group_messages.py    # Limpeza de mensagens (preserva fixadas)
+```
+
+### Cron Jobs Configurados
+
+```bash
+# deployment/setup-cron.sh instala 4 cron jobs:
+
+# 1. Auto-Update (00:00-05:00, cada 10 min)
+*/10 0-5 * * * ./deployment/auto-update.sh
+
+# 2. Daily Checkup (6:00-23:59, cada 30 min)
+*/30 6-23 * * * ./deployment/run_checkup.sh
+
+# 3. Integrity Check (diário às 6:00)
+0 6 * * * ./deployment/run_integrity_check.sh
+
+# 4. Data Export (diário às 6:30)
+30 6 * * * ./deployment/run_data_export.sh
+```
+
+**Documentação**: Ver [Scripts README](../../scripts/README.md)
+
+---
+
 ## 🔗 Próximos Passos
 
 - [Visão Geral da Arquitetura](./OVERVIEW.md)
-- [Fluxo de Dados](./DATA_FLOW.md)
-- [Padrões Implementados](./PATTERNS.md)
+- [Sistema de Administradores](./ADMIN_SYSTEM.md)
+- [Documentação Principal](../../README.md)
